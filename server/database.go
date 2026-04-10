@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	_ "github.com/lib/pq"
+	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
 // Database wraps the sql.DB connection
@@ -17,40 +19,61 @@ type Database struct {
 
 // NewDatabase creates a new database connection
 func NewDatabase() (*Database, error) {
-	dbHost := os.Getenv("DB_HOST")
-	if dbHost == "" {
-		dbHost = "localhost"
-	}
+	// Check if Turso is configured (production)
+	tursoURL := os.Getenv("TURSO_DB_URL")
+	tursoAuth := os.Getenv("TURSO_AUTH_TOKEN")
 
-	dbPort := os.Getenv("DB_PORT")
-	if dbPort == "" {
-		dbPort = "5432"
-	}
+	var db *sql.DB
+	var err error
+	var dbInfo string
 
-	dbUser := os.Getenv("DB_USER")
-	if dbUser == "" {
-		dbUser = "postgres"
-	}
+	if tursoURL != "" && tursoAuth != "" {
+		// Use Turso in production
+		connStr := fmt.Sprintf("%s?authToken=%s", tursoURL, tursoAuth)
+		db, err = sql.Open("libsql", connStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open Turso database: %w", err)
+		}
+		dbInfo = "Turso database"
+		log.Printf("Connecting to Turso database")
+	} else {
+		// Use PostgreSQL for local development
+		dbHost := os.Getenv("DB_HOST")
+		if dbHost == "" {
+			dbHost = "localhost"
+		}
 
-	dbPassword := os.Getenv("DB_PASSWORD")
-	dbName := os.Getenv("DB_NAME")
-	if dbName == "" {
-		dbName = "skat"
-	}
+		dbPort := os.Getenv("DB_PORT")
+		if dbPort == "" {
+			dbPort = "5432"
+		}
 
-	dbSSLMode := os.Getenv("DB_SSLMODE")
-	if dbSSLMode == "" {
-		dbSSLMode = "disable"
-	}
+		dbUser := os.Getenv("DB_USER")
+		if dbUser == "" {
+			dbUser = "postgres"
+		}
 
-	connStr := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		dbHost, dbPort, dbUser, dbPassword, dbName, dbSSLMode,
-	)
+		dbPassword := os.Getenv("DB_PASSWORD")
+		dbName := os.Getenv("DB_NAME")
+		if dbName == "" {
+			dbName = "skat"
+		}
 
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		dbSSLMode := os.Getenv("DB_SSLMODE")
+		if dbSSLMode == "" {
+			dbSSLMode = "disable"
+		}
+
+		connStr := fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			dbHost, dbPort, dbUser, dbPassword, dbName, dbSSLMode,
+		)
+
+		db, err = sql.Open("postgres", connStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open PostgreSQL database: %w", err)
+		}
+		dbInfo = fmt.Sprintf("PostgreSQL: %s@%s:%s/%s", dbUser, dbHost, dbPort, dbName)
 	}
 
 	// Test connection
@@ -58,7 +81,7 @@ func NewDatabase() (*Database, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	log.Printf("Connected to database: %s@%s:%s/%s", dbUser, dbHost, dbPort, dbName)
+	log.Printf("Connected to %s", dbInfo)
 
 	return &Database{DB: db}, nil
 }
@@ -70,67 +93,147 @@ func (d *Database) Close() error {
 
 // InitSchema initializes the database schema
 func (d *Database) InitSchema() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS player_profiles (
-		id VARCHAR(255) PRIMARY KEY,
-		name VARCHAR(255) NOT NULL,
-		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-		last_seen TIMESTAMP NOT NULL DEFAULT NOW()
-	);
+	// Check if we're using Turso/SQLite or PostgreSQL
+	isTurso := os.Getenv("TURSO_DB_URL") != ""
 
-	CREATE TABLE IF NOT EXISTS games (
-		id VARCHAR(255) PRIMARY KEY,
-		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-		updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-	);
+	var schema string
+	if isTurso {
+		// SQLite/Turso compatible schema
+		schema = `
+		CREATE TABLE IF NOT EXISTS player_profiles (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
 
-	CREATE TABLE IF NOT EXISTS players (
-		id VARCHAR(255) PRIMARY KEY,
-		game_id VARCHAR(255) NOT NULL,
-		name VARCHAR(255) NOT NULL,
-		position INT NOT NULL,
-		is_agent BOOLEAN NOT NULL DEFAULT FALSE,
-		agent_type VARCHAR(50),
-		online BOOLEAN NOT NULL DEFAULT TRUE,
-		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-		FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
-	);
+		CREATE TABLE IF NOT EXISTS games (
+			id TEXT PRIMARY KEY,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
 
-	CREATE TABLE IF NOT EXISTS game_states (
-		id SERIAL PRIMARY KEY,
-		game_id VARCHAR(255) NOT NULL,
-		game_data JSONB NOT NULL,
-		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-		FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
-	);
+		CREATE TABLE IF NOT EXISTS players (
+			id TEXT PRIMARY KEY,
+			game_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			position INTEGER NOT NULL,
+			is_agent INTEGER DEFAULT 0,
+			agent_type TEXT,
+			online INTEGER DEFAULT 1,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+		);
 
-	CREATE INDEX IF NOT EXISTS idx_players_game_id ON players(game_id);
-	CREATE INDEX IF NOT EXISTS idx_game_states_game_id ON game_states(game_id);
+		CREATE TABLE IF NOT EXISTS game_states (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			game_id TEXT NOT NULL,
+			game_data TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+		);
 
-	-- Game history tracking
-	CREATE TABLE IF NOT EXISTS game_history (
-		id SERIAL PRIMARY KEY,
-		game_id VARCHAR(255) NOT NULL,
-		game_code VARCHAR(10),
-		player_id VARCHAR(255) NOT NULL,
-		player_name VARCHAR(255) NOT NULL,
-		is_winner BOOLEAN,
-		is_declarer BOOLEAN,
-		final_score INT,
-		game_mode VARCHAR(50),
-		opponent_names TEXT,  -- JSON array of opponent names
-		vs_ai BOOLEAN DEFAULT FALSE,  -- True if game included AI players
-		finished_at TIMESTAMP NOT NULL DEFAULT NOW(),
-		FOREIGN KEY (player_id) REFERENCES player_profiles(id) ON DELETE CASCADE
-	);
+		CREATE INDEX IF NOT EXISTS idx_players_game_id ON players(game_id);
+		CREATE INDEX IF NOT EXISTS idx_game_states_game_id ON game_states(game_id);
 
-	CREATE INDEX IF NOT EXISTS idx_game_history_player_id ON game_history(player_id);
-	CREATE INDEX IF NOT EXISTS idx_game_history_finished_at ON game_history(finished_at DESC);
-	`
+		CREATE TABLE IF NOT EXISTS game_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			game_id TEXT NOT NULL,
+			game_code TEXT,
+			player_id TEXT NOT NULL,
+			player_name TEXT NOT NULL,
+			is_winner INTEGER,
+			is_declarer INTEGER,
+			final_score INTEGER,
+			game_mode TEXT,
+			opponent_names TEXT,
+			vs_ai INTEGER DEFAULT 0,
+			finished_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (player_id) REFERENCES player_profiles(id) ON DELETE CASCADE
+		);
 
-	_, err := d.DB.Exec(schema)
-	if err != nil {
-		return fmt.Errorf("failed to initialize schema: %w", err)
+		CREATE INDEX IF NOT EXISTS idx_game_history_player_id ON game_history(player_id);
+		CREATE INDEX IF NOT EXISTS idx_game_history_finished_at ON game_history(finished_at DESC);
+		`
+	} else {
+		// PostgreSQL schema
+		schema = `
+		CREATE TABLE IF NOT EXISTS player_profiles (
+			id VARCHAR(255) PRIMARY KEY,
+			name VARCHAR(255) NOT NULL,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			last_seen TIMESTAMP NOT NULL DEFAULT NOW()
+		);
+
+		CREATE TABLE IF NOT EXISTS games (
+			id VARCHAR(255) PRIMARY KEY,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		);
+
+		CREATE TABLE IF NOT EXISTS players (
+			id VARCHAR(255) PRIMARY KEY,
+			game_id VARCHAR(255) NOT NULL,
+			name VARCHAR(255) NOT NULL,
+			position INT NOT NULL,
+			is_agent BOOLEAN NOT NULL DEFAULT FALSE,
+			agent_type VARCHAR(50),
+			online BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+		);
+
+		CREATE TABLE IF NOT EXISTS game_states (
+			id SERIAL PRIMARY KEY,
+			game_id VARCHAR(255) NOT NULL,
+			game_data JSONB NOT NULL,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_players_game_id ON players(game_id);
+		CREATE INDEX IF NOT EXISTS idx_game_states_game_id ON game_states(game_id);
+
+		CREATE TABLE IF NOT EXISTS game_history (
+			id SERIAL PRIMARY KEY,
+			game_id VARCHAR(255) NOT NULL,
+			game_code VARCHAR(10),
+			player_id VARCHAR(255) NOT NULL,
+			player_name VARCHAR(255) NOT NULL,
+			is_winner BOOLEAN,
+			is_declarer BOOLEAN,
+			final_score INT,
+			game_mode VARCHAR(50),
+			opponent_names TEXT,
+			vs_ai BOOLEAN DEFAULT FALSE,
+			finished_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			FOREIGN KEY (player_id) REFERENCES player_profiles(id) ON DELETE CASCADE
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_game_history_player_id ON game_history(player_id);
+		CREATE INDEX IF NOT EXISTS idx_game_history_finished_at ON game_history(finished_at DESC);
+		`
+	}
+
+	// For SQLite/Turso, we need to execute statements one at a time
+	if isTurso {
+		// Split by semicolon and execute each statement
+		statements := strings.Split(schema, ";")
+		for _, stmt := range statements {
+			stmt = strings.TrimSpace(stmt)
+			if stmt != "" {
+				_, err := d.DB.Exec(stmt)
+				if err != nil {
+					return fmt.Errorf("failed to execute statement: %s: %w", stmt[:50], err)
+				}
+			}
+		}
+	} else {
+		// PostgreSQL can handle multiple statements
+		_, err := d.DB.Exec(schema)
+		if err != nil {
+			return fmt.Errorf("failed to initialize schema: %w", err)
+		}
 	}
 
 	log.Println("Database schema initialized")
@@ -142,15 +245,32 @@ func (d *Database) SaveGame(game *GameSession) error {
 	game.mutex.RLock()
 	defer game.mutex.RUnlock()
 
-	_, err := d.DB.Exec(
-		`INSERT INTO games (id, updated_at)
-		 VALUES ($1, $2, NOW())
-		 ON CONFLICT (id) DO UPDATE SET
-		 updated_at = NOW()`,
-		game.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to save game: %w", err)
+	isTurso := os.Getenv("TURSO_DB_URL") != ""
+
+	if isTurso {
+		// SQLite/Turso syntax
+		_, err := d.DB.Exec(
+			`INSERT INTO games (id, created_at, updated_at)
+			 VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+			 ON CONFLICT (id) DO UPDATE SET
+			 updated_at = CURRENT_TIMESTAMP`,
+			game.ID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to save game: %w", err)
+		}
+	} else {
+		// PostgreSQL syntax
+		_, err := d.DB.Exec(
+			`INSERT INTO games (id, created_at, updated_at)
+			 VALUES ($1, NOW(), NOW())
+			 ON CONFLICT (id) DO UPDATE SET
+			 updated_at = NOW()`,
+			game.ID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to save game: %w", err)
+		}
 	}
 
 	return nil

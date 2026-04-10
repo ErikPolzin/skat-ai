@@ -1,0 +1,92 @@
+import React from "react";
+import { useGameContext } from "../context/GameContext";
+import "./BiddingControls.css";
+
+export function BiddingControls() {
+  const game = useGameContext();
+
+  // Get the next valid bid value based on current bid
+  const getNextBidValue = () => {
+    const validBids = [
+      18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50, 54, 55,
+      59, 60, 63, 66, 70, 72, 77, 80, 81, 84, 88, 90, 96, 99, 100, 108, 110,
+      117, 120, 121, 126, 130, 132, 135, 140, 143, 144, 150, 153, 154, 156, 160,
+      162, 165, 168, 170, 176, 180, 187, 192, 198, 204, 216, 240, 264,
+    ];
+
+    // If no bid has been made yet, start at minimum (18)
+    const currentBid = game.declarerScore || 0;
+
+    // Find the next bid value
+    for (const bid of validBids) {
+      if (bid > currentBid) {
+        return bid;
+      }
+    }
+    return currentBid + 1; // Fallback
+  };
+
+  if (!game.isMyTurn) {
+    return (
+      <div className="bidding-controls waiting">
+        <span>Waiting for bid...</span>
+      </div>
+    );
+  }
+
+
+  return (
+    <div className="bidding-controls">
+      <div className="bid-info">
+        <span className="current-bid">Current: {game.declarerScore || "None"}</span>
+      </div>
+
+      <div className="bid-buttons">
+        {game.playerPosition === 2 ? (
+          // Speaker position - can raise or pass
+          <>
+            <button
+              className="bid-btn raise"
+              onClick={() => game.controls.bid(String(getNextBidValue()))}
+            >
+              Bid {getNextBidValue()}
+            </button>
+            <button
+              className="bid-btn pass"
+              onClick={() => game.controls.bid("pass")}
+            >
+              Pass
+            </button>
+          </>
+        ) : (
+          // Listener/Dealer position
+          <>
+            {game.declarerScore > 0 ? (
+              // If there's already a bid, can hold it
+              <button
+                className="bid-btn hold"
+                onClick={() => game.controls.bid("hold")}
+              >
+                Yes ({game.declarerScore})
+              </button>
+            ) : (
+              // If no bid yet, can initiate bidding at 18
+              <button
+                className="bid-btn raise"
+                onClick={() => game.controls.bid("18")}
+              >
+                Bid 18
+              </button>
+            )}
+            <button
+              className="bid-btn pass"
+              onClick={() => game.controls.bid("pass")}
+            >
+              Pass
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

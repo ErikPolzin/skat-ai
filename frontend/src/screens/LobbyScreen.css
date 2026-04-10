@@ -1,0 +1,48 @@
+.lobby-container {
+  max-width: 600px;
+}
+
+.section {
+  margin-bottom: 30px;
+}
+
+.section h2,
+.section h3 {
+  margin-bottom: 15px;
+  color: #34495e;
+}
+
+.games-list {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 15px;
+  min-height: 120px;
+  margin-bottom: 15px;
+  background: #f8f9fa;
+}
+
+.no-games {
+  text-align: center;
+  color: #999;
+  padding: 20px;
+}
+
+.game-item {
+  padding: 12px;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: box-shadow 0.3s;
+}
+
+.game-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.game-item:last-child {
+  margin-bottom: 0;
+}

@@ -1,0 +1,96 @@
+.skat-exchange {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 50;
+}
+
+.skat-preview h3 {
+  margin: 0 0 15px 0;
+  color: #85a3c2;
+  font-size: 18px;
+}
+
+.skat-info {
+  margin: 0 0 10px 0;
+  color: #85a3c2;
+  font-size: 14px;
+}
+
+.skat-cards {
+  position: relative;
+  height: 100px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.skat-card-wrapper {
+  position: relative;
+  width: 160px;
+  height: 100px;
+}
+
+.skat-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+}
+
+.skat-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: white;
+}
+
+.skat-btn.pickup {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.skat-btn.pickup:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.skat-btn.play-hand {
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+}
+
+.skat-btn.play-hand:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
+}
+
+.discard-info h3 {
+  margin: 0 0 10px 0;
+  color: #709ecd;
+  font-size: 16px;
+}
+
+.discard-info p {
+  margin: 0 0 15px 0;
+  color: #b9b9b9;
+  font-size: 14px;
+}
+
+.skat-btn.discard {
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+}
+
+.skat-btn.discard:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+}
+
+.skat-btn.discard:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

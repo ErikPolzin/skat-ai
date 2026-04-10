@@ -1,0 +1,9 @@
+.claude/
+bin/
+bidding_qtable.json
+bidding_qtable.gob
+.env
+gcp_key.json
+firebase_key.json
+**/firebase-debug.log
+**/.env

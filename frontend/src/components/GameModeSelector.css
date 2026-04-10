@@ -1,0 +1,170 @@
+.game-mode-selector {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 25px;
+  text-align: center;
+  z-index: 50;
+  min-width: 350px;
+}
+
+.game-mode-selector h3 {
+  margin: 0 0 20px 0;
+  color: #2c3e50;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.mode-options {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.mode-option {
+  padding: 12px 18px;
+  background: #f0f0f0;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.mode-option:hover {
+  background: #e0e0e0;
+  transform: translateY(-2px);
+}
+
+.mode-option.selected {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: #667eea;
+}
+
+.mode-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mode-desc {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.trump-selection {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  transition: opacity 0.3s ease, background 0.3s ease;
+}
+
+.trump-selection.disabled {
+  opacity: 0.5;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.trump-selection h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: #bbbbbb;
+  transition: color 0.3s ease;
+}
+
+.trump-selection.disabled h4 {
+  color: #c4c4c4;
+}
+
+.trump-options {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.trump-option {
+  width: 50px;
+  height: 50px;
+  font-size: 28px;
+  background: white;
+  border: 3px solid #ddd;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.trump-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  background: #f5f5f5;
+}
+
+.trump-option:disabled:hover {
+  transform: none;
+  border-color: #ddd;
+}
+
+.trump-option.red {
+  color: #dc3545;
+}
+
+.trump-option.black {
+  color: #333;
+}
+
+.trump-option:not(:disabled):hover {
+  transform: scale(1.1);
+  border-color: #667eea;
+}
+
+.trump-option.selected {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white !important;
+  border-color: #667eea;
+  transform: scale(1.1);
+}
+
+.trump-option.selected:disabled {
+  opacity: 0.6;
+}
+
+.declare-button {
+  padding: 12px 30px;
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.declare-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
+}
+
+/* Waiting message for non-declarers */
+.waiting-for-declarer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 20px 30px;
+  border-radius: 15px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+}
+
+.waiting-for-declarer span {
+  color: #666;
+  font-size: 16px;
+  font-style: italic;
+}

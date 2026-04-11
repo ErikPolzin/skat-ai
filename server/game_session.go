@@ -340,7 +340,7 @@ func (r *GameSession) processAgentTurn(player *Player) {
 // processAgentBid handles an AI agent's bidding turn
 func (r *GameSession) processAgentBid(player *Player) {
 	// Add delay before AI makes bid (1 second)
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	// Get valid bids with lock
 	r.mutex.Lock()
@@ -434,7 +434,7 @@ func (r *GameSession) HandleMove(playerID string, card game.Card) error {
 		trickWinner := r.getPlayerByPosition(r.GameState.TrickWinner)
 		log.Printf("Player %s won the trick", trickWinner.Name)
 		// Trick was completed, broadcast using state diff
-		r.broadcastStateChange("trick_complete", "", map[string]interface{}{
+		r.broadcastStateChange("trick_complete", trickWinner.ID, map[string]interface{}{
 			"winner": r.GameState.TrickWinner,
 		})
 	}

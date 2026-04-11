@@ -18,6 +18,14 @@ export default function Card({
   className?: string;
 } & Omit<HTMLMotionProps<"div">, "className">) {
   const faceDown = !(rank && suit);
+  const [hasDealt, setHasDealt] = React.useState(false);
+
+  React.useEffect(() => {
+    // Mark as dealt after initial animation
+    const timer = setTimeout(() => setHasDealt(true), (index * 0.1 + 0.5) * 1000);
+    return () => clearTimeout(timer);
+  }, [index]);
+
   return (
     <motion.div
       {...props}
@@ -27,6 +35,18 @@ export default function Card({
         rotateY: {
           duration: 0.6,
           delay: index * 0.05, // Stagger the flip
+        },
+        x: {
+          type: "spring",
+          damping: 20,
+          stiffness: 100,
+          delay: hasDealt ? 0 : index * 0.1, // Only stagger initial deal
+        },
+        y: {
+          type: "spring",
+          damping: 20,
+          stiffness: 100,
+          delay: hasDealt ? 0 : index * 0.1, // Only stagger initial deal
         },
         ...props.transition,
       }}

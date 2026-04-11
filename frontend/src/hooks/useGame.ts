@@ -123,12 +123,9 @@ export function useGame(
             return null;
         }
       }
-      if (position === state.declarer) {
-        return "Declarer";
-      }
       return null;
     },
-    [state.declarer, state.phase],
+    [state.phase],
   );
 
   // Fetch game state from server only when gameId changes

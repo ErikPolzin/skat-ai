@@ -39,10 +39,6 @@
 :root {
   --card-width: 70px;
   --card-height: 100px;
-  --card-width-mobile: 50px;
-  --card-height-mobile: 72px;
-  --card-width-tablet: 60px;
-  --card-height-tablet: 86px;
 }
 
 .motion-card {
@@ -227,6 +223,13 @@
 .mode-value {
   color: #667eeaa5;
   font-size: 140px;
+  font-weight: bold;
+  height: 160px;
+}
+
+.mode-title {
+  color: #667eeaa5;
+  font-size: 32px;
   font-weight: bold;
 }
 
@@ -453,15 +456,6 @@
 
 /* Tablet responsive adjustments */
 @media (max-width: 900px) {
-  .motion-card {
-    width: var(--card-width-tablet) !important;
-    height: var(--card-height-tablet) !important;
-  }
-
-  .deck .card-back {
-    width: var(--card-width-tablet);
-    height: var(--card-height-tablet);
-  }
 
   .avatar-circle {
     width: 45px;
@@ -494,16 +488,6 @@
 @media (max-width: 600px) {
   .motion-card-table {
     min-height: 500px;
-  }
-
-  .motion-card {
-    width: var(--card-width-mobile) !important;
-    height: var(--card-height-mobile) !important;
-  }
-
-  .deck .card-back {
-    width: var(--card-width-mobile);
-    height: var(--card-height-mobile);
   }
 
   .deal-button {

@@ -249,12 +249,7 @@ func (r *GameSession) generateActionDescription(actionType string, playerName st
 		}
 		return "Played"
 	case "trick_complete":
-		if winner, ok := data["winner"].(game.GamePosition); ok {
-			if winnerPlayer := r.getPlayerByPosition(winner); winnerPlayer != nil {
-				return winnerPlayer.Name + " won the trick"
-			}
-		}
-		return "Trick complete"
+		return "Won the trick"
 	case "game_complete":
 		if won, ok := data["declarer_won"].(bool); ok {
 			if won {

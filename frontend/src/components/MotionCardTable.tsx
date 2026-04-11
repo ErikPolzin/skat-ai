@@ -10,6 +10,43 @@ import { GameLobbyWaiting } from "./GameLobbyWaiting";
 import { BiddingControls } from "./BiddingControls";
 import { SkatExchange } from "./SkatExchange";
 
+// Helper function to convert suit emoji to word
+function getSuitName(suitEmoji?: string): string {
+  if (!suitEmoji) return "";
+
+  switch (suitEmoji) {
+    case "♠":
+      return "Spades";
+    case "♥":
+      return "Hearts";
+    case "♦":
+      return "Diamonds";
+    case "♣":
+      return "Clubs";
+    default:
+      return suitEmoji;
+  }
+}
+
+// Helper function to format game mode display
+function getGameModeDisplay(gameMode: string, trumpSuit?: string): string {
+  switch (gameMode.toLowerCase()) {
+    case "null":
+      return "Null";
+    case "grand":
+      return "Grand";
+    case "suit":
+      if (trumpSuit) {
+        // Convert emoji to suit name
+        const suitName = getSuitName(trumpSuit);
+        return suitName;
+      }
+      return "Suit";
+    default:
+      return gameMode;
+  }
+}
+
 export function MotionCardTable() {
   const game = useGameContext();
   const theme = useTheme();
@@ -34,6 +71,10 @@ export function MotionCardTable() {
   const showDeck = game.phase === "dealing";
   const showDealButton = game.phase === "dealing" && game.isDealer;
 
+  // Card dimensions - single source of truth
+  const CARD_HEIGHT = isMobile ? 90 : isTablet ? 100 : 110;
+  const CARD_WIDTH = CARD_HEIGHT * (5 / 7);
+
   // Responsive card dimensions and spacing
   const getCardSpacing = () => {
     if (isMobile) return 25; // Increased overlap on mobile
@@ -41,25 +82,26 @@ export function MotionCardTable() {
     return 40;
   };
 
+  const getCardPadding = () => {
+    if (isMobile) return 50; // Decreased padding on mobile
+    if (isTablet) return 75;
+    return 100;
+  };
+
   // Unified pile positioning function - returns center position for both CSS and animations
   const getPileAbsolutePosition = (isPlayer: boolean) => {
     // Distance from edges
-    const edgeOffset = isMobile ? 120 : isTablet ? 100 : 80;
-    const rightOffset = isMobile ? 10 : 25;
-
-    // Pile dimensions
-    const pileWidth = 90;
-    const pileHeight = 140;
+    const rightOffset = isMobile ? 10 : 100;
 
     // Calculate CENTER position of pile relative to table center
     // X: distance from right edge to pile center
-    const x = (tableSize.width / 2) - rightOffset - (pileWidth / 2);
+    const x = tableSize.width / 2 - rightOffset - CARD_WIDTH / 2;
     // Y: distance from top/bottom edge to pile center
-    const y = (tableSize.height / 2) - edgeOffset - (pileHeight / 2);
+    const y = tableSize.height / 2 - getCardPadding() - CARD_HEIGHT / 2;
 
     return {
       x: x,
-      y: isPlayer ? y : -y,  // Positive for bottom (player), negative for top (opponent)
+      y: isPlayer ? y : -y, // Positive for bottom (player), negative for top (opponent)
     };
   };
 
@@ -118,20 +160,11 @@ export function MotionCardTable() {
     const spacing = getCardSpacing();
     const totalWidth = total * spacing;
     const startX = -totalWidth / 2;
-
-    // Base y position
-    let yPosition = 200;
-
-    // Adjust y position for mobile - bring cards closer to center
-    if (isMobile) {
-      yPosition = 200;
-    } else if (isTablet) {
-      yPosition = 200;
-    }
+    const yPosition = tableSize.height / 2 - CARD_HEIGHT / 2;
 
     return {
       x: startX + index * spacing + spacing / 2,
-      y: yPosition,
+      y: yPosition - getCardPadding(),
       rotate: 0,
       scale: 1,
     };
@@ -145,34 +178,23 @@ export function MotionCardTable() {
   ) => {
     const spacing = getCardSpacing();
     const totalWidth = total * spacing;
-    const startOffset = -totalWidth / 2;
-
-    // Base positions
-    let topY = -200;
-    let leftX = -350;
-
-    // Adjust positions for mobile - bring cards closer to center
-    if (isMobile) {
-      topY = -200;
-      leftX = -110;
-    } else if (isTablet) {
-      topY = -200;
-      leftX = -270;
-    }
+    const totalHeight = total * spacing;
 
     if (opponent === "top") {
+      const startX = -totalWidth / 2;
+      const yPosition = -tableSize.height / 2 + CARD_HEIGHT / 2;
       return {
-        x: startOffset + index * spacing + spacing / 2,
-        y: topY,
+        x: startX + index * spacing + spacing / 2,
+        y: yPosition + getCardPadding(),
         rotate: 0,
         scale: 1,
       };
     } else {
       // For left opponent, calculate vertical centering
-      const totalHeight = total * spacing;
       const startY = -totalHeight / 2;
+      const xPosition = -tableSize.width / 2 + CARD_HEIGHT / 2;
       return {
-        x: leftX,
+        x: xPosition + getCardPadding(),
         y: startY + index * spacing + spacing / 2,
         rotate: 90,
         scale: 1,
@@ -190,7 +212,7 @@ export function MotionCardTable() {
 
   // Get game.trick position for a card
   const getTrickPosition = (index: number, ntricks: number) => {
-    const spacing = isMobile ? 70 : isTablet ? 75 : 80;
+    const spacing = CARD_WIDTH + 10;
     return {
       x: index * spacing - ntricks * spacing * 0.5 + spacing / 2,
       y: 0,
@@ -198,7 +220,6 @@ export function MotionCardTable() {
       scale: 1,
     };
   };
-
 
   // Determine who is partnered with whom
   const playerIsDeclarer = game.isDeclarer;
@@ -308,8 +329,14 @@ export function MotionCardTable() {
     [sortedPlayerHand],
   );
 
+  // CSS variable overrides - use the card dimensions as source of truth
+  const cardTableStyle = {
+    "--card-width": `${CARD_WIDTH}px`,
+    "--card-height": `${CARD_HEIGHT}px`,
+  } as React.CSSProperties;
+
   return (
-    <div className="motion-card-table">
+    <div className="motion-card-table" style={cardTableStyle}>
       <div className="table-surface">
         {/* Center UI: Lobby, Bidding, Skat Exchange, Game Mode Selection, or Game Mode Display */}
         {game.isInLobby ? (
@@ -330,6 +357,9 @@ export function MotionCardTable() {
         ) : game.gameMode ? (
           <div className="game-mode-display">
             <span className="mode-value">{game.trumpSuit}</span>
+            <span className="mode-title">
+              {getGameModeDisplay(game.gameMode, game.trumpSuit)}
+            </span>
           </div>
         ) : null}
 
@@ -597,9 +627,9 @@ export function MotionCardTable() {
             <div
               className={`score-pile-label player-pile`}
               style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
+                position: "absolute",
+                left: "50%",
+                top: "50%",
                 transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), calc(-50% + ${getPileAbsolutePosition(true).y}px))`,
               }}
             >
@@ -616,9 +646,9 @@ export function MotionCardTable() {
             <div
               className={`score-pile-label opponent-pile`}
               style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
+                position: "absolute",
+                left: "50%",
+                top: "50%",
                 transform: `translate(calc(-50% + ${getPileAbsolutePosition(false).x}px), calc(-50% + ${getPileAbsolutePosition(false).y}px))`,
               }}
             >

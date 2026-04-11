@@ -94,3 +94,14 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.everyone-passed-notice {
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 8px;
+  padding: 10px 15px;
+  margin: 0 0 20px 0;
+  color: #ffc107;
+  font-size: 14px;
+  font-weight: 500;
+}

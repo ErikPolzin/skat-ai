@@ -7,6 +7,9 @@ export function GameModeSelector() {
   const [selectedMode, setSelectedMode] = useState<string>("suit");
   const [selectedTrump, setSelectedTrump] = useState<string>("♣");
 
+  // Check if everyone passed (minimum bid of 18 was assigned)
+  const everyonePassed = game.bidValue === 18;
+
   const handleDeclare = () => {
     game.controls.declareGame(
       selectedMode,
@@ -16,6 +19,11 @@ export function GameModeSelector() {
 
   return (
     <div className="game-mode-selector">
+      {everyonePassed && (
+        <div className="everyone-passed-notice">
+          All players passed. As dealer, you must declare with minimum bid of 18.
+        </div>
+      )}
       <div
         className={`trump-selection ${selectedMode !== "suit" ? "disabled" : ""}`}
       >

@@ -15,11 +15,19 @@ export function SkatExchange({
 }: SkatExchangeProps) {
   const game = useGameContext();
 
+  // Check if everyone passed (minimum bid of 18 was assigned)
+  const everyonePassed = game.bidValue === 18 && game.isDeclarer;
+
   if (!game.hasPickedUpSkat) {
     return (
       <div className="skat-exchange">
         <div className="skat-preview">
           <h3>Skat Decision</h3>
+          {everyonePassed && (
+            <p className="everyone-passed-notice">
+              All players passed. As dealer, you must declare with minimum bid of 18.
+            </p>
+          )}
           <div className="skat-cards">
             {Array.from({ length: 2 }).map((card, index) => (
               <Card

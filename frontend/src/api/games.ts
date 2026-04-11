@@ -59,6 +59,26 @@ export async function createGame(): Promise<{ game_id: string; code: string }> {
   return response.json();
 }
 
+export async function createOrRetrieveProfile(
+  playerName: string,
+  playerId?: string,
+): Promise<{ player_id: string; player_name: string }> {
+  const response = await fetch(`${getApiUrl()}/api/profiles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      player_name: playerName,
+      ...(playerId && { player_id: playerId }),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to create/retrieve profile");
+  }
+
+  return response.json();
+}
+
 export async function joinGame(
   gameId: string,
   playerName: string,

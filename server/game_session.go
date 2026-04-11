@@ -430,9 +430,9 @@ func (r *GameSession) HandleMove(playerID string, card game.Card) error {
 	if len(r.GameState.Trick) == 3 {
 		// Add delay after trick completion before next trick
 		time.Sleep(2 * time.Second)
+		r.GameState.ResolveTrick()
 		trickWinner := r.getPlayerByPosition(r.GameState.TrickWinner)
 		log.Printf("Player %s won the trick", trickWinner.Name)
-		r.GameState.ResolveTrick()
 		// Trick was completed, broadcast using state diff
 		r.broadcastStateChange("trick_complete", "", map[string]interface{}{
 			"winner": r.GameState.TrickWinner,

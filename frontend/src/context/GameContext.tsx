@@ -10,7 +10,7 @@ import { useParams } from "react-router-dom";
 import { useProfileStore } from "../stores/profileStore";
 import { useWebSocketContext } from "./WebSocketContext";
 import { GameControls, useControls } from "../hooks/useControls";
-import { Message } from "../types";
+import { Message, Player } from "../types";
 
 const GameContext = createContext<
   | (Game & {
@@ -37,15 +37,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (message.data.diff) {
           const diff = message.data.diff;
 
-          // Show the action description in the message log
+          // Apply all state changes at once first
+          setGameState(diff.changes || {});
+
+          // Show the action description in the message log AFTER state is updated
           if (diff.description && diff.description.trim() !== "") {
             // Find player position from player_id in the diff
             let playerPosition: number | undefined;
             if (diff.player_id) {
-              // Get the current players from the game state
-              const currentPlayers = game.players;
-              const player = currentPlayers.find(
-                (p) => p?.player_id === diff.player_id,
+              // Get the updated players from the game state
+              const updatedPlayers = diff.changes?.players || game.players;
+              const player = updatedPlayers.find(
+                (p: Player | undefined) => p?.player_id === diff.player_id,
               );
               if (player) {
                 playerPosition = player.position;
@@ -53,9 +56,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
             }
             addMessage(diff.description, false, playerPosition);
           }
-
-          // Apply all state changes at once
-          setGameState(diff.changes || {});
         }
         break;
       case "error":

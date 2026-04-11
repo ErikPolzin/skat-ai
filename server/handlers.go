@@ -31,6 +31,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/games/{id}/join", s.handleJoinGame).Methods("POST")
 	api.HandleFunc("/games/{id}/agents", s.handleAddAgent).Methods("POST")
 	api.HandleFunc("/games/{id}/start", s.handleStartGame).Methods("POST")
+	api.HandleFunc("/profiles", s.handleCreateProfile).Methods("POST")
 	api.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
 
 	// Serve React build files (must be last - catch-all)
@@ -115,6 +116,63 @@ func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(game.GetInfo(playerID))
+}
+
+// handleCreateProfile creates or retrieves a player profile
+func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PlayerName string `json:"player_name"`
+		PlayerID   string `json:"player_id,omitempty"` // Optional, for existing profiles
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	playerID := req.PlayerID
+	playerName := req.PlayerName
+
+	// If no player ID provided, generate a new one
+	if playerID == "" {
+		playerID = uuid.New().String()
+		log.Printf("Creating new profile: %s for %s", playerID, playerName)
+
+		// Store the new profile if database is available
+		if s.db != nil {
+			if err := s.db.SetPlayerProfile(playerID, playerName); err != nil {
+				log.Printf("Failed to store player profile: %v", err)
+			}
+		}
+	} else {
+		// Existing player ID - retrieve or update name
+		if s.db != nil {
+			if storedName, err := s.db.GetPlayerProfile(playerID); err == nil {
+				// Profile exists, optionally update name if different
+				if storedName != playerName && playerName != "" {
+					if err := s.db.SetPlayerProfile(playerID, playerName); err != nil {
+						log.Printf("Failed to update player profile: %v", err)
+					}
+				} else if storedName != "" {
+					// Use the stored name if no new name provided
+					playerName = storedName
+				}
+				log.Printf("Retrieved profile: %s (%s)", playerID, playerName)
+			} else {
+				// Profile doesn't exist, create it
+				if err := s.db.SetPlayerProfile(playerID, playerName); err != nil {
+					log.Printf("Failed to store player profile: %v", err)
+				}
+				log.Printf("Created profile for existing ID: %s (%s)", playerID, playerName)
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"player_id":   playerID,
+		"player_name": playerName,
+	})
 }
 
 // handleJoinGame adds a human player to a game

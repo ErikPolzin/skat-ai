@@ -128,10 +128,12 @@ func (r *GameSession) broadcastStateChange(actionType string, playerID string, a
 		changes["trick"] = []map[string]interface{}{} // Empty trick
 		changes["current_player"] = r.GameState.CurrentPlayer
 		changes["declarer_score"] = r.GameState.DeclarerScore
+		changes["opponent_score"] = r.GameState.OpponentScore
 
 	case "game_complete":
 		changes["phase"] = "complete"
 		changes["declarer_score"] = r.GameState.DeclarerScore
+		changes["opponent_score"] = r.GameState.OpponentScore
 		changes["game_over"] = true
 		if val, ok := additionalData["declarer_won"]; ok {
 			changes["declarer_won"] = val

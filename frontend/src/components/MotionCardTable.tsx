@@ -413,7 +413,7 @@ export function MotionCardTable() {
             );
             const canClickCard =
               (game.phase === "playing" && game.isMyTurn) ||
-              (game.isSkatExchange && game.hasPickedUpSkat && !selected);
+              (game.isSkatExchange && game.hasPickedUpSkat);
 
             return (
               <Card

@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
+import {
+  Box,
+  Typography,
+  CircularProgress,
+  FormControlLabel,
+  Checkbox,
+  Chip,
+  Paper,
+} from "@mui/material";
 import { getPlayerGameHistory, type GameHistoryEntry } from "../api/games";
-import "./GameHistory.css";
 
 interface GameHistoryProps {
   playerId: string | null;
@@ -44,10 +52,9 @@ export function GameHistory({ playerId }: GameHistoryProps) {
 
   if (loading) {
     return (
-      <div className="game-history">
-        <h3>Recent Games</h3>
-        <div className="loading">Loading history...</div>
-      </div>
+      <Box sx={{ textAlign: "center", py: 2 }}>
+        <CircularProgress size={30} />
+      </Box>
     );
   }
 
@@ -75,62 +82,84 @@ export function GameHistory({ playerId }: GameHistoryProps) {
 
   if (!history || history.length === 0) {
     return (
-      <div className="game-history">
-        <h3>Recent Games</h3>
-        <div className="no-history">No games played yet</div>
-      </div>
+      <Typography color="text.secondary" align="center" sx={{ py: 2 }}>
+        No games played yet
+      </Typography>
     );
   }
 
   return (
-    <div className="game-history">
-      <div className="history-header">
-        <h3>Recent Games</h3>
-        <div className="history-filter">
-          <label className="filter-toggle">
-            <input
-              type="checkbox"
+    <Box>
+      <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
+        <FormControlLabel
+          control={
+            <Checkbox
               checked={showAIGames}
               onChange={(e) => setShowAIGames(e.target.checked)}
             />
-            <span>Show AI Games</span>
-          </label>
-        </div>
-      </div>
+          }
+          label="Show AI Games"
+        />
+      </Box>
 
       {filteredHistory.length === 0 ? (
-        <div className="no-history">No {!showAIGames ? "human" : ""} games found</div>
+        <Typography color="text.secondary" align="center" sx={{ py: 2 }}>
+          No {!showAIGames ? "human" : ""} games found
+        </Typography>
       ) : (
-        <div className="history-list">
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {filteredHistory.map((entry, index) => (
-            <div
+            <Paper
               key={`${entry.game_id}-${index}`}
-              className={`history-entry ${entry.is_winner ? "winner" : "loser"} ${entry.vs_ai ? "vs-ai" : "vs-human"}`}
+              sx={{
+                p: 2,
+                border: 2,
+                borderColor: entry.is_winner ? "success.light" : "error.light",
+                backgroundColor: entry.is_winner
+                  ? "rgba(76, 175, 80, 0.05)"
+                  : "rgba(244, 67, 54, 0.05)",
+              }}
             >
-              <div className="entry-header">
-                <span className="game-code">{entry.game_code || entry.game_id.slice(0, 8)}</span>
-                {entry.vs_ai && <span className="ai-badge">vs AI</span>}
-                <span className="game-date">{formatDate(entry.finished_at)}</span>
-              </div>
+              <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
+                <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: "bold" }}>
+                    {entry.game_code || entry.game_id.slice(0, 8)}
+                  </Typography>
+                  {entry.vs_ai && (
+                    <Chip label="vs AI" size="small" color="info" />
+                  )}
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                  {formatDate(entry.finished_at)}
+                </Typography>
+              </Box>
 
-              <div className="opponents-line">
+              <Typography variant="body2" sx={{ mb: 1 }}>
                 vs {formatOpponents(entry.opponent_names || [])}
-              </div>
+              </Typography>
 
-              <div className="entry-details">
-                <div className="game-mode">{entry.game_mode}</div>
-                <div className="game-role">
-                  {entry.is_declarer ? "Declarer" : "Defender"}
-                </div>
-                <div className="game-score">Score: {entry.final_score}</div>
-              </div>
-              <div className={`game-result ${entry.is_winner ? "win" : "loss"}`}>
-                {entry.is_winner ? "Victory" : "Defeat"}
-              </div>
-            </div>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <Box sx={{ display: "flex", gap: 2 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {entry.game_mode}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {entry.is_declarer ? "Declarer" : "Defender"}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Score: {entry.final_score}
+                  </Typography>
+                </Box>
+                <Chip
+                  label={entry.is_winner ? "Victory" : "Defeat"}
+                  color={entry.is_winner ? "success" : "error"}
+                  size="small"
+                />
+              </Box>
+            </Paper>
           ))}
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }

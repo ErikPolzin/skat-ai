@@ -15,7 +15,7 @@ export function BiddingControls() {
     ];
 
     // If no bid has been made yet, start at minimum (18)
-    const currentBid = game.declarerScore || 0;
+    const currentBid = game.bidValue || 0;
 
     // Find the next bid value
     for (const bid of validBids) {
@@ -34,11 +34,10 @@ export function BiddingControls() {
     );
   }
 
-
   return (
     <div className="bidding-controls">
       <div className="bid-info">
-        <span className="current-bid">Current: {game.declarerScore || "None"}</span>
+        <span className="current-bid">Current: {game.bidValue}</span>
       </div>
 
       <div className="bid-buttons">

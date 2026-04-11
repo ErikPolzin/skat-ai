@@ -441,11 +441,11 @@ func (d *Database) SaveGameHistory(gameID, gameCode string, players []GameHistor
 func (d *Database) GetPlayerGameHistory(playerID string, limit int) ([]GameHistoryEntry, error) {
 	rows, err := d.DB.Query(`
 		SELECT game_id, game_code, player_id, player_name, is_winner, is_declarer, final_score, game_mode,
-		       opponent_names, vs_ai, to_char(finished_at, 'YYYY-MM-DD HH24:MI:SS') as finished_at
+		       opponent_names, vs_ai, datetime(finished_at) as finished_at_ts
 		FROM game_history
-		WHERE player_id = $1
+		WHERE player_id = ?
 		ORDER BY finished_at DESC
-		LIMIT $2
+		LIMIT ?
 	`, playerID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get game history: %w", err)

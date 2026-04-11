@@ -24,7 +24,7 @@ type GameSession struct {
 
 // Player represents a player in the game
 type Player struct {
-	ID       string            // Can be profile ID for humans or agent_X for AI
+	ID       string // Can be profile ID for humans or agent_X for AI
 	Name     string
 	Agent    agent.Agent       // Can be nil for human players
 	Position game.GamePosition // 0, 1, or 2
@@ -858,6 +858,23 @@ func (r *GameSession) GetPlayersInfo() []*PlayerInfo {
 		}
 	}
 	return players
+}
+
+func (r *GameSession) GetPlayerInfo(position game.GamePosition) *PlayerInfo {
+	player := r.getPlayerByPosition(position)
+	if player != nil {
+		info := PlayerInfo{
+			PlayerID: player.ID,
+			Name:     player.Name,
+			Position: player.Position,
+			IsAgent:  player.Agent != nil,
+		}
+		if r.GameState != nil && player.Position < 3 && r.GameState.Players[player.Position] != nil {
+			info.CardCount = len(r.GameState.Players[player.Position].Hand)
+		}
+		return &info
+	}
+	return nil
 }
 
 // getPlayerByPosition returns the player at the given position

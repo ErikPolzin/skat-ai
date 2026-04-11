@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { useMediaQuery, useTheme } from "@mui/material";
 import { Card as CardType } from "../api/games";
 import "./MotionCardTable.css";
 import { useGameContext } from "../context/GameContext";
@@ -11,6 +12,9 @@ import { SkatExchange } from "./SkatExchange";
 
 export function MotionCardTable() {
   const game = useGameContext();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
 
   const [selectedCards, setSelectedCards] = useState<CardType[]>([]);
 
@@ -20,8 +24,44 @@ export function MotionCardTable() {
     height: window.innerHeight,
   });
 
+  // Calculate table size based on window size
+  // This matches the CSS table-surface dimensions
+  const tableSize = {
+    width: isMobile ? windowSize.width : Math.min(1000, windowSize.width - 24),
+    height: isMobile ? windowSize.height : windowSize.height - 16,
+  };
+
   const showDeck = game.phase === "dealing";
   const showDealButton = game.phase === "dealing" && game.isDealer;
+
+  // Responsive card dimensions and spacing
+  const getCardSpacing = () => {
+    if (isMobile) return 25; // Increased overlap on mobile
+    if (isTablet) return 35;
+    return 40;
+  };
+
+  // Unified pile positioning function - returns center position for both CSS and animations
+  const getPileAbsolutePosition = (isPlayer: boolean) => {
+    // Distance from edges
+    const edgeOffset = isMobile ? 120 : isTablet ? 100 : 80;
+    const rightOffset = isMobile ? 10 : 25;
+
+    // Pile dimensions
+    const pileWidth = 90;
+    const pileHeight = 140;
+
+    // Calculate CENTER position of pile relative to table center
+    // X: distance from right edge to pile center
+    const x = (tableSize.width / 2) - rightOffset - (pileWidth / 2);
+    // Y: distance from top/bottom edge to pile center
+    const y = (tableSize.height / 2) - edgeOffset - (pileHeight / 2);
+
+    return {
+      x: x,
+      y: isPlayer ? y : -y,  // Positive for bottom (player), negative for top (opponent)
+    };
+  };
 
   // Update window size on resize
   useEffect(() => {
@@ -75,16 +115,23 @@ export function MotionCardTable() {
 
   // Calculate card positions for player hand
   const getPlayerCardPosition = (index: number, total: number) => {
-    const spacing = 40;
+    const spacing = getCardSpacing();
     const totalWidth = total * spacing;
     const startX = -totalWidth / 2;
 
-    // Shift cards further down when declaring game to make room for selector
-    const yPosition = game.isDeclarerChoice ? 220 : 180;
+    // Base y position
+    let yPosition = 200;
+
+    // Adjust y position for mobile - bring cards closer to center
+    if (isMobile) {
+      yPosition = 200;
+    } else if (isTablet) {
+      yPosition = 200;
+    }
 
     return {
-      x: startX + index * spacing + 20,
-      y: yPosition, // Position cards at reasonable distance from center
+      x: startX + index * spacing + spacing / 2,
+      y: yPosition,
       rotate: 0,
       scale: 1,
     };
@@ -96,30 +143,39 @@ export function MotionCardTable() {
     index: number,
     total: number,
   ) => {
-    const spacing = 40; // More spacing for better visibility
+    const spacing = getCardSpacing();
     const totalWidth = total * spacing;
     const startOffset = -totalWidth / 2;
 
-    // Shift cards outward when declaring game
-    const topY = game.isDeclarerChoice ? -250 : -220;
-    const leftX = game.isDeclarerChoice ? -380 : -350;
+    // Base positions
+    let topY = -200;
+    let leftX = -350;
+
+    // Adjust positions for mobile - bring cards closer to center
+    if (isMobile) {
+      topY = -200;
+      leftX = -110;
+    } else if (isTablet) {
+      topY = -200;
+      leftX = -270;
+    }
 
     if (opponent === "top") {
       return {
-        x: startOffset + index * spacing + 20,
-        y: topY, // Symmetrical distance from center
+        x: startOffset + index * spacing + spacing / 2,
+        y: topY,
         rotate: 0,
-        scale: 1, // Same size as player cards
+        scale: 1,
       };
     } else {
       // For left opponent, calculate vertical centering
       const totalHeight = total * spacing;
       const startY = -totalHeight / 2;
       return {
-        x: leftX, // Symmetrical distance from center
-        y: startY + index * spacing + 20,
+        x: leftX,
+        y: startY + index * spacing + spacing / 2,
         rotate: 90,
-        scale: 1, // Same size as player cards
+        scale: 1,
       };
     }
   };
@@ -133,52 +189,30 @@ export function MotionCardTable() {
   });
 
   // Get game.trick position for a card
-  const getTrickPosition = (index: number, ntricks: number) => ({
-    x: index * 80 - ntricks * 80 * 0.5 + 40,
-    y: 0,
-    rotate: 0,
-    scale: 1,
-  });
+  const getTrickPosition = (index: number, ntricks: number) => {
+    const spacing = isMobile ? 70 : isTablet ? 75 : 80;
+    return {
+      x: index * spacing - ntricks * spacing * 0.5 + spacing / 2,
+      y: 0,
+      rotate: 0,
+      scale: 1,
+    };
+  };
 
-  // Calculate pile positions based on table size
-  // Using percentages of viewport size for responsive positioning
-  const tableWidth = Math.min(1000, windowSize.width - 24); // Match table max-width
-  const tableHeight = windowSize.height - 16; // Match table height calculation
-
-  // Position piles at corners with some padding
-  const pileOffsetX = tableWidth * 0.5 - 35 - 35;
-  const pileOffsetY = tableHeight * 0.5 - 30 - 50;
 
   // Determine who is partnered with whom
   const playerIsDeclarer = game.isDeclarer;
-  const leftOpponentIsDeclarer = game.declarer === game.leftPlayer;
 
-  // Get position for player's score pile based on partnerships
+  // Get position for player's score pile - always bottom right
   const getPlayerPilePosition = () => {
-    if (playerIsDeclarer) {
-      // Player is declarer - pile at bottom right
-      return { x: pileOffsetX, y: pileOffsetY, rotate: 0, scale: 1 };
-    } else if (leftOpponentIsDeclarer) {
-      // Playing with top opponent against left - pile at bottom left
-      return { x: -pileOffsetX, y: pileOffsetY, rotate: 0, scale: 1 };
-    } else {
-      // Playing with left opponent against top - pile at middle right
-      return { x: pileOffsetX, y: 0, rotate: 0, scale: 1 };
-    }
+    const pos = getPileAbsolutePosition(true);
+    return { x: pos.x, y: pos.y, rotate: 0, scale: 1 };
   };
 
-  // Get position for opponent's score pile based on partnerships
+  // Get position for opponent's score pile - always top right
   const getOpponentPilePosition = () => {
-    if (playerIsDeclarer) {
-      // Player is declarer - opponents' pile at top left
-      return { x: -pileOffsetX, y: -(pileOffsetY - 30), rotate: 0, scale: 1 };
-    } else if (leftOpponentIsDeclarer) {
-      // Left opponent is declarer - their pile at top right
-      return { x: pileOffsetX, y: -(pileOffsetY - 30), rotate: 0, scale: 1 };
-    } else {
-      // Top opponent is declarer - their pile at top left
-      return { x: -pileOffsetX, y: -(pileOffsetY - 30), rotate: 0, scale: 1 };
-    }
+    const pos = getPileAbsolutePosition(false);
+    return { x: pos.x, y: pos.y, rotate: 0, scale: 1 };
   };
 
   const topOpponentCardsMap = <T,>(fn: (index: number, key: string) => T) =>
@@ -302,13 +336,16 @@ export function MotionCardTable() {
         {/* Top Opponent Avatar */}
         {game.topPlayer && (
           <div
-            className={`opponent-avatar-container top ${game.topPlayer.position === game.currentPlayer ? "current-turn" : ""}`}
+            className={`opponent-avatar-container top ${game.topPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
             <div className="avatar-circle">
               <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
             </div>
-            <div className="opponent-name">{game.topPlayer.name}</div>
-            {game.getRole(game.topPlayer.position) && (
+            <div className="opponent-name">
+              {game.topPlayer.name}
+              {isMobile && game.declarer === game.topPlayer && " (D)"}
+            </div>
+            {!isMobile && game.getRole(game.topPlayer.position) && (
               <div className="player-role">
                 {game.getRole(game.topPlayer.position)}
               </div>
@@ -328,13 +365,16 @@ export function MotionCardTable() {
         {/* Left Opponent Avatar */}
         {game.leftPlayer && (
           <div
-            className={`opponent-avatar-container left ${game.leftPlayer.position === game.currentPlayer ? "current-turn" : ""}`}
+            className={`opponent-avatar-container left ${game.leftPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
             <div className="avatar-circle">
               <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
             </div>
-            <div className="opponent-name">{game.leftPlayer.name}</div>
-            {game.getRole(game.leftPlayer.position) && (
+            <div className="opponent-name">
+              {game.leftPlayer.name}
+              {isMobile && game.declarer === game.leftPlayer && " (D)"}
+            </div>
+            {!isMobile && game.getRole(game.leftPlayer.position) && (
               <div className="player-role">
                 {game.getRole(game.leftPlayer.position)}
               </div>
@@ -353,13 +393,16 @@ export function MotionCardTable() {
 
         {/* Player Avatar */}
         <div
-          className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""}`}
+          className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
         >
           <div className="avatar-circle">
             <span>{game.playerName.charAt(0).toUpperCase()}</span>
           </div>
-          <div className="player-name">{game.playerName}</div>
-          {game.getRole(game.playerPosition) && (
+          <div className="player-name">
+            {game.playerName}
+            {isMobile && game.isDeclarer && " (D)"}
+          </div>
+          {!isMobile && game.getRole(game.playerPosition) && (
             <div className="player-role">
               {game.getRole(game.playerPosition)}
             </div>
@@ -415,6 +458,12 @@ export function MotionCardTable() {
               (game.phase === "playing" && game.isMyTurn) ||
               (game.isSkatExchange && game.hasPickedUpSkat);
 
+            // Apply declarer choice offset
+            const declarerOffset = game.isDeclarerChoice ? 40 : 0;
+            const animatePosition = selected
+              ? { ...basePosition, y: basePosition.y + declarerOffset - 20 }
+              : { ...basePosition, y: basePosition.y + declarerOffset };
+
             return (
               <Card
                 index={index}
@@ -422,14 +471,12 @@ export function MotionCardTable() {
                 suit={card.suit}
                 key={playerKeys[index]}
                 className={`motion-card ${selected ? "selected" : ""}`}
-                animate={
-                  selected
-                    ? { ...basePosition, y: basePosition.y - 20 }
-                    : { ...basePosition }
-                }
+                animate={animatePosition}
                 initial={{ ...getDeckPosition() }}
                 whileHover={
-                  canClickCard ? { y: basePosition.y - 20 } : undefined
+                  canClickCard
+                    ? { y: basePosition.y + declarerOffset - 20 }
+                    : undefined
                 }
                 onClick={() => {
                   canClickCard && handlePlayCard(card);
@@ -447,44 +494,58 @@ export function MotionCardTable() {
           })}
 
           {/* Opponent Cards - Top */}
-          {topOpponentCardsMap((index, key) => (
-            <Card
-              index={index}
-              key={key}
-              className="motion-card opponent-card"
-              animate={{
-                ...getOpponentCardPosition(
-                  "top",
-                  index,
-                  game.topPlayer?.card_count ?? 0,
-                ),
-              }}
-              initial={{ ...getDeckPosition() }}
-              style={{
-                zIndex: 50 + index,
-              }}
-            />
-          ))}
+          {topOpponentCardsMap((index, key) => {
+            const basePosition = getOpponentCardPosition(
+              "top",
+              index,
+              game.topPlayer?.card_count ?? 0,
+            );
+            // Apply declarer choice offset - move cards up when choosing
+            const declarerOffset = game.isDeclarerChoice ? -40 : 0;
+
+            return (
+              <Card
+                index={index}
+                key={key}
+                className="motion-card opponent-card"
+                animate={{
+                  ...basePosition,
+                  y: basePosition.y + declarerOffset,
+                }}
+                initial={{ ...getDeckPosition() }}
+                style={{
+                  zIndex: 50 + index,
+                }}
+              />
+            );
+          })}
 
           {/* Opponent Cards - Left */}
-          {leftOpponentCardsMap((index, key) => (
-            <Card
-              index={index}
-              key={key}
-              className="motion-card opponent-card"
-              animate={{
-                ...getOpponentCardPosition(
-                  "left",
-                  index,
-                  game.leftPlayer?.card_count ?? 0,
-                ),
-              }}
-              initial={{ ...getDeckPosition() }}
-              style={{
-                zIndex: 50 + index,
-              }}
-            />
-          ))}
+          {leftOpponentCardsMap((index, key) => {
+            const basePosition = getOpponentCardPosition(
+              "left",
+              index,
+              game.leftPlayer?.card_count ?? 0,
+            );
+            // Apply declarer choice offset - move cards left when choosing
+            const declarerOffset = game.isDeclarerChoice ? -30 : 0;
+
+            return (
+              <Card
+                index={index}
+                key={key}
+                className="motion-card opponent-card"
+                animate={{
+                  ...basePosition,
+                  x: basePosition.x + declarerOffset,
+                }}
+                initial={{ ...getDeckPosition() }}
+                style={{
+                  zIndex: 50 + index,
+                }}
+              />
+            );
+          })}
 
           {/* Trick Cards */}
           {game.trick.map((card, index) => (
@@ -498,33 +559,29 @@ export function MotionCardTable() {
                 ...getTrickPosition(index, game.trick.length),
               }}
               exit={(() => {
-                // When player is declarer:
-                // - Player pile (bottom right) = declarer pile
-                // - Opponent pile (top left) = defenders pile
-
-                // When player is defender:
-                // - Player pile (varies) = defenders pile
-                // - Opponent pile (varies) = declarer pile
-
+                // Determine which pile based on who won and who is declarer
                 const trickWinner = game.trickWinner;
-                const declarer = game.declarer;
+                const declarerPosition = game.declarer?.position;
 
-                if (playerIsDeclarer) {
-                  // Player is declarer
-                  if (trickWinner === declarer) {
-                    // Declarer won - go to declarer pile (player's pile at bottom right)
+                // Check if the trick winner is the declarer
+                const declarerWonTrick = trickWinner === declarerPosition;
+
+                if (declarerWonTrick) {
+                  // Declarer won - cards go to declarer's pile
+                  if (playerIsDeclarer) {
+                    // Player is declarer - go to player pile (bottom)
                     return { ...getPlayerPilePosition() };
                   } else {
-                    // Defenders won - go to defenders pile (opponent pile at top left)
+                    // Opponent is declarer - go to opponent pile (top)
                     return { ...getOpponentPilePosition() };
                   }
                 } else {
-                  // Player is defender
-                  if (trickWinner === declarer) {
-                    // Declarer won - go to declarer pile (opponent pile)
+                  // Defenders won - cards go to defenders' pile
+                  if (playerIsDeclarer) {
+                    // Player is declarer - defenders' pile is opponent pile (top)
                     return { ...getOpponentPilePosition() };
                   } else {
-                    // Defenders won - go to defenders pile (player's pile)
+                    // Player is defender - defenders' pile is player pile (bottom)
                     return { ...getPlayerPilePosition() };
                   }
                 }
@@ -536,47 +593,40 @@ export function MotionCardTable() {
         {/* Score Pile Labels - only show during playing phase when declarer is set and there are cards */}
         {game.phase === "playing" && (
           <>
-            {/* Player's team Score Label */}
+            {/* Player's team Score Label - always bottom right */}
             <div
-              className={`score-pile-label`}
+              className={`score-pile-label player-pile`}
               style={{
-                ...(() => {
-                  const pos = getPlayerPilePosition();
-                  return {
-                    left: pos.x < 0 ? "25px" : "unset",
-                    right: pos.x > 0 ? "25px" : "unset",
-                    bottom: pos.y > 0 ? "25px" : "unset",
-                    top: pos.y <= 0 ? (pos.y === 0 ? "50%" : "25px") : "unset",
-                    transform: pos.y === 0 ? "translateY(-50%)" : "none",
-                  };
-                })(),
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), calc(-50% + ${getPileAbsolutePosition(true).y}px))`,
               }}
             >
-              <span className="pile-label">
-                {playerIsDeclarer ? "Declarer" : "Defenders"}
+              <span className="pile-label">Player</span>
+              <span className="pile-subtitle">
+                {playerIsDeclarer ? "DECLARER" : "DEFENDER"}
               </span>
               <span className="pile-score">
                 {playerIsDeclarer ? game.declarerScore : game.opponentScore}
               </span>
             </div>
 
-            {/* Opponent's team Score Label */}
+            {/* Opponent's team Score Label - always top right */}
             <div
-              className={`score-pile-label`}
+              className={`score-pile-label opponent-pile`}
               style={{
-                ...(() => {
-                  const pos = getOpponentPilePosition();
-                  return {
-                    left: pos.x < 0 ? "25px" : "unset",
-                    right: pos.x > 0 ? "25px" : "unset",
-                    bottom: pos.y > 0 ? "25px" : "unset",
-                    top: pos.y <= 0 ? "25px" : "unset",
-                  };
-                })(),
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: `translate(calc(-50% + ${getPileAbsolutePosition(false).x}px), calc(-50% + ${getPileAbsolutePosition(false).y}px))`,
               }}
             >
               <span className="pile-label">
-                {playerIsDeclarer ? "Defenders" : "Declarer"}
+                {playerIsDeclarer ? "Opponents" : "Opponent"}
+              </span>
+              <span className="pile-subtitle">
+                {playerIsDeclarer ? "DEFENDERS" : "DECLARER"}
               </span>
               <span className="pile-score">
                 {playerIsDeclarer ? game.opponentScore : game.declarerScore}

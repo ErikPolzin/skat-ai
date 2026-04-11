@@ -10,8 +10,7 @@ type GameStateDiff struct {
 	Type        string                 `json:"type"`                  // The type of change (e.g., "state_update")
 	Timestamp   int64                  `json:"timestamp"`             // Unix timestamp of when the change occurred
 	Changes     map[string]interface{} `json:"changes"`               // The actual changes to the state
-	PlayerID    string                 `json:"player_id,omitempty"`   // The player who triggered the change (if applicable)
-	PlayerName  string                 `json:"player_name,omitempty"` // The name of the player who triggered the change
+	FromPlayer  *PlayerInfo            `json:"from_player,omitempty"` // The player who triggered the change (if applicable)
 	Description string                 `json:"description"`           // Human-readable description of what happened
 }
 
@@ -22,13 +21,12 @@ type GameStateBroadcast struct {
 }
 
 // createStateDiff creates a diff from the current game state after an action
-func (r *GameSession) createStateDiff(actionType string, playerID string, playerName string, description string, changes map[string]interface{}) *GameStateDiff {
+func (r *GameSession) createStateDiff(actionType string, player *PlayerInfo, description string, changes map[string]interface{}) *GameStateDiff {
 	return &GameStateDiff{
 		Type:        actionType,
 		Timestamp:   time.Now().Unix(),
 		Changes:     changes,
-		PlayerID:    playerID,
-		PlayerName:  playerName,
+		FromPlayer:  player,
 		Description: description,
 	}
 }
@@ -50,10 +48,11 @@ func (r *GameSession) broadcastStateChange(actionType string, playerID string, a
 
 	// Get player name if playerID is provided
 	playerName := ""
-	if playerID != "" {
-		if player, exists := r.Players[playerID]; exists {
-			playerName = player.Name
-		}
+	fromPlayer := r.getPlayerById(playerID)
+	var fromPlayerInfo *PlayerInfo
+	if fromPlayer != nil {
+		playerName = fromPlayer.Name
+		fromPlayerInfo = r.GetPlayerInfo(fromPlayer.Position)
 	}
 
 	// Generate human-readable description
@@ -153,7 +152,7 @@ func (r *GameSession) broadcastStateChange(actionType string, playerID string, a
 		}
 	}
 
-	diff := r.createStateDiff(actionType, playerID, playerName, description, changes)
+	diff := r.createStateDiff(actionType, fromPlayerInfo, description, changes)
 	r.broadcastStateDiff(diff)
 }
 
@@ -191,7 +190,7 @@ func (r *GameSession) sendPlayerSpecificUpdate(player *Player, actionType string
 	}
 
 	description := r.generateActionDescription(actionType, player.Name, additionalData)
-	diff := r.createStateDiff(actionType, player.ID, player.Name, description, changes)
+	diff := r.createStateDiff(actionType, nil, description, changes)
 
 	// Use ClientManager to send message
 	if r.server != nil && r.server.clients != nil {

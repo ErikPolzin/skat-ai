@@ -40,6 +40,7 @@ export function useGame(
     declarer_tricks: 0,
     skat_cards: undefined,
     has_picked_up_skat: false,
+    bid_value: undefined,
   });
 
   // Derive player info from players array
@@ -268,6 +269,7 @@ export function useGame(
     declarerScore: state.declarer_score,
     opponentScore: state.opponent_score,
     declarerPosition: state.declarer,
+    bidValue: state.bid_value,
     phase: state.phase,
     gameOver: state.game_over,
     gameMode: state.game_mode,

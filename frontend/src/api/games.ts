@@ -27,6 +27,7 @@ export interface GameState {
   declarer_tricks?: number; // For null games
   skat_cards?: Card[]; // Available during skat_exchange phase
   has_picked_up_skat?: boolean;
+  bid_value?: number;
 }
 
 export async function fetchGameState(

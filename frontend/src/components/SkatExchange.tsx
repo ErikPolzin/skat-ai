@@ -23,6 +23,7 @@ export function SkatExchange({
           <div className="skat-cards">
             {Array.from({ length: 2 }).map((card, index) => (
               <Card
+                key={index}
                 index={index}
                 animate={{ x: index * 80 - 75, y: 0 }}
                 exit={{ opacity: 0 }}

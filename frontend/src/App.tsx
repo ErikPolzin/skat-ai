@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+import { CssBaseline, Box, Container, Typography, Button, CircularProgress } from "@mui/material";
 import {
   useProfileStore,
   selectUsername,
@@ -13,6 +15,21 @@ import UsernameScreen from "./screens/UsernameScreen";
 import LobbyScreen from "./screens/LobbyScreen";
 import GameScreen from "./screens/GameScreen";
 import "./App.css";
+
+// Create MUI theme
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: "#3498db",
+    },
+    secondary: {
+      main: "#5a6c7d",
+    },
+    error: {
+      main: "#e74c3c",
+    },
+  },
+});
 
 function App() {
   const username = useProfileStore(selectUsername);
@@ -67,61 +84,93 @@ function App() {
   // Show username screen if no username or still initializing without a player ID
   if (!username || (username && !playerId && !error)) {
     return (
-      <div className="App">
-        <BrowserRouter>
-          {isInitializing ? (
-            <div className="screen">
-              <div className="container">
-                <h2>Connecting to server...</h2>
-              </div>
-            </div>
-          ) : (
-            <UsernameScreen onSubmit={handleUsernameSubmit} />
-          )}
-        </BrowserRouter>
-      </div>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box className="App">
+          <BrowserRouter>
+            {isInitializing ? (
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: "100vh"
+                }}
+              >
+                <Container maxWidth="sm">
+                  <Box sx={{ textAlign: "center" }}>
+                    <CircularProgress sx={{ mb: 2 }} />
+                    <Typography variant="h5">Connecting to server...</Typography>
+                  </Box>
+                </Container>
+              </Box>
+            ) : (
+              <UsernameScreen onSubmit={handleUsernameSubmit} />
+            )}
+          </BrowserRouter>
+        </Box>
+      </ThemeProvider>
     );
   }
 
   // Show error screen if profile creation failed
   if (error && !playerId) {
     return (
-      <div className="App">
-        <BrowserRouter>
-          <div className="screen">
-            <div className="container">
-              <h2>Connection Error</h2>
-              <p style={{ color: "red", marginBottom: "20px" }}>{error}</p>
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  setError(null);
-                  if (username) {
-                    handleUsernameSubmit(username);
-                  }
-                }}
-              >
-                Retry
-              </button>
-            </div>
-          </div>
-        </BrowserRouter>
-      </div>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box className="App">
+          <BrowserRouter>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: "100vh"
+              }}>
+              <Container maxWidth="sm">
+                <Box sx={{ textAlign: "center" }}>
+                  <Typography variant="h4" gutterBottom>
+                    Connection Error
+                  </Typography>
+                  <Typography color="error" sx={{ mb: 3 }}>
+                    {error}
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => {
+                      setError(null);
+                      if (username) {
+                        handleUsernameSubmit(username);
+                      }
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </Box>
+              </Container>
+            </Box>
+          </BrowserRouter>
+        </Box>
+      </ThemeProvider>
     );
   }
 
   return (
-    <div className="App">
-      <WebSocketProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<LobbyScreen username={username} />} />
-            <Route path="/game/:gameId" element={<GameScreen />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </WebSocketProvider>
-    </div>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Box className="App">
+        <WebSocketProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<LobbyScreen username={username} />} />
+              <Route path="/game/:gameId" element={<GameScreen />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </WebSocketProvider>
+      </Box>
+    </ThemeProvider>
   );
 }
 

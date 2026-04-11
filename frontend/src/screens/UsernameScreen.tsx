@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import './UsernameScreen.css';
+import { Box, Container, Typography, TextField, Button, Paper } from '@mui/material';
 
 interface UsernameScreenProps {
   onSubmit: (username: string) => void;
@@ -24,26 +24,42 @@ export default function UsernameScreen({ onSubmit }: UsernameScreenProps) {
   };
 
   return (
-    <div className="screen">
-      <div className="container username-container">
-        <h1>Welcome to Skat</h1>
-        <form onSubmit={handleSubmit} className="username-form">
-          <div className="input-group">
-            <label htmlFor="username">Enter your username</label>
-            <input
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        px: 2
+      }}>
+      <Container maxWidth="sm">
+        <Paper elevation={3} sx={{ p: 5, textAlign: 'center' }}>
+          <Typography variant="h3" component="h1" gutterBottom>
+            Welcome to Skat
+          </Typography>
+          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3 }}>
+            <TextField
               id="username"
-              type="text"
+              label="Enter your username"
               placeholder="Your name"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              fullWidth
               autoFocus
+              sx={{ mb: 3 }}
             />
-          </div>
-          <button type="submit" className="btn btn-primary">
-            Continue
-          </button>
-        </form>
-      </div>
-    </div>
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              fullWidth
+              size="large"
+            >
+              Continue
+            </Button>
+          </Box>
+        </Paper>
+      </Container>
+    </Box>
   );
 }

@@ -1,9 +1,25 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  Box,
+  Container,
+  Typography,
+  TextField,
+  Button,
+  Paper,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  Alert,
+  Divider,
+  Chip,
+  IconButton,
+} from "@mui/material";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import { createGame, joinGame, getGames, type GameState } from "../api/games";
 import { useProfileStore } from "../stores/profileStore";
 import { GameHistory } from "../components/GameHistory";
-import "./LobbyScreen.css";
 
 interface LobbyScreenProps {
   username: string;
@@ -71,71 +87,123 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
   };
 
   return (
-    <div className="screen">
-      <div className="container lobby-container">
-        <div className="lobby-header">
-          <h1>Welcome, {username}!</h1>
-        </div>
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        py: 3
+      }}>
+      <Container maxWidth="md">
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography variant="h4" component="h1" gutterBottom>
+            Welcome, {username}!
+          </Typography>
 
-        {error && (
-          <div
-            className="error-message"
-            style={{ color: "red", padding: "10px", marginBottom: "10px" }}
-          >
-            Error: {error}
-          </div>
-        )}
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
 
-        <div className="section">
-          <h2>Join or Create Game</h2>
-          <div className="input-group">
-            <input
-              type="text"
-              placeholder="Enter game code or leave empty to create"
-              value={gameId}
-              onChange={(e) => setGameId(e.target.value.toUpperCase())}
-              maxLength={8}
-              style={{ textTransform: "uppercase", letterSpacing: "2px" }}
-            />
-            <button className="btn btn-primary" onClick={handleJoinOrCreate}>
-              {gameId ? "Join Game" : "Create New Game"}
-            </button>
-          </div>
-        </div>
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="h6" gutterBottom>
+              Join or Create Game
+            </Typography>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <TextField
+                placeholder="Enter game code or leave empty to create"
+                value={gameId}
+                onChange={(e) => setGameId(e.target.value.toUpperCase())}
+                sx={{
+                  "& input": {
+                    textTransform: "uppercase",
+                    letterSpacing: "2px",
+                  }
+                }}
+                fullWidth
+              />
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleJoinOrCreate}
+                size="large"
+                fullWidth={!gameId}
+              >
+                {gameId ? "Join Game" : "Create New Game"}
+              </Button>
+            </Box>
+          </Box>
 
-        <div className="section">
-          <h3>Available Games</h3>
-          <div className="games-list">
+          <Divider sx={{ my: 3 }} />
+
+          <Box sx={{ mb: 3 }}>
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+              <Typography variant="h6">Available Games</Typography>
+              <IconButton onClick={fetchGames} color="primary">
+                <RefreshIcon />
+              </IconButton>
+            </Box>
+
             {games.length === 0 ? (
-              <p className="no-games">No active games</p>
+              <Typography color="text.secondary" align="center" sx={{ py: 2 }}>
+                No active games
+              </Typography>
             ) : (
-              games.map((game) => (
-                <div key={game.id} className="game-item">
-                  <div>
-                    <strong>{game.id}</strong> - {game.players.length}/ 3
-                    players
-                    {game.phase !== "waiting" && " (In Progress)"}
-                  </div>
-                  <button
-                    className="btn"
-                    onClick={() => handleQuickJoin(game.id)}
-                    disabled={
-                      game.phase !== "waiting" || game.players.length >= 3
-                    }
+              <List>
+                {games.map((game) => (
+                  <ListItem
+                    key={game.id}
+                    sx={{
+                      border: 1,
+                      borderColor: "divider",
+                      borderRadius: 1,
+                      mb: 1,
+                    }}
                   >
-                    Join
-                  </button>
-                </div>
-              ))
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
+                            {game.id}
+                          </Typography>
+                          <Typography color="text.secondary">
+                            {game.players.length}/3 players
+                          </Typography>
+                          {game.phase !== "waiting" && (
+                            <Chip label="In Progress" size="small" color="warning" />
+                          )}
+                        </Box>
+                      }
+                    />
+                    <ListItemSecondaryAction>
+                      <Button
+                        variant="outlined"
+                        onClick={() => handleQuickJoin(game.id)}
+                        disabled={
+                          game.phase !== "waiting" || game.players.length >= 3
+                        }
+                      >
+                        Join
+                      </Button>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
             )}
-          </div>
-          <button className="btn" onClick={fetchGames}>
-            Refresh Games
-          </button>
-        </div>
+          </Box>
 
-        <GameHistory playerId={profilePlayerId} />
-      </div>
-    </div>
+          <Divider sx={{ my: 3 }} />
+
+          <Box>
+            <Typography variant="h6" gutterBottom>
+              Recent Games
+            </Typography>
+            <GameHistory playerId={profilePlayerId} />
+          </Box>
+        </Paper>
+      </Container>
+    </Box>
   );
 }

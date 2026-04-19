@@ -105,7 +105,6 @@ func main() {
 		addAgentMsg := Message{
 			Type: "add_agent",
 			Data: map[string]interface{}{
-				"agent_type": "random",
 				"agent_name": fmt.Sprintf("Agent %d", i-1),
 			},
 		}

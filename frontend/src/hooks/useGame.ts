@@ -1,9 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type { Card, Player } from "../types";
+import type { Card, SessionGameResult } from "../types";
 import {
   addAIAgent,
   fetchGameState,
-  type GameState as APIGameState,
+  getSessionResults,
+  type GameInfo,
+  type Player,
 } from "../api/games";
 
 interface GameMessage {
@@ -18,45 +20,64 @@ export function useGame(
   playerId: string | undefined,
 ) {
   // Server state - matches API response
-  const [state, setState] = useState<APIGameState>({
-    id: "",
-    code: "",
-    players: [],
-    current_player: -1,
-    phase: "lobby",
-    trick: [],
-    declarer_score: 0,
-    opponent_score: 0,
-    declarer: -1,
-    game_over: false,
-    game_mode: undefined,
-    trump_suit: undefined,
-    valid_bids: [],
+  const [gameInfo, setGameInfo] = useState<GameInfo>({
+    state: {
+      id: "",
+      code: "",
+      session_id: "",
+      game_number: 0,
+      players: [null, null, null],
+      current_player: -1,
+      phase: "waiting_for_players",
+      trick: null,
+      declarer_score: 0,
+      opponent_score: 0,
+      declarer: -1,
+      mode: "",
+      trump_suit: "",
+      trick_starter: 0,
+      trick_winner: -1,
+      game_value: 0,
+      bid_value: 0,
+      listener_passed: false,
+      speaker_passed: false,
+      dealer_passed: false,
+    },
+    player_id: undefined,
     hand: [],
-    declarer_pile_count: 0,
-    opponent_pile_count: 0,
-    trick_starter: 0,
-    trick_winner: -1,
-    declarer_tricks: 0,
-    skat_cards: undefined,
-    has_picked_up_skat: false,
-    bid_value: undefined,
+    skat: undefined,
+    can_play_next: false,
   });
+
+  const state = gameInfo.state;
+  const hand = gameInfo.hand ?? [];
+  const skatCards = gameInfo.skat ?? undefined;
+  const canPlayNextFromState = gameInfo.can_play_next ?? false;
+
+  // Transform server players (with position as index) to client players (with position field)
+  const players = useMemo<(Player | null)[]>(
+    () =>
+      state.players.map((p, index) =>
+        p ? { ...p, position: index } : null
+      ),
+    [state.players]
+  );
 
   // Derive player info from players array
   const myPlayer = useMemo(
-    () => state.players.find((p) => p?.player_id === playerId),
-    [state.players, playerId],
+    () => players.find((p) => p?.id === playerId),
+    [players, playerId],
   );
 
   const playerPosition = myPlayer?.position ?? null;
   const isBiddingPhase = state.phase === "bidding";
   const isSkatExchange = state.phase === "skat_exchange";
   const isDeclarerChoice = state.phase === "declarer_choice";
-  const isInLobby = state.phase === "lobby";
+  const isInLobby = state.phase === "waiting_for_players";
   const isDeclarer = playerPosition === state.declarer;
   const isDealer = playerPosition === 0;
-  const isNull = state.game_mode === "Null";
+  const isNull = state.mode === "Null";
+  const gameOver = state.phase === "complete";
 
   // Check if it's my turn by comparing position
   const isMyTurn =
@@ -69,43 +90,42 @@ export function useGame(
   const [messages, setMessages] = useState<GameMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionResults, setSessionResults] = useState<SessionGameResult[]>([]);
+  const [gamesPlayed, setGamesPlayed] = useState(0);
   const messageIdCounter = useRef(0);
-
-  // Track if we've already fetched for this gameId to prevent duplicates
-  const lastFetchedGameId = useRef<string | null>(null);
 
   const opponents = useMemo(
     () =>
-      state.players.filter(
+      players.filter(
         (p) => p && p.position !== state.declarer,
       ) as Player[],
-    [state.declarer, state.players],
+    [state.declarer, players],
   );
 
   const declarer = useMemo(
-    () => state.players.find((p) => p && p.position === state.declarer),
-    [state.declarer, state.players],
+    () => players.find((p) => p && p.position === state.declarer),
+    [state.declarer, players],
   );
 
   const leftPlayer = useMemo(
     () =>
       playerPosition != null
-        ? state.players[(playerPosition + 1) % state.players.length]
+        ? players[(playerPosition + 1) % players.length]
         : undefined,
-    [playerPosition, state.players],
+    [playerPosition, players],
   );
 
   const topPlayer = useMemo(
     () =>
       playerPosition != null
-        ? state.players[(playerPosition + 2) % state.players.length]
+        ? players[(playerPosition + 2) % players.length]
         : undefined,
-    [playerPosition, state.players],
+    [playerPosition, players],
   );
 
   const playerCount = useMemo(
-    () => state.players.filter((p) => !!p).length,
-    [state.players],
+    () => players.filter((p) => !!p).length,
+    [players],
   );
 
   // Helper function to get bidding role
@@ -137,15 +157,28 @@ export function useGame(
     }
 
     // Skip if we've already fetched this game
-    if (lastFetchedGameId.current === gameId) return;
 
     const loadGameState = async () => {
       setIsLoading(true);
       setError(null);
       try {
         const data = await fetchGameState(gameId, playerId);
-        setState(data);
-        lastFetchedGameId.current = gameId;
+        setGameInfo(data);
+
+        // Fetch session results if we have a session ID
+        if (data.state.session_id) {
+          try {
+            const sessionData = await getSessionResults(data.state.session_id);
+            if (sessionData.results && sessionData.results.length > 0) {
+              setSessionResults(sessionData.results);
+              setGamesPlayed(sessionData.results.length);
+            }
+          } catch (error) {
+            console.error("Failed to fetch session results:", error);
+            // Don't fail the whole load if session results fail
+          }
+        }
+
         setIsLoading(false);
       } catch (error) {
         console.error("Failed to fetch game state:", error);
@@ -162,34 +195,13 @@ export function useGame(
   }, [gameId, playerId]);
 
   const removeCardFromHand = useCallback((card: Card) => {
-    setState((prev) => ({
+    setGameInfo((prev) => ({
       ...prev,
       hand: (prev.hand || []).filter(
         (c) => !(c.rank === card.rank && c.suit === card.suit),
       ),
     }));
   }, []);
-
-  const setGameState = useCallback(
-    (updates: any) => {
-      const changes: Partial<APIGameState> = {};
-      Object.entries(updates).forEach(([k, v]) => {
-        if (Object.hasOwn(updates, k)) {
-          changes[k as keyof APIGameState] = v as any;
-        }
-      });
-      setState((prev) => ({
-        ...prev,
-        ...changes,
-      }));
-      // Handle special case: removing card from hand when played
-      if (updates.last_card_played && !updates.hand) {
-        // Only remove from hand if we didn't get a new hand update
-        removeCardFromHand(updates.last_card_played);
-      }
-    },
-    [removeCardFromHand],
-  );
 
   const addMessage = useCallback(
     (text: string, isError = false, playerPosition?: number) => {
@@ -206,36 +218,41 @@ export function useGame(
   );
 
   const reset = useCallback(() => {
-    setState({
-      id: "",
-      code: "",
-      players: [],
-      current_player: -1,
-      phase: "lobby",
-      trick: [],
-      declarer_score: 0,
-      opponent_score: 0,
-      declarer: -1,
-      game_over: false,
-      game_mode: undefined,
-      trump_suit: undefined,
-      valid_bids: [],
+    setGameInfo({
+      state: {
+        id: "",
+        code: "",
+        session_id: "",
+        game_number: 0,
+        players: [null, null, null],
+        current_player: -1,
+        phase: "waiting_for_players",
+        trick: null,
+        declarer_score: 0,
+        opponent_score: 0,
+        declarer: -1,
+        mode: "",
+        trump_suit: "",
+        trick_starter: 0,
+        trick_winner: -1,
+        game_value: 0,
+        bid_value: 0,
+        listener_passed: false,
+        speaker_passed: false,
+        dealer_passed: false,
+      },
+      player_id: undefined,
       hand: [],
-      declarer_pile_count: 0,
-      opponent_pile_count: 0,
-      trick_starter: 0,
-      trick_winner: -1,
-      declarer_tricks: 0,
-      skat_cards: undefined,
-      has_picked_up_skat: false,
+      skat: undefined,
+      can_play_next: false,
     });
     setMessages([]);
   }, []);
 
-  const addAgent = async (agentType: string) => {
+  const addAgent = async () => {
     if (!state.id) return;
     try {
-      await addAIAgent(state.id, agentType);
+      await addAIAgent(state.id);
     } catch (error) {
       console.error("Failed to add AI agent:", error);
     }
@@ -248,19 +265,21 @@ export function useGame(
     // State - derived from server state
     gameId: state.id,
     gameCode: state.code,
+    sessionId: state.session_id,
+    gameNumber: state.game_number,
     playerId,
     playerName: myPlayer?.name || "",
     playerPosition,
-    playerHand: state.hand ?? [],
+    playerHand: hand,
     leftPlayer,
     topPlayer,
-    players: state.players,
+    players,
     playerCount,
     opponents,
     declarer,
-    hand: state.hand || [],
-    trick: state.trick,
-    trickStarter: state.trick_starter || 0,
+    hand,
+    trick: state.trick ?? [],
+    trickStarter: state.trick_starter,
     trickWinner: state.trick_winner,
     currentPlayer: state.current_player,
     declarerScore: state.declarer_score,
@@ -268,16 +287,12 @@ export function useGame(
     declarerPosition: state.declarer,
     bidValue: state.bid_value,
     phase: state.phase,
-    gameOver: state.game_over,
-    gameMode: state.game_mode,
+    gameOver,
+    gameMode: state.mode,
     trumpSuit: state.trump_suit,
     messages,
-    validBids: state.valid_bids || [],
-    declarerPileCount: state.declarer_pile_count || 0,
-    opponentPileCount: state.opponent_pile_count || 0,
-    declarerTricks: state.declarer_tricks || 0,
-    skatCards: state.skat_cards ?? [],
-    hasPickedUpSkat: state.has_picked_up_skat || false,
+    skatCards: skatCards ? [skatCards[0], skatCards[1]] : [],
+    hasPickedUpSkat: isSkatExchange && hand.length === 12,
     isNull,
     isBiddingPhase,
     isSkatExchange,
@@ -287,21 +302,21 @@ export function useGame(
     isMyTurn,
     isInLobby,
     playerWon:
-      state.game_over && playerPosition === state.declarer
+      gameOver && playerPosition === state.declarer
         ? isNull
-          ? state.declarer_tricks === 0
+          ? state.declarer_score === 0
           : state.declarer_score >= 61
         : isNull
-          ? (state.declarer_tricks ?? 0) > 0
+          ? state.declarer_score > 0
           : state.declarer_score < 61,
     isSchneider:
-      state.game_over &&
+      gameOver &&
       !isNull &&
       ((state.declarer_score >= 61 && state.opponent_score < 30) ||
         (state.declarer_score < 61 && state.declarer_score < 30)),
     isSchwarz:
-      state.game_over &&
-      isNull &&
+      gameOver &&
+      !isNull &&
       (state.declarer_score === 120 ||
         state.opponent_score === 120 ||
         state.declarer_score === 0 ||
@@ -310,10 +325,16 @@ export function useGame(
     getRole,
     // Actions
     removeCardFromHand,
-    setGameState,
+    setGameInfo,
     addMessage,
     reset,
     addAgent,
+    // Session state
+    sessionResults,
+    gamesPlayed,
+    canPlayNext: canPlayNextFromState,
+    setSessionResults,
+    setGamesPlayed,
   };
 }
 

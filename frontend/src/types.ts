@@ -3,13 +3,7 @@ export interface Card {
   rank: string;
 }
 
-export interface Player {
-  player_id: string;
-  name: string;
-  position: number;
-  card_count?: number;
-  is_agent?: boolean;
-}
+export type { Player } from "./api/games";
 
 export interface GameState {
   current_player?: number;
@@ -19,6 +13,18 @@ export interface GameState {
   position?: number;
   declarer_won?: boolean;
   declarer_score?: number;
+}
+
+export interface SessionGameResult {
+  game_id: string;
+  game_number: number;
+  declarer_name: string;
+  declarer_won: boolean;
+  game_mode: string;
+  trump_suit: string;
+  game_value: number;
+  player_results: { [playerId: string]: number };
+  player_names: { [playerId: string]: string };
 }
 
 export interface Message {

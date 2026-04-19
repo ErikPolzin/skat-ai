@@ -3,15 +3,18 @@ package game
 import (
 	"fmt"
 	"math/rand"
+	"slices"
+
+	"github.com/google/uuid"
 )
 
 // GameMode represents the type of Skat game being played
-type GameMode int
+type GameMode string
 
 const (
-	ModeGrand GameMode = iota // Only Jacks are trump
-	ModeSuit                  // One suit is trump (plus Jacks)
-	ModeNull                  // No trumps, declarer tries to lose
+	ModeGrand GameMode = "grand" // Only Jacks are trump
+	ModeSuit  GameMode = "suit"  // One suit is trump (plus Jacks)
+	ModeNull  GameMode = "null"  // No trumps, declarer tries to lose
 )
 
 type GamePosition int
@@ -22,96 +25,116 @@ const (
 	Speaker
 )
 
+var AllPositions = [3]GamePosition{Dealer, Listener, Speaker}
+
 // GameState represents the current state of a Skat game
 type GameState struct {
-	Players       [3]*PlayerState
-	Skat          [2]Card // The two cards set aside
-	CurrentPlayer GamePosition
-	Declarer      GamePosition // Player who won the bid (-1 if not determined yet)
-	Mode          GameMode
-	TrumpSuit     Suit
-	Trick         []Card       // Current trick being played
-	TrickWinner   GamePosition // Who won the last trick
-	TrickStarter  GamePosition // Who started the current trick
-	CardsPlayed   [][]Card     // History of all tricks
-	Phase         GamePhase    // Current phase of the game
-	GameValue     int          // Value of the current game
-	DeclarerScore int          // Current score for declarer
-	OpponentScore int          // Current score for opponents
+	ID            string          `json:"id"`
+	Code          GameCode        `json:"code"`
+	SessionID     string          `json:"session_id"` // Session ID for mutiple games
+	GameNumber    int             `json:"game_number"`
+	Players       [3]*PlayerState `json:"players"`        // Players in the game
+	Skat          SkatCards       `json:"-"`              // Ommitted in JSON, not public knowledge
+	CurrentPlayer GamePosition    `json:"current_player"` // Current player position
+	Declarer      GamePosition    `json:"declarer"`       // Declarer position
+	Mode          GameMode        `json:"mode"`           // Game mode (Suit, Null, Grand)
+	TrumpSuit     Suit            `json:"trump_suit"`     // Trump suite (D, H, A, C)
+	Trick         Cards           `json:"trick"`          // Current trick being played
+	TrickWinner   GamePosition    `json:"trick_winner"`   // Who won the last trick
+	TrickStarter  GamePosition    `json:"trick_starter"`  // Who started the current trick
+	CardsPlayed   [][]Card        `json:"-"`              // History of all tricks
+	Phase         GamePhase       `json:"phase"`          // Current phase of the game
+	GameValue     int             `json:"game_value"`     // Value of the current game
+	DeclarerScore int             `json:"declarer_score"` // Current score for declarer
+	OpponentScore int             `json:"opponent_score"` // Current score for opponents
 
 	// Bidding state
-	BidValue       int  // Current bid value
-	ListenerPassed bool // Has listener passed?
-	SpeakerPassed  bool // Has speaker passed?
-	DealerPassed   bool // Has dealer passed?
-
-	// Null game state
-	DeclarerTricks int // Number of tricks taken by declarer in null games
+	BidValue       int  `json:"bid_value"`       // Current bid value
+	ListenerPassed bool `json:"listener_passed"` // Has listener passed?
+	SpeakerPassed  bool `json:"speaker_passed"`  // Has speaker passed?
+	DealerPassed   bool `json:"dealer_passed"`   // Has dealer passed?
 }
 
-type GamePhase int
+type GameSessionState struct {
+	ID          string  `json:"id"`
+	Code        string  `json:"code"`
+	GameID      string  `json:"game_id"`
+	PlayerCount int     `json:"player_count"`
+	CreatedAt   string  `json:"created_at"`
+	EndedAt     *string `json:"ended_at"`
+}
+
+type PlayerResultState struct {
+	GameID         string       `json:"game_id"`
+	SessionID      string       `json:"session_id"`
+	PlayerID       string       `json:"player_id"`
+	PlayerPosition GamePosition `json:"player_position"`
+	PlayerPoints   int          `json:"player_points"`
+	IsWinner       bool         `json:"is_winner"`
+}
+
+type GamePhase string
 
 const (
-	PhaseDealing        GamePhase = iota // Waiting for dealer to deal cards
-	PhaseBidding                         // Bidding phase
-	PhaseSkatExchange                    // Declarer decides whether to pick up skat
-	PhaseDeclarerChoice                  // Declarer chooses game mode after skat exchange
-	PhasePlaying
-	PhaseComplete
+	PhaseWaitingForPlayers GamePhase = "waiting_for_players" // Waiting for players to join
+	PhaseDealing           GamePhase = "dealing"             // Waiting for dealer to deal cards
+	PhaseBidding           GamePhase = "bidding"             // Bidding phase
+	PhaseSkatExchange      GamePhase = "skat_exchange"       // Declarer decides whether to pick up skat
+	PhaseDeclarerChoice    GamePhase = "declarer_choice"     // Declarer chooses game mode after skat exchange
+	PhasePlaying           GamePhase = "playing"
+	PhaseComplete          GamePhase = "complete"
 )
+
+type GameCode string
+
+func NewGameCode() GameCode {
+	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+	code := ""
+	for i := 0; i < 4; i++ {
+		code += string(chars[rand.Intn(len(chars))])
+	}
+
+	// Fallback to longer code if we can't find a unique 4-char code
+	return GameCode(fmt.Sprintf("%08X", rand.Uint32()))
+}
 
 // PlayerState represents one player's state
 type PlayerState struct {
-	Hand        []Card
-	TricksTaken [][]Card
-	IsActive    bool
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Hand      Cards  `json:"-"`
+	CardCount int    `json:"card_count"`
+	IsAgent   bool   `json:"is_agent"`
 }
 
 // NewGame creates a new Skat game
 func NewGame() *GameState {
 	gs := &GameState{
-		Players: [3]*PlayerState{
-			{IsActive: true},
-			{IsActive: true},
-			{IsActive: true},
-		},
-		Phase:          PhaseDealing, // Start with dealing phase
-		Declarer:       -1,           // Not determined yet
-		CurrentPlayer:  0,            // Dealer starts as the current player
-		BidValue:       0,            // No bid yet, Speaker will bid 18 first
+		ID:             uuid.New().String(),
+		SessionID:      uuid.New().String(),
+		Code:           NewGameCode(),
+		Players:        [3]*PlayerState{},
+		Phase:          PhaseWaitingForPlayers, // Start waiting for players
+		Declarer:       -1,                     // Not determined yet
+		CurrentPlayer:  0,                      // Dealer starts as the current player
+		BidValue:       0,                      // No bid yet, Speaker will bid 18 first
 		ListenerPassed: false,
 		SpeakerPassed:  false,
 		DealerPassed:   false,
 	}
-	// Don't deal cards yet - wait for dealer to click deal button
 	return gs
 }
 
-// Deal shuffles and deals cards to players
-func (gs *GameState) Deal() {
-	deck := NewDeck()
-	// Shuffle
-	rand.Shuffle(len(deck), func(i, j int) {
-		deck[i], deck[j] = deck[j], deck[i]
-	})
-
-	// Deal: 3-4-3 pattern to each player, then skat
-	idx := 0
-	for round := 0; round < 3; round++ {
-		for p := 0; p < 3; p++ {
-			count := 3
-			if round == 1 {
-				count = 4
-			}
-			for i := 0; i < count; i++ {
-				gs.Players[p].Hand = append(gs.Players[p].Hand, deck[idx])
-				idx++
-			}
+// PlayerCount returns the number of non-nil players
+func (gs *GameState) PlayerCount() int {
+	count := 0
+	for _, player := range gs.Players {
+		if player != nil {
+			count++
 		}
 	}
-	// Skat (2 cards)
-	gs.Skat[0] = deck[30]
-	gs.Skat[1] = deck[31]
+	return count
 }
 
 // GetValidMoves returns all legal moves for the current player
@@ -159,108 +182,6 @@ func (gs *GameState) effectiveSuit(card Card) Suit {
 
 	// Otherwise return actual suit
 	return card.Suit
-}
-
-// PlayCard plays a card for the current player
-func (gs *GameState) PlayCard(card Card) error {
-	valid := gs.GetValidMoves()
-	found := false
-	for _, c := range valid {
-		if c == card {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("invalid move")
-	}
-
-	// Remove card from hand
-	player := gs.Players[gs.CurrentPlayer]
-	for i, c := range player.Hand {
-		if c == card {
-			player.Hand = append(player.Hand[:i], player.Hand[i+1:]...)
-			break
-		}
-	}
-
-	// If this is the first card of the trick, record who started it
-	if len(gs.Trick) == 0 {
-		gs.TrickStarter = gs.CurrentPlayer
-	}
-
-	gs.Trick = append(gs.Trick, card)
-
-	if len(gs.Trick) != 3 {
-		// Next player
-		gs.CurrentPlayer = (gs.CurrentPlayer + 1) % 3
-	}
-
-	return nil
-}
-
-// resolveTrick determines the winner of the trick
-func (gs *GameState) ResolveTrick() {
-	winner := Dealer
-	winCard := gs.Trick[0]
-
-	for i := Listener; i < 3; i++ {
-		if gs.cardBeats(gs.Trick[i], winCard) {
-			winner = i
-			winCard = gs.Trick[i]
-		}
-	}
-
-	// Adjust winner index relative to who led
-	leadPlayer := (gs.CurrentPlayer + 3 - 2) % 3
-	actualWinner := (leadPlayer + winner) % 3
-
-	// Award trick
-	gs.Players[actualWinner].TricksTaken = append(
-		gs.Players[actualWinner].TricksTaken,
-		append([]Card{}, gs.Trick...),
-	)
-
-	// Calculate points based on game mode
-	if gs.Mode == ModeNull {
-		// In null games, if declarer takes any trick, game ends immediately
-		if actualWinner == gs.Declarer {
-			gs.DeclarerTricks = 1    // Mark that declarer took a trick
-			gs.Phase = PhaseComplete // Game ends immediately - declarer loses
-			gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
-			gs.Trick = nil
-			gs.TrickWinner = actualWinner
-			return // Exit early - game is over
-		}
-	} else {
-		// In normal games, calculate card points
-		for _, card := range gs.Trick {
-			if actualWinner == gs.Declarer {
-				gs.DeclarerScore += card.Value()
-			} else {
-				gs.OpponentScore += card.Value()
-			}
-		}
-	}
-
-	gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
-	gs.Trick = nil
-	gs.TrickWinner = actualWinner
-	gs.CurrentPlayer = actualWinner
-	gs.TrickStarter = actualWinner
-
-	// Check if game is over
-	if len(gs.Players[0].Hand) == 0 {
-		gs.Phase = PhaseComplete
-		// Add skat cards to declarer's score in normal games
-		if gs.Mode != ModeNull && gs.Declarer >= 0 {
-			gs.DeclarerScore += gs.Skat[0].Value() + gs.Skat[1].Value()
-		}
-		// In null games, if we get here, declarer won (took no tricks)
-		if gs.Mode == ModeNull {
-			gs.DeclarerTricks = 0 // Explicitly mark as 0 tricks taken
-		}
-	}
 }
 
 // cardBeats returns true if card a beats card b
@@ -395,8 +316,10 @@ func (gs *GameState) Clone() *GameState {
 
 	for i := 0; i < 3; i++ {
 		clone.Players[i] = &PlayerState{
-			Hand:     append([]Card{}, gs.Players[i].Hand...),
-			IsActive: gs.Players[i].IsActive,
+			Hand:    append([]Card{}, gs.Players[i].Hand...),
+			ID:      gs.Players[i].ID,
+			Name:    gs.Players[i].Name,
+			IsAgent: gs.Players[i].IsAgent,
 		}
 	}
 
@@ -479,49 +402,6 @@ func (gs *GameState) getNextBidValue() int {
 	return gs.BidValue + 1 // Fallback
 }
 
-// MakeBid processes a bidding action ("pass", "hold", or a bid value)
-func (gs *GameState) MakeBid(action string) error {
-	if gs.Phase != PhaseBidding {
-		return fmt.Errorf("not in bidding phase")
-	}
-
-	validActions := gs.GetValidBids()
-	isValid := false
-	for _, a := range validActions {
-		if a == action {
-			isValid = true
-			break
-		}
-	}
-	if !isValid {
-		return fmt.Errorf("invalid bid action: %s", action)
-	}
-
-	if action == "pass" {
-		// Player passes
-		if gs.CurrentPlayer == Listener {
-			gs.ListenerPassed = true
-		} else if gs.CurrentPlayer == Speaker {
-			gs.SpeakerPassed = true
-		} else if gs.CurrentPlayer == Dealer {
-			gs.DealerPassed = true
-		}
-	} else if action == "hold" {
-		// Player matches the current bid
-		// Bid value stays the same, other player must raise or pass
-	} else {
-		// Player raises the bid
-		var newBid int
-		fmt.Sscanf(action, "%d", &newBid)
-		gs.BidValue = newBid
-	}
-
-	// Determine next player and check if bidding is complete
-	gs.advanceBidding()
-
-	return nil
-}
-
 // advanceBidding determines the next bidder or ends bidding
 func (gs *GameState) advanceBidding() {
 	// Check if bidding is over
@@ -588,100 +468,6 @@ func (gs *GameState) advanceBidding() {
 	}
 }
 
-// DecideSkatPickup handles the declarer's decision to pick up skat or play hand
-func (gs *GameState) DecideSkatPickup(pickup bool) error {
-	if gs.Phase != PhaseSkatExchange {
-		return fmt.Errorf("not in skat exchange phase")
-	}
-
-	if pickup {
-		// Add skat cards to declarer's hand
-		gs.Players[gs.Declarer].Hand = append(gs.Players[gs.Declarer].Hand, gs.Skat[0], gs.Skat[1])
-		// Stay in skat exchange phase until discard
-		return nil
-	} else {
-		// Play hand - skip to game declaration
-		gs.Phase = PhaseDeclarerChoice
-		return nil
-	}
-}
-
-// PickUpSkat allows the declarer to pick up the skat cards (legacy method)
-func (gs *GameState) PickUpSkat() error {
-	if gs.Phase != PhaseSkatExchange && gs.Phase != PhaseDeclarerChoice {
-		return fmt.Errorf("not in skat exchange or declarer choice phase")
-	}
-
-	// Add skat cards to declarer's hand
-	gs.Players[gs.Declarer].Hand = append(gs.Players[gs.Declarer].Hand, gs.Skat[0], gs.Skat[1])
-
-	return nil
-}
-
-// DiscardToSkat allows declarer to discard 2 cards to the skat
-func (gs *GameState) DiscardToSkat(card1, card2 Card) error {
-	if gs.Phase != PhaseSkatExchange {
-		return fmt.Errorf("not in skat exchange phase")
-	}
-
-	if len(gs.Players[gs.Declarer].Hand) != 12 {
-		return fmt.Errorf("must pick up skat before discarding")
-	}
-
-	// Remove cards from hand
-	hand := gs.Players[gs.Declarer].Hand
-	found1, found2 := false, false
-	newHand := []Card{}
-
-	for _, c := range hand {
-		if !found1 && c == card1 {
-			found1 = true
-			continue
-		}
-		if !found2 && c == card2 {
-			found2 = true
-			continue
-		}
-		newHand = append(newHand, c)
-	}
-
-	if !found1 || !found2 {
-		return fmt.Errorf("cards not in hand")
-	}
-
-	gs.Players[gs.Declarer].Hand = newHand
-	gs.Skat[0] = card1
-	gs.Skat[1] = card2
-
-	// Move to game declaration phase
-	gs.Phase = PhaseDeclarerChoice
-
-	return nil
-}
-
-// DeclareGame sets the game mode and trump suit, starting the playing phase
-func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit) error {
-	if gs.Phase != PhaseDeclarerChoice {
-		return fmt.Errorf("not in declarer choice phase")
-	}
-
-	gs.Mode = mode
-	gs.TrumpSuit = trumpSuit
-
-	// Calculate game value
-	// Simplified for now
-	gs.GameValue = gs.BidValue
-
-	// Start playing phase
-	gs.Phase = PhasePlaying
-	gs.CurrentPlayer = Dealer // Player to left of dealer leads
-	if Dealer == 0 {
-		gs.CurrentPlayer = 1
-	}
-
-	return nil
-}
-
 // IsSchneider returns true if the game ended with Schneider
 // (one side took 90+ points, null games don't have schneider)
 func (gs *GameState) IsSchneider() bool {
@@ -708,7 +494,7 @@ func (gs *GameState) IsSchwarz() bool {
 func (gs *GameState) GetGameResult() (declarerWon bool, schneider bool, schwarz bool) {
 	if gs.Mode == ModeNull {
 		// Null game: declarer wins if they take no tricks
-		declarerWon = gs.DeclarerTricks == 0
+		declarerWon = gs.DeclarerScore == 0
 		// Null games don't have schneider/schwarz
 		schneider = false
 		schwarz = false
@@ -728,4 +514,91 @@ func (gs *GameState) GetGameResult() (declarerWon bool, schneider bool, schwarz 
 	}
 
 	return
+}
+
+func (gs *GameState) GetPlayerByPosition(position GamePosition) *PlayerState {
+	return gs.Players[position]
+}
+
+func (gs *GameState) GetPlayerById(playerId string) *PlayerState {
+	for _, player := range gs.Players {
+		if player != nil && player.ID == playerId {
+			return player
+		}
+	}
+	return nil
+}
+
+// getCurrentPlayer gets the player object for the current player
+func (gs *GameState) GetCurrentPlayer() *PlayerState {
+	for _, pos := range AllPositions {
+		if pos == gs.CurrentPlayer {
+			return gs.Players[pos]
+		}
+	}
+	return nil
+}
+
+func (gs *GameState) GetCurrentPlayerID() string {
+	player := gs.GetCurrentPlayer()
+	if player != nil {
+		return player.ID
+	}
+	return ""
+}
+
+func (gs *GameState) GetPositionForPlayer(playerID string) GamePosition {
+	for _, pos := range AllPositions {
+		if gs.Players[pos] != nil && gs.Players[pos].ID == playerID {
+			return pos
+		}
+	}
+	return -1
+}
+
+// get a position that hasn't been assigned yet
+func (gs *GameState) GetRandomPosition() GamePosition {
+	availablePositions := []int{0, 1, 2}
+	for i, player := range gs.Players {
+		if player != nil {
+			idx := slices.Index(availablePositions, i)
+			if idx != -1 {
+				availablePositions = slices.Delete(availablePositions, idx, idx+1)
+			}
+		}
+	}
+	if len(availablePositions) == 0 {
+		return -1
+	}
+	return GamePosition(availablePositions[rand.Int()%len(availablePositions)])
+}
+
+func Results(gs *GameState) []PlayerResultState {
+	if gs.Phase != PhaseComplete {
+		return nil
+	}
+
+	results := make([]PlayerResultState, 0, 3)
+	declarerWon, _, _ := gs.GetGameResult()
+	points := gs.CalculatePlayerPoints()
+
+	for pos := Dealer; pos <= Speaker; pos++ {
+		player := gs.Players[pos]
+		if player == nil {
+			continue
+		}
+
+		result := PlayerResultState{
+			GameID:         gs.ID,
+			SessionID:      gs.SessionID,
+			PlayerID:       player.ID,
+			IsWinner:       (pos == gs.Declarer && declarerWon) || (pos != gs.Declarer && !declarerWon),
+			PlayerPosition: pos,
+			PlayerPoints:   points[pos],
+		}
+
+		results = append(results, result)
+	}
+
+	return results
 }

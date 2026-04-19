@@ -1,4 +1,20 @@
-import type { Player, Card } from "../types";
+import type { Card } from "../types";
+
+// Server player representation (without position)
+export interface ServerPlayer {
+  id: string;
+  name: string;
+  is_agent: boolean;
+}
+
+// Client player representation (with position derived from array index)
+export interface Player {
+  id: string;
+  name: string;
+  is_agent: boolean;
+  position: number;
+  card_count?: number;
+}
 
 export type { Card } from "../types";
 
@@ -6,34 +22,48 @@ const getApiUrl = () => process.env.REACT_APP_API_URL || "";
 
 export interface GameState {
   id: string;
-  code: string; // Game code for joining
-  players: (Player | undefined)[];
+  code: string;
+  session_id: string;
+  game_number: number;
+  players: [ServerPlayer | null, ServerPlayer | null, ServerPlayer | null];
   current_player: number;
+  declarer: number;
+  mode: string;
+  trump_suit: string;
+  trick: Card[] | null;
+  trick_winner: number;
+  trick_starter: number;
   phase: string;
-  trick: Card[];
+  game_value: number;
   declarer_score: number;
   opponent_score: number;
-  declarer: number;
-  game_over: boolean;
-  game_mode?: string;
-  trump_suit?: string;
-  valid_bids?: string[];
+  bid_value: number;
+  listener_passed: boolean;
+  speaker_passed: boolean;
+  dealer_passed: boolean;
+}
+
+export interface GameInfo {
+  state: GameState;
   player_id?: string;
   hand?: Card[];
-  declarer_pile_count?: number;
-  opponent_pile_count?: number;
-  trick_starter?: number;
-  trick_winner?: number;
-  declarer_tricks?: number; // For null games
-  skat_cards?: Card[]; // Available during skat_exchange phase
-  has_picked_up_skat?: boolean;
-  bid_value?: number;
+  skat?: [Card, Card];
+  can_play_next: boolean;
+}
+
+export interface GameSession {
+  id: string;
+  code: string;
+  game_id?: string;
+  player_count: number;
+  created_at: string;
+  ended_at?: string;
 }
 
 export async function fetchGameState(
   gameId: string,
   playerId?: string,
-): Promise<GameState> {
+): Promise<GameInfo> {
   const url = playerId
     ? `${getApiUrl()}/api/games/${gameId}?player_id=${playerId}`
     : `${getApiUrl()}/api/games/${gameId}`;
@@ -84,7 +114,7 @@ export async function joinGame(
   gameId: string,
   playerName: string,
   playerId?: string,
-): Promise<{ player_id: string; player_name: string; game_id: string }> {
+): Promise<{ game_id: string }> {
   const response = await fetch(`${getApiUrl()}/api/games/${gameId}/join`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -101,16 +131,10 @@ export async function joinGame(
   return response.json();
 }
 
-export async function addAIAgent(
-  gameId: string,
-  agentType: string = "mcts",
-): Promise<void> {
+export async function addAIAgent(gameId: string): Promise<void> {
   const response = await fetch(`${getApiUrl()}/api/games/${gameId}/agents`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      agent_type: agentType,
-    }),
   });
 
   if (!response.ok) {
@@ -118,8 +142,8 @@ export async function addAIAgent(
   }
 }
 
-export async function getGames(): Promise<GameState[]> {
-  const response = await fetch(`${getApiUrl()}/api/games?open=true`);
+export async function getGames(): Promise<GameSession[]> {
+  const response = await fetch(`${getApiUrl()}/api/games`);
   const data = await response.json();
   return data || [];
 }
@@ -140,15 +164,42 @@ export interface GameHistoryEntry {
 
 export async function getPlayerGameHistory(
   playerId: string,
-  limit: number = 10,
+  sessionId: string,
 ): Promise<GameHistoryEntry[]> {
   const response = await fetch(
-    `${getApiUrl()}/api/players/${playerId}/history?limit=${limit}`,
+    `${getApiUrl()}/api/players/${playerId}/history/${sessionId}`,
   );
 
   if (!response.ok) {
     console.error("Failed to fetch game history");
     return [];
+  }
+
+  return response.json();
+}
+
+export interface SessionResults {
+  session_id: string;
+  results: Array<{
+    game_id: string;
+    game_number: number;
+    declarer_name: string;
+    declarer_won: boolean;
+    game_mode: string;
+    trump_suit: string;
+    game_value: number;
+    player_results: { [playerId: string]: number };
+    player_names: { [playerId: string]: string };
+  }>;
+}
+
+export async function getSessionResults(
+  sessionId: string,
+): Promise<SessionResults> {
+  const response = await fetch(`${getApiUrl()}/api/games/${sessionId}/results`);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch session results");
   }
 
   return response.json();

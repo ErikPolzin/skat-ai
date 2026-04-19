@@ -13,13 +13,11 @@ import {
   ListItemSecondaryAction,
   Alert,
   Divider,
-  Chip,
   IconButton,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { createGame, joinGame, getGames, type GameState } from "../api/games";
+import { createGame, joinGame, getGames, type GameSession } from "../api/games";
 import { useProfileStore } from "../stores/profileStore";
-import { GameHistory } from "../components/GameHistory";
 
 interface LobbyScreenProps {
   username: string;
@@ -28,10 +26,8 @@ interface LobbyScreenProps {
 export default function LobbyScreen({ username }: LobbyScreenProps) {
   const navigate = useNavigate();
   const profilePlayerId = useProfileStore((state) => state.playerId);
-  const setUsername = useProfileStore((state) => state.setUsername);
-  const setPlayerId = useProfileStore((state) => state.setPlayerId);
-  const [gameId, setGameId] = useState("");
-  const [games, setGames] = useState<GameState[]>([]);
+  const [gameCode, setGameCode] = useState("");
+  const [games, setGames] = useState<GameSession[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,40 +45,33 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
   };
 
   const handleJoinOrCreate = async () => {
-    let currentGameId = gameId.trim();
-
+    let currentGameCode = gameCode.trim();
     try {
       setError(null);
 
-      // Create game if no ID provided
-      if (!currentGameId) {
-        const data = await createGame();
-        currentGameId = data.game_id;
+      if (!currentGameCode) {
+        // Create a new game and get the code
+        const createData = await createGame();
+        currentGameCode = createData.code;
       }
 
-      // Get player credentials - send existing ID if we have one
+      // Join the game (either the newly created one or an existing one)
       const data = await joinGame(
-        currentGameId,
+        currentGameCode,
         username,
         profilePlayerId || undefined,
       );
 
-      // Store player ID and name from server
-      setPlayerId(data.player_id);
-      if (data.player_name !== username) {
-        setUsername(data.player_name);
-      }
-
       // Navigate to the game
-      navigate(`/game/${currentGameId}`);
+      navigate(`/game/${data.game_id}`);
     } catch (error) {
       console.error("Error in handleJoinOrCreate:", error);
       setError((error as Error).message);
     }
   };
 
-  const handleQuickJoin = (id: string) => {
-    setGameId(id);
+  const handleQuickJoin = (code: string) => {
+    setGameCode(code);
     setTimeout(() => handleJoinOrCreate(), 0);
   };
 
@@ -93,8 +82,9 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
         alignItems: "center",
         justifyContent: "center",
         minHeight: "100vh",
-        py: 3
-      }}>
+        py: 3,
+      }}
+    >
       <Container maxWidth="md">
         <Paper elevation={3} sx={{ p: 4 }}>
           <Typography variant="h4" component="h1" gutterBottom>
@@ -102,7 +92,11 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
           </Typography>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+            <Alert
+              severity="error"
+              sx={{ mb: 2 }}
+              onClose={() => setError(null)}
+            >
               {error}
             </Alert>
           )}
@@ -114,13 +108,13 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <TextField
                 placeholder="Enter game code or leave empty to create"
-                value={gameId}
-                onChange={(e) => setGameId(e.target.value.toUpperCase())}
+                value={gameCode}
+                onChange={(e) => setGameCode(e.target.value.toUpperCase())}
                 sx={{
                   "& input": {
                     textTransform: "uppercase",
                     letterSpacing: "2px",
-                  }
+                  },
                 }}
                 fullWidth
               />
@@ -129,9 +123,9 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
                 color="primary"
                 onClick={handleJoinOrCreate}
                 size="large"
-                fullWidth={!gameId}
+                fullWidth={!gameCode}
               >
-                {gameId ? "Join Game" : "Create New Game"}
+                {gameCode ? "Join Game" : "Create New Game"}
               </Button>
             </Box>
           </Box>
@@ -139,7 +133,14 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
           <Divider sx={{ my: 3 }} />
 
           <Box sx={{ mb: 3 }}>
-            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                mb: 2,
+              }}
+            >
               <Typography variant="h6">Available Games</Typography>
               <IconButton onClick={fetchGames} color="primary">
                 <RefreshIcon />
@@ -164,26 +165,25 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
                   >
                     <ListItemText
                       primary={
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                          <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
-                            {game.id}
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                        >
+                          <Typography
+                            variant="subtitle1"
+                            sx={{ fontWeight: "bold" }}
+                          >
+                            {game.code}
                           </Typography>
                           <Typography color="text.secondary">
-                            {game.players.length}/3 players
+                            {game.player_count}/3 players
                           </Typography>
-                          {game.phase !== "waiting" && (
-                            <Chip label="In Progress" size="small" color="warning" />
-                          )}
                         </Box>
                       }
                     />
                     <ListItemSecondaryAction>
                       <Button
                         variant="outlined"
-                        onClick={() => handleQuickJoin(game.id)}
-                        disabled={
-                          game.phase !== "waiting" || game.players.length >= 3
-                        }
+                        onClick={() => handleQuickJoin(game.code)}
                       >
                         Join
                       </Button>
@@ -194,14 +194,6 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
             )}
           </Box>
 
-          <Divider sx={{ my: 3 }} />
-
-          <Box>
-            <Typography variant="h6" gutterBottom>
-              Recent Games
-            </Typography>
-            <GameHistory playerId={profilePlayerId} />
-          </Box>
         </Paper>
       </Container>
     </Box>

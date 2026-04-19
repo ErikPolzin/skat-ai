@@ -2,9 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
+	"skat/game"
+	"skat/server/db"
 	"strconv"
 	"strings"
 
@@ -25,12 +29,12 @@ func (s *Server) SetupRoutes() http.Handler {
 
 	// REST API endpoints
 	api := r.PathPrefix("/api").Subrouter()
-	api.HandleFunc("/games", s.handleListGames).Methods("GET")
+	api.HandleFunc("/games", s.handleListOpenSessions).Methods("GET")
 	api.HandleFunc("/games", s.handleCreateGame).Methods("POST")
 	api.HandleFunc("/games/{id}", s.handleGetGame).Methods("GET")
-	api.HandleFunc("/games/{id}/join", s.handleJoinGame).Methods("POST")
+	api.HandleFunc("/games/{code}/join", s.handleJoinGame).Methods("POST")
 	api.HandleFunc("/games/{id}/agents", s.handleAddAgent).Methods("POST")
-	api.HandleFunc("/games/{id}/start", s.handleStartGame).Methods("POST")
+	api.HandleFunc("/games/{id}/results", s.handleGetSessionResults).Methods("GET")
 	api.HandleFunc("/profiles", s.handleCreateProfile).Methods("POST")
 	api.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
 
@@ -76,29 +80,42 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
 }
 
-// handleListGames returns all available games
-func (s *Server) handleListGames(w http.ResponseWriter, r *http.Request) {
-	open := r.URL.Query().Get("open") == "true"
-	games := s.ListGames(open)
+// handleListOpenSessions returns all open games (accepting players)
+func (s *Server) handleListOpenSessions(w http.ResponseWriter, r *http.Request) {
+	games, err := s.db.ListOpenSessions()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(games)
 }
 
 // handleCreateGame creates a new game session
 func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
-	gameID := uuid.New().String()[:8]
-	if err := s.CreateGame(gameID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// Create empty session
+	gs := game.NewGame()
+
+	// Save the session to the database
+	if err := s.db.SaveGameSession(game.GameSessionState{
+		ID:     gs.SessionID,
+		Code:   string(gs.Code),
+		GameID: gs.ID,
+	}); err != nil {
+		http.Error(w, fmt.Sprintf("failed to save game session: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Get the game to retrieve the code
-	game, _ := s.GetGame(gameID)
+	// Save to database
+	if err := s.db.SaveGame(*gs); err != nil {
+		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"game_id": gameID,
-		"code":    game.Code,
+		"game_id": gs.ID,
+		"code":    string(gs.Code),
 	})
 }
 
@@ -108,14 +125,14 @@ func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 	gameID := vars["id"]
 	playerID := r.URL.Query().Get("player_id")
 
-	game, err := s.GetGame(gameID)
+	gs, err := s.db.GetGameByID(gameID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(game.GetInfo(playerID))
+	json.NewEncoder(w).Encode(gs.SerializeForPlayer(playerID))
 }
 
 // handleCreateProfile creates or retrieves a player profile
@@ -138,33 +155,38 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 		playerID = uuid.New().String()
 		log.Printf("Creating new profile: %s for %s", playerID, playerName)
 
-		// Store the new profile if database is available
-		if s.db != nil {
-			if err := s.db.SetPlayerProfile(playerID, playerName); err != nil {
-				log.Printf("Failed to store player profile: %v", err)
-			}
+		// Store the new profile
+		profile := db.ProfileEntry{
+			ID:   playerID,
+			Name: playerName,
+		}
+		if err := s.db.SaveProfile(profile); err != nil {
+			log.Printf("Failed to store player profile: %v", err)
 		}
 	} else {
 		// Existing player ID - retrieve or update name
-		if s.db != nil {
-			if storedName, err := s.db.GetPlayerProfile(playerID); err == nil {
-				// Profile exists, optionally update name if different
-				if storedName != playerName && playerName != "" {
-					if err := s.db.SetPlayerProfile(playerID, playerName); err != nil {
-						log.Printf("Failed to update player profile: %v", err)
-					}
-				} else if storedName != "" {
-					// Use the stored name if no new name provided
-					playerName = storedName
+		if profile, err := s.db.GetProfile(playerID); err == nil {
+			// Profile exists, optionally update name if different
+			if profile.Name != playerName && playerName != "" {
+				profile.Name = playerName
+				if err := s.db.SaveProfile(*profile); err != nil {
+					log.Printf("Failed to update player profile: %v", err)
 				}
-				log.Printf("Retrieved profile: %s (%s)", playerID, playerName)
-			} else {
-				// Profile doesn't exist, create it
-				if err := s.db.SetPlayerProfile(playerID, playerName); err != nil {
-					log.Printf("Failed to store player profile: %v", err)
-				}
-				log.Printf("Created profile for existing ID: %s (%s)", playerID, playerName)
+			} else if profile.Name != "" {
+				// Use the stored name if no new name provided
+				playerName = profile.Name
 			}
+			log.Printf("Retrieved profile: %s (%s)", playerID, playerName)
+		} else {
+			// Profile doesn't exist, create it
+			profile := db.ProfileEntry{
+				ID:   playerID,
+				Name: playerName,
+			}
+			if err := s.db.SaveProfile(profile); err != nil {
+				log.Printf("Failed to store player profile: %v", err)
+			}
+			log.Printf("Created profile for existing ID: %s (%s)", playerID, playerName)
 		}
 	}
 
@@ -178,81 +200,56 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 // handleJoinGame adds a human player to a game
 func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	gameID := vars["id"]
+	code := vars["code"]
 
 	var req struct {
-		PlayerID   string `json:"player_id,omitempty"`
-		PlayerName string `json:"player_name,omitempty"`
+		PlayerID string `json:"player_id,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	// Try to get the game - first check if gameID might be a code
-	var game *GameSession
-	var err error
-
-	// Check if it looks like a game code (4-5 uppercase chars/numbers)
-	if len(gameID) <= 5 {
-		// Try treating it as a code first
-		game, err = s.GetGameByCode(gameID)
-		if err != nil {
-			// If not found as code, try as regular ID
-			game, err = s.GetGame(gameID)
-		} else {
-			// Update gameID to the real ID for the response
-			gameID = game.ID
-		}
-	} else {
-		// Longer strings are treated as game IDs
-		game, err = s.GetGame(gameID)
-	}
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	playerID := req.PlayerID
+	if playerID == "" {
+		http.Error(w, "player ID is empty", http.StatusBadRequest)
 		return
 	}
-
-	playerID := req.PlayerID
-	playerName := req.PlayerName
-
-	// Generate player ID if not provided
-	if playerID == "" {
-		playerID = uuid.New().String()
-		log.Printf("Generated new player ID: %s for %s", playerID, playerName)
+	// Fetch profile
+	profile, profile_err := s.db.GetProfile(playerID)
+	if profile_err == nil {
+		log.Printf("Returning player: %s (%s)", playerID, profile.Name)
 	}
-
-	if s.db != nil {
-		if req.PlayerID != "" {
-			// Existing player - retrieve stored name
-			if storedName, err := s.db.GetPlayerProfile(playerID); err == nil {
-				playerName = storedName
-				log.Printf("Returning player: %s (%s)", playerID, storedName)
-			}
-		} else {
-			// New player - store profile
-			if err := s.db.SetPlayerProfile(playerID, playerName); err != nil {
-				log.Printf("Failed to store player profile: %v", err)
-			}
-		}
+	if profile_err != nil {
+		http.Error(w, profile_err.Error(), http.StatusNotFound)
+		return
 	}
-
+	// Fetch game
+	gs, game_err := s.db.GetGameBySessionCode(code)
+	if game_err != nil {
+		http.Error(w, game_err.Error(), http.StatusNotFound)
+		return
+	}
 	// Actually add the player to the game
-	if err := game.AddPlayer(playerID, playerName); err != nil {
+	response, err := gs.AddPlayer(&game.PlayerState{
+		ID:   playerID,
+		Name: profile.Name,
+	})
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	s.db.SaveGame(*gs)
+	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(playerID))
+	go s.BroadcastAIActions(gs)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"player_id":   playerID,
-		"player_name": playerName,
-		"game_id":     gameID,
+		"game_id": gs.ID,
 	})
 
-	log.Printf("Player %s (%s) joined game %s via HTTP", playerID, playerName, gameID)
+	log.Printf("Player %s (%s) joined game %s via HTTP", playerID, profile.Name, gs.ID)
 }
 
 // handleAddAgent adds an AI agent to a game
@@ -260,53 +257,58 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	gameID := vars["id"]
 
-	var req struct {
-		AgentType string `json:"agent_type"`
-		AgentName string `json:"agent_name"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	game, err := s.GetGame(gameID)
+	gs, err := s.db.GetGameByID(gameID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	if req.AgentName == "" {
-		req.AgentName = game.getRandomAgentName()
+	// Get all available agent profiles from database
+	allAgentProfiles, err := s.db.ListAgentProfiles()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	if err := game.AddAgent(req.AgentType, req.AgentName); err != nil {
+	// Filter out agents already in the game
+	var availableProfiles []db.ProfileEntry
+	for _, profile := range allAgentProfiles {
+		inUse := false
+		for _, player := range gs.Players {
+			if player != nil && player.ID == profile.ID {
+				inUse = true
+				break
+			}
+		}
+		if !inUse {
+			availableProfiles = append(availableProfiles, profile)
+		}
+	}
+
+	if len(availableProfiles) == 0 {
+		http.Error(w, "no available agents", http.StatusBadRequest)
+		return
+	}
+
+	// Pick a random available agent
+	agentProfile := availableProfiles[rand.Int()%len(availableProfiles)]
+
+	response, err := gs.AddPlayer(&game.PlayerState{
+		ID:      agentProfile.ID,
+		Name:    agentProfile.Name,
+		IsAgent: true,
+	})
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	s.db.SaveGame(*gs)
+	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(agentProfile.ID))
+	go s.BroadcastAIActions(gs)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "agent added"})
-}
-
-// handleStartGame starts a game
-func (s *Server) handleStartGame(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	gameID := vars["id"]
-
-	game, err := s.GetGame(gameID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	if err := game.StartGame(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "game started"})
 }
 
 // handleGetPlayerHistory returns a player's game history
@@ -320,27 +322,83 @@ func (s *Server) handleGetPlayerHistory(w http.ResponseWriter, r *http.Request) 
 	if limitStr != "" {
 		var err error
 		limit, err = strconv.Atoi(limitStr)
-		if err != nil || limit < 1 || limit > 50 {
+		if err != nil || limit < 1 || limit > 100 {
 			limit = 10
 		}
 	}
 
-	// If no database, return empty array
-	if s.db == nil {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]*GameHistoryEntry{})
-		return
-	}
-
-	history, err := s.db.GetPlayerGameHistory(playerID, limit)
+	results, err := s.db.GetPlayerResults(playerID, limit)
 	if err != nil {
-		log.Printf("Failed to get player history: %v", err)
+		log.Printf("Failed to get player results: %v", err)
 		// Return empty array on error rather than failing
-		history = []GameHistoryEntry{}
+		results = []game.PlayerResultState{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(history)
+	json.NewEncoder(w).Encode(results)
+}
+
+// handleGetSessionResults returns all game results for a session
+func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sessionID := vars["id"]
+
+	playerResults, err := s.db.GetSessionResults(sessionID)
+	if err != nil {
+		log.Printf("Failed to get session results: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to get session results: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Group results by game
+	gameResultsMap := make(map[string]map[string]interface{})
+	for _, pr := range playerResults {
+		if _, exists := gameResultsMap[pr.GameID]; !exists {
+			// Fetch game to get additional info
+			gs, err := s.db.GetGameByID(pr.GameID)
+			if err != nil {
+				log.Printf("Failed to get game %s: %v", pr.GameID, err)
+				continue
+			}
+
+			declarer := gs.Players[gs.Declarer]
+			declarerWon, _, _ := gs.GetGameResult()
+
+			gameResultsMap[pr.GameID] = map[string]interface{}{
+				"game_id":        pr.GameID,
+				"game_number":    gs.GameNumber,
+				"declarer_name":  declarer.Name,
+				"declarer_won":   declarerWon,
+				"game_mode":      string(gs.Mode),
+				"trump_suit":     gs.TrumpSuit.String(),
+				"game_value":     gs.GameValue,
+				"player_results": make(map[string]int),
+				"player_names":   make(map[string]string),
+			}
+
+			// Add all player names
+			for _, player := range gs.Players {
+				if player != nil {
+					gameResultsMap[pr.GameID]["player_names"].(map[string]string)[player.ID] = player.Name
+				}
+			}
+		}
+
+		// Add player points
+		gameResultsMap[pr.GameID]["player_results"].(map[string]int)[pr.PlayerID] = pr.PlayerPoints
+	}
+
+	// Convert map to slice
+	var results []map[string]interface{}
+	for _, result := range gameResultsMap {
+		results = append(results, result)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"session_id": sessionID,
+		"results":    results,
+	})
 }
 
 // fileExists checks if a file exists

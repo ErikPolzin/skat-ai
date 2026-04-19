@@ -22,7 +22,10 @@ export default function Card({
 
   React.useEffect(() => {
     // Mark as dealt after initial animation
-    const timer = setTimeout(() => setHasDealt(true), (index * 0.1 + 0.5) * 1000);
+    const timer = setTimeout(
+      () => setHasDealt(true),
+      (index * 0.1 + 0.5) * 1000,
+    );
     return () => clearTimeout(timer);
   }, [index]);
 

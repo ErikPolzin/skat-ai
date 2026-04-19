@@ -53,7 +53,7 @@ func main() {
 			}
 
 			move := mcts.SelectMove(g, validMoves)
-			if err := g.PlayCard(move); err != nil {
+			if _, err := g.PlayCard("", move); err != nil {
 				fmt.Printf("  ✗ Error: %v\n", err)
 				break
 			}
@@ -64,18 +64,6 @@ func main() {
 		if g.Phase != game.PhaseComplete {
 			fmt.Printf("  ✗ Game didn't complete (moves: %d)\n", moves)
 			continue
-		}
-
-		// For Null, declarer should lose all tricks
-		if testMode.mode == game.ModeNull {
-			declarerTricks := len(g.Players[g.Declarer].TricksTaken)
-			if declarerTricks == 0 {
-				fmt.Printf("  ✓ Null game: Declarer won 0 tricks (SUCCESS)\n")
-			} else {
-				fmt.Printf("  ~ Null game: Declarer won %d tricks (depends on play)\n", declarerTricks)
-			}
-		} else {
-			fmt.Printf("  ✓ %s game: Declarer scored %d points\n", testMode.name, g.DeclarerScore)
 		}
 
 		// Test game mode selection

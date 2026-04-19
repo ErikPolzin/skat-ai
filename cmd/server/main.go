@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"skat/server"
+	"skat/server/db"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -21,28 +23,48 @@ func main() {
 	}
 
 	// Initialize database (optional - will run without it)
-	var db *server.Database
-	if os.Getenv("DB_PASSWORD") != "" {
-		var err error
-		db, err = server.NewDatabase()
-		if err != nil {
-			log.Printf("Warning: Failed to connect to database: %v", err)
-			log.Println("Continuing without database persistence")
-			db = nil
-		} else {
-			defer db.Close()
+	var database db.Database
+	dbURL := os.Getenv("DATABASE_URL")
 
+	if dbURL != "" {
+		var err error
+		if strings.HasPrefix(dbURL, "libsql://") || strings.HasPrefix(dbURL, "https://") {
+			// Turso/LibSQL database
+			database, err = db.NewTursoDatabase(dbURL)
+			if err != nil {
+				log.Printf("Warning: Failed to connect to Turso database: %v", err)
+			}
+		} else if strings.HasPrefix(dbURL, "postgres://") || strings.HasPrefix(dbURL, "postgresql://") || strings.Contains(dbURL, "host=") {
+			// PostgreSQL database
+			database, err = db.NewPgDatabase(dbURL)
+			if err != nil {
+				log.Printf("Warning: Failed to connect to PostgreSQL database: %v", err)
+			}
+		} else {
+			log.Printf("Warning: Unknown database URL scheme: %s", dbURL)
+		}
+
+		if database != nil {
+			defer database.Close()
 			// Initialize schema
-			if err := db.InitSchema(); err != nil {
+			if err := database.InitSchema(); err != nil {
 				log.Printf("Warning: Failed to initialize database schema: %v", err)
 			}
 		}
-	} else {
-		log.Println("No database configured (DB_PASSWORD not set)")
-		log.Println("Running in memory-only mode")
 	}
 
-	srv := server.NewServer(db)
+	if database == nil {
+		log.Println("No database configured - using in-memory database")
+		database = db.NewMemoryDatabase()
+	}
+
+	// Ensure we always have a database (fallback to memory)
+	if database == nil {
+		log.Println("Falling back to in-memory database")
+		database = db.NewMemoryDatabase()
+	}
+
+	srv := server.NewServer(database)
 	router := srv.SetupRoutes()
 
 	log.Printf("Starting Skat server on port %s", port)

@@ -27,10 +27,7 @@ export function GameLobbyWaiting() {
             Waiting for {playersNeeded} more player
             {playersNeeded > 1 ? "s" : ""}...
           </p>
-          <button
-            className="add-ai-button"
-            onClick={() => game.addAgent("mcts")}
-          >
+          <button className="add-ai-button" onClick={() => game.addAgent()}>
             Add AI Player
           </button>
         </>

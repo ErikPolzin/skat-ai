@@ -1,0 +1,74 @@
+CREATE TABLE IF NOT EXISTS profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    is_agent INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert initial agent profiles
+INSERT OR IGNORE INTO profiles (id, name, is_agent) VALUES
+    ('550e8400-e29b-41d4-a716-446655440001', 'Bill', 1),
+    ('550e8400-e29b-41d4-a716-446655440002', 'Dave', 1),
+    ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', 1);
+
+CREATE TABLE IF NOT EXISTS game_sessions (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    game_id TEXT DEFAULT NULL,
+    player_count INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS games (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    game_number INTEGER DEFAULT 0,
+    phase TEXT NOT NULL,
+    skat TEXT DEFAULT '',
+    trick TEXT DEFAULT '',
+    trick_starter INTEGER DEFAULT 0,
+    trick_winner INTEGER DEFAULT 0,
+    current_player INTEGER DEFAULT 0,
+    declarer INTEGER DEFAULT -1,
+    declarer_score INTEGER DEFAULT 0,
+    opponent_score INTEGER DEFAULT 0,
+    game_mode TEXT DEFAULT '',
+    trump_suit INTEGER DEFAULT 0,
+    bid_value INTEGER DEFAULT 0,
+    listener_passed INTEGER DEFAULT 0,
+    speaker_passed INTEGER DEFAULT 0,
+    dealer_passed INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS players (
+    game_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    hand TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (game_id, profile_id),
+    FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS player_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    player_position INTEGER NOT NULL,
+    player_points INTEGER DEFAULT 0,
+    is_winner INTEGER DEFAULT 0,
+    FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+    FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_players_game_id ON players(game_id);
+CREATE INDEX IF NOT EXISTS idx_player_results_game_id ON player_results(game_id);
+CREATE INDEX IF NOT EXISTS idx_player_results_player_id ON player_results(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_results_session_id ON player_results(session_id);

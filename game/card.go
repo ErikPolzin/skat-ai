@@ -1,7 +1,5 @@
 package game
 
-import "fmt"
-
 // Suit represents a card suit
 type Suit int
 
@@ -11,10 +9,6 @@ const (
 	Hearts
 	Diamonds
 )
-
-func (s Suit) String() string {
-	return [...]string{"♣", "♠", "♥", "♦"}[s]
-}
 
 // Rank represents a card rank in Skat
 type Rank int
@@ -30,18 +24,10 @@ const (
 	Ace
 )
 
-func (r Rank) String() string {
-	return [...]string{"7", "8", "9", "10", "J", "Q", "K", "A"}[r]
-}
-
 // Card represents a playing card
 type Card struct {
-	Suit Suit
-	Rank Rank
-}
-
-func (c Card) String() string {
-	return fmt.Sprintf("%s%s", c.Rank, c.Suit)
+	Suit Suit `json:"suit"`
+	Rank Rank `json:"rank"`
 }
 
 // Value returns the point value of the card
@@ -62,8 +48,11 @@ func (c Card) Value() int {
 	}
 }
 
+type Cards []Card
+type SkatCards [2]Card
+
 // NewDeck creates a standard Skat deck (32 cards)
-func NewDeck() []Card {
+func NewDeck() Cards {
 	deck := make([]Card, 0, 32)
 	for suit := Clubs; suit <= Diamonds; suit++ {
 		for rank := Seven; rank <= Ace; rank++ {

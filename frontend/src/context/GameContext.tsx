@@ -6,11 +6,12 @@ import React, {
   type ReactNode,
 } from "react";
 import { Game, useGame } from "../hooks/useGame";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useProfileStore } from "../stores/profileStore";
 import { useWebSocketContext } from "./WebSocketContext";
 import { GameControls, useControls } from "../hooks/useControls";
 import { Message } from "../types";
+import { type GameInfo } from "../api/games";
 
 const GameContext = createContext<
   | (Game & {
@@ -26,26 +27,48 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const game = useGame(gameId, playerId || undefined);
   const socket = useWebSocketContext();
   const controls = useControls(game, socket);
+  const navigate = useNavigate();
 
   // Handle incoming WebSocket messages
   const handleGameMessage = useCallback((message: Message) => {
-    const { setGameState, addMessage } = game;
+    const {
+      setGameInfo,
+      addMessage,
+      setSessionResults,
+      setGamesPlayed,
+    } = game;
 
     switch (message.type) {
       case "state_update":
         // Handle the new state diff format
         if (message.data.diff) {
-          const diff = message.data.diff;
+          const diff = message.data.diff as GameInfo;
 
           // Apply all state changes at once first
-          setGameState(diff.changes || {});
+          setGameInfo(diff);
+
+          // Handle session results if included (from game complete or session_updated)
+          if (message.data.session_results) {
+            setSessionResults(message.data.session_results);
+          }
+          if (message.data.games_played !== undefined) {
+            setGamesPlayed(message.data.games_played);
+          }
 
           // Show the action description in the message log AFTER state is updated
-          if (diff.description && diff.description.trim() !== "") {
-            const fromPlayer = diff.from_player?.position;
-            addMessage(diff.description, false, fromPlayer);
+          // (but not for session_updated events which are silent)
+          if (
+            message.data.description &&
+            message.data.description.trim() !== "" &&
+            message.data.action_type !== "session_updated"
+          ) {
+            const fromPlayer = message.data.from_player;
+            addMessage(message.data.description, false, fromPlayer);
           }
         }
+        break;
+      case "start_next_game":
+        navigate(`/game/${message.data.game_id}`);
         break;
       case "error":
         addMessage(message.data.message, true);

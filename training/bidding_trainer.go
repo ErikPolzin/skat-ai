@@ -66,7 +66,7 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 			}
 
 			move := bt.mctsAgents[g.CurrentPlayer].SelectMove(g, validMoves)
-			g.PlayCard(move)
+			g.PlayCard("", move)
 		}
 
 		// Determine outcome

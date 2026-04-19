@@ -87,7 +87,7 @@ func main() {
 				break
 			}
 			move := mctsPlayer.SelectMove(g, validMoves)
-			g.PlayCard(move)
+			g.PlayCard("", move)
 		}
 
 		won := g.DeclarerScore >= 61

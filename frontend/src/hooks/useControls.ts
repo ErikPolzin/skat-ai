@@ -2,11 +2,16 @@ import type { Card as CardType } from "../types";
 import { Game } from "./useGame";
 import { SkatWebSocket } from "./useWebSocket";
 
+// Convert card to string format: "rank.suit"
+const cardToString = (card: CardType): string => {
+  return `${card.rank}.${card.suit}`;
+};
+
 export function useControls(game: Game, websocket: SkatWebSocket) {
   const playCard = (card: CardType) => {
     if (game.isMyTurn && !game.isBiddingPhase) {
-      // Normal card play
-      websocket.sendMessage("play_card", { card, game_id: game.gameId });
+      // Normal card play - send card as string "rank.suit"
+      websocket.sendMessage("play_card", { card: cardToString(card), game_id: game.gameId });
     }
   };
 
@@ -31,7 +36,9 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
   };
 
   const discardCards = (cards: CardType[]) => {
-    websocket.sendMessage("discard_cards", { cards, game_id: game.gameId });
+    // Convert cards to string format "rank.suit-rank.suit"
+    const cardsStr = cards.map(cardToString).join("-");
+    websocket.sendMessage("discard_cards", { cards: cardsStr, game_id: game.gameId });
     // The backend will move to DeclarerChoice phase and reset has_picked_up_skat
   };
 
@@ -63,6 +70,12 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
     }
   };
 
+  const playNextGame = async () => {
+    websocket.sendMessage("start_next_game", {
+      game_id: game.gameId,
+    });
+  };
+
   return {
     playCard,
     pickUpSkat,
@@ -71,6 +84,7 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
     bid,
     deal,
     declareGame,
+    playNextGame,
   };
 }
 

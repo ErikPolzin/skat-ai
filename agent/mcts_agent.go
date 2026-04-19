@@ -128,7 +128,7 @@ func (m *MCTSAgent) expand(node *MCTSNode) *MCTSNode {
 
 	// Apply move to create child state
 	childState := node.state.Clone()
-	childState.PlayCard(move)
+	childState.PlayCard("", move)
 
 	child := newMCTSNode(childState, node, &move, node.playerID)
 	node.children = append(node.children, child)
@@ -149,7 +149,7 @@ func (m *MCTSAgent) simulate(node *MCTSNode) float64 {
 			break
 		}
 		move := validMoves[rand.Intn(len(validMoves))]
-		state.PlayCard(move)
+		state.PlayCard("", move)
 		moves++
 	}
 

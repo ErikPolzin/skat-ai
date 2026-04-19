@@ -10,8 +10,8 @@ func main() {
 	fmt.Println("================")
 	fmt.Println()
 
-	ba := agent.NewBiddingAgent()
-	if err := ba.LoadQTable("bidding_qtable.json"); err != nil {
+	ba := agent.NewSkatAgent("Agent", 500)
+	if err := ba.LoadQTableBinary("bidding_qtable.gob"); err != nil {
 		fmt.Printf("Error loading Q-table: %v\n", err)
 		return
 	}

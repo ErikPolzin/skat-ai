@@ -26,7 +26,7 @@ func main() {
 	trainedAgent := trainer.GetBiddingAgent(0)
 	trainedAgent.Epsilon = 0.0 // No exploration during eval
 
-	mctsPlayer := agent.NewMCTSAgent("MCTS", 300)
+	mctsPlayer := agent.NewSkatAgent("MCTS", 300)
 
 	trainedWins := 0
 	trainedGames := 0

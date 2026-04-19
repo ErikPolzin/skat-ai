@@ -154,6 +154,44 @@ go test ./...
 rm bidding_qtable.json
 ```
 
+## Deployment
+
+### Deploying Q-Table to Google Cloud Storage
+
+The agent loads Q-tables from GCS in production and local files in development.
+
+#### 1. Upload Q-table to GCS
+
+```bash
+# Set your GCS bucket name
+export GCS_BUCKET="your-bucket-name"
+
+# Upload the Q-table
+gsutil cp bidding_qtable.gob gs://${GCS_BUCKET}/qtables/bidding_latest.gob
+```
+
+#### 2. Deploy to Cloud Run
+
+When running `gcloud builds submit`, include the GCS bucket:
+
+```bash
+gcloud builds submit \
+  --substitutions=_TURSO_DB_URL="${TURSO_DB_URL}",_TURSO_AUTH_TOKEN="${TURSO_AUTH_TOKEN}",_GCS_BUCKET="${GCS_BUCKET}"
+```
+
+#### 3. Verify Q-table loads
+
+Check the Cloud Run logs for:
+```
+✅ Loaded Q-table from GCS (42 states)
+```
+
+**How it works:**
+- **Development (local)**: Agent loads from `bidding_qtable.gob` file
+- **Production (Cloud Run)**: Agent loads from `gs://${GCS_BUCKET}/qtables/bidding_latest.gob`
+
+The agent automatically detects which environment based on the `GCS_BUCKET` environment variable.
+
 ## Next Steps
 
 See [ROADMAP.md](ROADMAP.md) for detailed completion plan.

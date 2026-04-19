@@ -416,3 +416,78 @@ func (d *PgDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	}
 	return profiles, nil
 }
+
+// CleanupStaleGames deletes games where no moves have been made in the specified minutes
+// and no human players are currently online
+func (d *PgDatabase) CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []string) (int, error) {
+	// Build a query to find stale games
+	// A game is stale if:
+	// 1. updated_at is older than inactiveMinutes
+	// 2. No human players in the game are currently online
+
+	var result sql.Result
+	var err error
+
+	if len(onlinePlayerIDs) > 0 {
+		// Use PostgreSQL array type for the NOT IN clause
+		query := `
+			DELETE FROM games
+			WHERE updated_at < NOW() - INTERVAL '1 minute' * $1
+			AND id NOT IN (
+				SELECT DISTINCT p.game_id
+				FROM players p
+				JOIN profiles pr ON p.profile_id = pr.id
+				WHERE pr.is_agent = FALSE
+				AND p.profile_id = ANY($2::text[])
+			)
+		`
+		result, err = d.DB.Exec(query, inactiveMinutes, onlinePlayerIDs)
+	} else {
+		// No online players, so we just check the timestamp
+		query := `
+			DELETE FROM games
+			WHERE updated_at < NOW() - INTERVAL '1 minute' * $1
+		`
+		result, err = d.DB.Exec(query, inactiveMinutes)
+	}
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup stale games: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return int(rowsAffected), nil
+}
+
+func (d *PgDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameState, error) {
+	rows, err := d.DB.Query(`
+		SELECT DISTINCT g.id
+		FROM games g
+		JOIN players p ON g.id = p.game_id
+		WHERE p.profile_id = $1 AND g.phase != $2
+	`, playerID, game.PhaseComplete)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query active games by player: %w", err)
+	}
+	defer rows.Close()
+
+	var games []game.GameState
+	for rows.Next() {
+		var gameID string
+		if err := rows.Scan(&gameID); err != nil {
+			return nil, fmt.Errorf("failed to scan game ID: %w", err)
+		}
+
+		gs, err := d.GetGameByID(gameID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get game %s: %w", gameID, err)
+		}
+		games = append(games, *gs)
+	}
+
+	return games, nil
+}

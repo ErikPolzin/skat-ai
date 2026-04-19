@@ -34,15 +34,29 @@ export function BiddingControls() {
     );
   }
 
+  // Determine if current player is in the "announcing" role
+  // In Skat: Speaker announces first, then winner announces in round 2
+  const isSpeaker = game.playerPosition === 2;
+  const isListener = game.playerPosition === 1;
+  const isDealer = game.playerPosition === 0;
+
+  // Determine role based on game state
+  const isAnnouncing =
+    (isSpeaker && !game.speakerPassed) ||
+    (isListener && game.speakerPassed && !game.listenerPassed) ||
+    (isDealer && game.speakerPassed && game.listenerPassed && !game.dealerPassed);
+
+  const canBid = game.bidValue > 0;
+
   return (
     <div className="bidding-controls">
       <div className="bid-info">
-        <span className="current-bid">Current: {game.bidValue}</span>
+        <span className="current-bid">Current Bid: {game.bidValue || "None"}</span>
       </div>
 
       <div className="bid-buttons">
-        {game.playerPosition === 2 ? (
-          // Speaker position - can raise or pass
+        {isAnnouncing ? (
+          // Announcing player - can raise or pass
           <>
             <button
               className="bid-btn raise"
@@ -58,23 +72,21 @@ export function BiddingControls() {
             </button>
           </>
         ) : (
-          // Listener/Dealer position
+          // Responding player - can hold or pass
           <>
-            {game.declarerScore > 0 ? (
-              // If there's already a bid, can hold it
+            {canBid ? (
               <button
                 className="bid-btn hold"
                 onClick={() => game.controls.bid("hold")}
               >
-                Yes ({game.declarerScore})
+                Yes ({game.bidValue})
               </button>
             ) : (
-              // If no bid yet, can initiate bidding at 18
               <button
                 className="bid-btn raise"
-                onClick={() => game.controls.bid("18")}
+                onClick={() => game.controls.bid(String(getNextBidValue()))}
               >
-                Bid 18
+                Bid {getNextBidValue()}
               </button>
             )}
             <button

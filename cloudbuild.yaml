@@ -21,14 +21,14 @@ steps:
       - '--memory=512Mi'
       - '--cpu=1'
       - '--max-instances=10'
-      - '--set-env-vars=TURSO_DB_URL=${_TURSO_DB_URL}'
-      - '--set-env-vars=TURSO_AUTH_TOKEN=${_TURSO_AUTH_TOKEN}'
+      - '--set-env-vars=DATABASE_URL=${_DATABASE_URL}'
       - '--set-env-vars=CORS_ORIGIN=${_CORS_ORIGIN}'
+      - '--set-env-vars=GCS_BUCKET=${_GCS_BUCKET}'
+      - '--set-env-vars=GCS_QTABLE_PATH=qtables/bidding_latest.gob'
 
 images:
   - 'gcr.io/$PROJECT_ID/skat-server:$COMMIT_SHA'
 
 substitutions:
-  _TURSO_DB_URL: '${TURSO_DB_URL}'  # Set via gcloud builds submit --substitutions
-  _TURSO_AUTH_TOKEN: '${TURSO_AUTH_TOKEN}'  # Set via gcloud builds submit --substitutions
   _CORS_ORIGIN: 'https://skat-ai-6fa5a.web.app'  # Update with your Firebase URL
+  _GCS_BUCKET: '${GCS_BUCKET}'  # Set via gcloud builds submit --substitutions

@@ -1,9 +1,9 @@
 package server
 
 import (
-	"log"
 	"skat/agent"
 	"skat/game"
+	"skat/logger"
 	"time"
 )
 
@@ -15,13 +15,13 @@ type Message struct {
 
 // handleMessage processes incoming WebSocket messages
 func (s *Server) handleMessage(client *Client, msg *Message) {
-	log.Printf("Received message type: %s from profile: %s", msg.Type, client.profileID)
+	logger.Debug("Received message", "type", msg.Type, "profile_id", client.profileID)
 
 	switch msg.Type {
 	case "deal":
 		s.handleDealMessage(client, msg)
 	case "play_card":
-		log.Printf("Handling play_card message with data: %+v", msg.Data)
+		logger.Debug("Handling play_card message", "data", msg.Data)
 		s.handlePlayCardMessage(client, msg)
 	case "bid":
 		s.handleBidMessage(client, msg)
@@ -34,7 +34,7 @@ func (s *Server) handleMessage(client *Client, msg *Message) {
 	case "start_next_game":
 		s.handleStartNextGameMessage(client, msg)
 	default:
-		log.Printf("Unknown message type: %s", msg.Type)
+		logger.Warning("Unknown message type", "type", msg.Type)
 	}
 }
 
@@ -69,7 +69,7 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) {
 	if gs.Phase == game.PhaseComplete {
 		results := game.Results(gs)
 		if err := s.db.SavePlayerResults(results); err != nil {
-			log.Printf("Failed to save player results: %v", err)
+			logger.Warning("Failed to save player results", "error", err)
 		}
 	}
 }

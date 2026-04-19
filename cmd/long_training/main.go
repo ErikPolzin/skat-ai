@@ -3,11 +3,17 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
+	"skat/config"
+	"skat/logger"
 	"skat/training"
+	"time"
 )
 
 func main() {
+	// Initialize and disable logger for training
+	logger.Initialize("long_training")
+	logger.Disable()
+
 	fmt.Println("Skat AI - Long Training Session")
 	fmt.Println("================================")
 	fmt.Println()
@@ -16,8 +22,8 @@ func main() {
 
 	// Check if we should resume from existing Q-table
 	resuming := false
-	if _, err := os.Stat("bidding_qtable_long.json"); err == nil {
-		fmt.Println("Found existing Q-table: bidding_qtable_long.json")
+	if _, err := os.Stat("bidding_qtable_long.gob"); err == nil {
+		fmt.Println("Found existing Q-table: bidding_qtable_long.gob")
 		fmt.Println("This will continue training from the saved state.")
 		fmt.Println()
 		resuming = true
@@ -28,7 +34,7 @@ func main() {
 	// If resuming, load the Q-table
 	if resuming {
 		fmt.Println("Loading previous training state...")
-		if err := trainer.GetBiddingAgent(0).LoadQTable("bidding_qtable_long.json"); err != nil {
+		if err := trainer.GetBiddingAgent(0).LoadQTableBinary("bidding_qtable_long.gob"); err != nil {
 			fmt.Printf("Warning: Could not load Q-table: %v\n", err)
 			fmt.Println("Starting fresh training instead.")
 			resuming = false
@@ -48,33 +54,43 @@ func main() {
 
 	trainer.TrainBidding(episodes)
 
-	// Save with special filename
-	fmt.Println("\nSaving trained agent to bidding_qtable_long.json...")
 	agent := trainer.GetBiddingAgent(0)
 
-	if err := agent.SaveQTable("bidding_qtable_long.json"); err != nil {
-		fmt.Printf("Error saving Q-table: %v\n", err)
-	} else {
-		fmt.Println("✓ Saved successfully")
-
-		stats := agent.GetQTableStats()
-		fmt.Printf("\nFinal Q-table statistics:\n")
-		fmt.Printf("  States learned:     %v\n", stats["total_states"])
-		fmt.Printf("  State-actions:      %v\n", stats["total_state_actions"])
-		fmt.Printf("  Q-value range:      %.3f to %.3f\n", stats["min_q"], stats["max_q"])
-		fmt.Printf("  Average Q:          %.3f\n", stats["avg_q"])
-		fmt.Printf("  Final epsilon:      %.3f\n", stats["epsilon"])
-	}
+	stats := agent.GetQTableStats()
+	fmt.Printf("\nFinal Q-table statistics:\n")
+	fmt.Printf("  States learned:     %v\n", stats["total_states"])
+	fmt.Printf("  State-actions:      %v\n", stats["total_state_actions"])
+	fmt.Printf("  Q-value range:      %.3f to %.3f\n", stats["min_q"], stats["max_q"])
+	fmt.Printf("  Average Q:          %.3f\n", stats["avg_q"])
+	fmt.Printf("  Final epsilon:      %.3f\n", stats["epsilon"])
 
 	elapsed := time.Since(startTime)
 	fmt.Printf("\nTotal training time: %v\n", elapsed.Round(time.Second))
 
-	// Also save as the default Q-table for easy use
-	fmt.Println("\nCopying to bidding_qtable.json for general use...")
-	if err := agent.SaveQTable("bidding_qtable.json"); err != nil {
-		fmt.Printf("Warning: Could not save to default location: %v\n", err)
+	// Save locally (binary)
+	fmt.Println("\nSaving trained agent locally...")
+	if err := agent.SaveQTableBinary("bidding_qtable_long.gob"); err != nil {
+		fmt.Printf("✗ Error saving to bidding_qtable_long.gob: %v\n", err)
 	} else {
-		fmt.Println("✓ Default Q-table updated")
+		fmt.Println("✓ Saved to bidding_qtable_long.gob")
+	}
+
+	// Copy to default location
+	if err := agent.SaveQTableBinary("bidding_qtable.gob"); err != nil {
+		fmt.Printf("✗ Error saving to bidding_qtable.gob: %v\n", err)
+	} else {
+		fmt.Println("✓ Saved to bidding_qtable.gob")
+	}
+
+	// Upload to GCS if configured
+	cfg := config.LoadFromEnv()
+	fmt.Printf("\nUploading to cloud storage...\n")
+	fmt.Printf("Storage backend: %s\n", cfg)
+
+	if err := cfg.SaveQTable(agent); err != nil {
+		fmt.Printf("✗ Upload failed: %v\n", err)
+	} else {
+		fmt.Println("✓ Uploaded successfully to GCS")
 	}
 
 	fmt.Println("\n" + repeat("=", 70))

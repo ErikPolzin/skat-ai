@@ -8,16 +8,16 @@ import (
 
 // Trainer manages the self-play training loop
 type Trainer struct {
-	agents      []*agent.MCTSAgent
+	agents      []*agent.SkatAgent
 	randomAgent *agent.RandomAgent
 }
 
 func NewTrainer() *Trainer {
 	return &Trainer{
-		agents: []*agent.MCTSAgent{
-			agent.NewMCTSAgent("MCTS-1", 500),
-			agent.NewMCTSAgent("MCTS-2", 500),
-			agent.NewMCTSAgent("MCTS-3", 500),
+		agents: []*agent.SkatAgent{
+			agent.NewSkatAgent("MCTS-1", 500),
+			agent.NewSkatAgent("MCTS-2", 500),
+			agent.NewSkatAgent("MCTS-3", 500),
 		},
 		randomAgent: agent.NewRandomAgent("Random"),
 	}

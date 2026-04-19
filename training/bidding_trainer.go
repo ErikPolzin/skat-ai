@@ -2,27 +2,28 @@ package training
 
 import (
 	"fmt"
+	"math/rand"
 	"skat/agent"
 	"skat/game"
 )
 
 // BiddingTrainer trains the bidding agent
 type BiddingTrainer struct {
-	biddingAgents [3]*agent.BiddingAgent
-	mctsAgents    [3]*agent.MCTSAgent
+	biddingAgents [3]*agent.SkatAgent
+	mctsAgents    [3]*agent.SkatAgent
 }
 
 func NewBiddingTrainer() *BiddingTrainer {
 	return &BiddingTrainer{
-		biddingAgents: [3]*agent.BiddingAgent{
-			agent.NewBiddingAgent(),
-			agent.NewBiddingAgent(),
-			agent.NewBiddingAgent(),
+		biddingAgents: [3]*agent.SkatAgent{
+			agent.NewSkatAgent("Agent", 50), // Reduced for faster training
+			agent.NewSkatAgent("Agent", 50),
+			agent.NewSkatAgent("Agent", 50),
 		},
-		mctsAgents: [3]*agent.MCTSAgent{
-			agent.NewMCTSAgent("MCTS-1", 500), // Increased from 200
-			agent.NewMCTSAgent("MCTS-2", 500),
-			agent.NewMCTSAgent("MCTS-3", 500),
+		mctsAgents: [3]*agent.SkatAgent{
+			agent.NewSkatAgent("MCTS-1", 50), // Reduced for faster training
+			agent.NewSkatAgent("MCTS-2", 50),
+			agent.NewSkatAgent("MCTS-3", 50),
 		},
 	}
 }
@@ -34,16 +35,61 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 	wins := make([]int, 3)
 	totalGames := make([]int, 3)
 
+	gamesPlayed := 0
 	for ep := 0; ep < episodes; ep++ {
+		// Simple progress indicator every 100 episodes
+		if (ep+1)%100 == 0 {
+			fmt.Printf(".")
+			if (ep+1)%1000 == 0 {
+				fmt.Printf(" %d\n", ep+1)
+			}
+		}
+
 		g := game.NewGame()
+
+		// Initialize players for training
+		for i := 0; i < 3; i++ {
+			g.Players[i] = &game.PlayerState{
+				ID:      fmt.Sprintf("player-%d", i),
+				Name:    fmt.Sprintf("Player %d", i),
+				Hand:    []game.Card{},
+				IsAgent: true,
+			}
+		}
+
+		// Deal cards
+		deck := game.NewDeck()
+		rand.Shuffle(len(deck), func(i, j int) {
+			deck[i], deck[j] = deck[j], deck[i]
+		})
+
+		// Deal: 3-4-3 pattern to each player
+		idx := 0
+		for round := 0; round < 3; round++ {
+			for p := 0; p < 3; p++ {
+				count := 3
+				if round == 1 {
+					count = 4
+				}
+				for i := 0; i < count; i++ {
+					g.Players[p].Hand = append(g.Players[p].Hand, deck[idx])
+					idx++
+				}
+			}
+		}
+		// Skat (2 cards)
+		g.Skat[0] = deck[30]
+		g.Skat[1] = deck[31]
 
 		// Conduct bidding
 		declarer, finalBid := bt.runBidding(g)
 
 		if declarer == -1 {
-			// Everyone passed - skip this game
+			// Everyone passed - episode still counts
 			continue
 		}
+
+		gamesPlayed++
 
 		g.Declarer = declarer
 		declarerInt := int(declarer)
@@ -53,7 +99,9 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 		bt.discardCards(g, declarer)
 
 		// Declarer chooses game mode based on hand
-		g.Mode, g.TrumpSuit = bt.biddingAgents[declarer].ChooseGameMode(g.Players[declarer].Hand)
+		g.Declarer = game.GamePosition(declarer)
+		g.CurrentPlayer = game.GamePosition(declarer)
+		g.Mode, g.TrumpSuit = bt.biddingAgents[declarer].ChooseGame(g)
 		g.Phase = game.PhasePlaying
 		// In Skat, forehand (player 0) leads first
 		g.CurrentPlayer = 0
@@ -97,11 +145,13 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 		}
 
 		if (ep+1)%reportInterval == 0 {
-			fmt.Printf("Episode %d: ", ep+1)
+			fmt.Printf("Episode %d (games: %d): ", ep+1, gamesPlayed)
 			for i := 0; i < 3; i++ {
 				if totalGames[i] > 0 {
 					winRate := float64(wins[i]) / float64(totalGames[i]) * 100
 					fmt.Printf("P%d: %.1f%% (%d/%d) ", i, winRate, wins[i], totalGames[i])
+				} else {
+					fmt.Printf("P%d: - (0/0) ", i)
 				}
 			}
 			qSize := bt.biddingAgents[0].GetQTableSize()
@@ -121,7 +171,7 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 }
 
 // GetBiddingAgent returns a trained bidding agent
-func (bt *BiddingTrainer) GetBiddingAgent(index int) *agent.BiddingAgent {
+func (bt *BiddingTrainer) GetBiddingAgent(index int) *agent.SkatAgent {
 	if index < 0 || index >= 3 {
 		return nil
 	}
@@ -144,6 +194,7 @@ func (bt *BiddingTrainer) runBidding(g *game.GameState) (game.GamePosition, int)
 	for active[0] || active[1] {
 		// Middlehand bids first
 		if active[1] {
+			g.CurrentPlayer = middlehand
 			bid := bt.biddingAgents[middlehand].Bid(g, currentBid)
 			if bid == 0 || bid <= currentBid {
 				active[1] = false
@@ -158,6 +209,7 @@ func (bt *BiddingTrainer) runBidding(g *game.GameState) (game.GamePosition, int)
 
 		// Forehand responds
 		if active[0] {
+			g.CurrentPlayer = forehand
 			bid := bt.biddingAgents[forehand].Bid(g, currentBid)
 			if bid == 0 || bid < currentBid {
 				active[0] = false
@@ -194,6 +246,7 @@ func (bt *BiddingTrainer) runBidding(g *game.GameState) (game.GamePosition, int)
 	for active2[0] && active2[1] {
 		// Rearhand bids
 		if active2[1] {
+			g.CurrentPlayer = rearhand
 			bid := bt.biddingAgents[rearhand].Bid(g, currentBid)
 			if bid == 0 || bid <= currentBid {
 				active2[1] = false
@@ -208,6 +261,7 @@ func (bt *BiddingTrainer) runBidding(g *game.GameState) (game.GamePosition, int)
 
 		// Phase 1 winner responds
 		if active2[0] {
+			g.CurrentPlayer = phase1Winner
 			bid := bt.biddingAgents[phase1Winner].Bid(g, currentBid)
 			if bid == 0 || bid < currentBid {
 				active2[0] = false

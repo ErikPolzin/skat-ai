@@ -12,7 +12,7 @@ func main() {
 	fmt.Println("============================\n")
 
 	// Load existing Q-table
-	ba := agent.NewBiddingAgent()
+	ba := agent.NewSkatAgent("Agent", 500)
 	if err := ba.LoadQTable("bidding_qtable.json"); err != nil {
 		fmt.Printf("Error loading Q-table: %v\n", err)
 		return
@@ -46,7 +46,7 @@ func main() {
 	fmt.Printf("  Reduction: %.1f%%\n\n", reduction)
 
 	// Load binary and verify
-	ba2 := agent.NewBiddingAgent()
+	ba2 := agent.NewSkatAgent("Agent", 500)
 	if err := ba2.LoadQTableBinary("bidding_qtable.gob"); err != nil {
 		fmt.Printf("✗ Failed to load binary: %v\n", err)
 		return
@@ -85,7 +85,7 @@ func main() {
 	fmt.Println("✓ Uploaded binary Q-table to GCS")
 
 	// Load from GCS
-	ba3 := agent.NewBiddingAgent()
+	ba3 := agent.NewSkatAgent("Agent", 500)
 	if err := ba3.LoadQTableFromGCS(ctx, bucketName, objectName, true); err != nil {
 		fmt.Printf("✗ Failed to download from GCS: %v\n", err)
 		return

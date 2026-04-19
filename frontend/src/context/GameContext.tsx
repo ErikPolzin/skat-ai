@@ -36,6 +36,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       addMessage,
       setSessionResults,
       setGamesPlayed,
+      markPlayerOffline,
     } = game;
 
     switch (message.type) {
@@ -69,6 +70,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
         break;
       case "start_next_game":
         navigate(`/game/${message.data.game_id}`);
+        break;
+      case "player_offline":
+        // Mark player as offline and optionally show a message
+        if (message.data.player_id) {
+          markPlayerOffline(message.data.player_id);
+          if (message.data.player_name) {
+            addMessage(`${message.data.player_name} went offline`, false);
+          }
+        }
         break;
       case "error":
         addMessage(message.data.message, true);

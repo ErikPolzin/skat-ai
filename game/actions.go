@@ -2,8 +2,8 @@ package game
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
+	"skat/logger"
 
 	"github.com/google/uuid"
 )
@@ -15,12 +15,12 @@ func (gs *GameState) AddPlayer(player *PlayerState) (string, error) {
 	}
 	position := gs.GetRandomPosition()
 	gs.Players[position] = player
-	log.Printf("Player %s joined game %s at position %d", player.Name, gs.ID, position)
+	logger.Info("Player joined game", "player_name", player.Name, "game_id", gs.ID, "position", position)
 	if gs.PlayerCount() != 3 {
 		return fmt.Sprintf("%s joined the game", player.Name), nil
 	}
 	gs.Phase = PhaseDealing
-	fmt.Printf("Game %s ready with 3 players", gs.ID)
+	logger.Info("Game ready with 3 players", "game_id", gs.ID)
 	return "Game started", nil
 }
 
@@ -60,7 +60,7 @@ func (gs *GameState) PlayCard(playerID string, card Card) (string, error) {
 		// Next player
 		gs.CurrentPlayer = (gs.CurrentPlayer + 1) % 3
 	}
-	log.Printf("Player %s played %v", currentPlayer.Name, card)
+	logger.Debug("Player played card", "player_name", currentPlayer.Name, "card", card.String())
 	return fmt.Sprintf("%v", card), nil
 }
 
@@ -117,7 +117,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 	}
 
 	trickWinner := gs.GetPlayerByPosition(gs.TrickWinner)
-	log.Printf("Player %s won the trick", trickWinner.Name)
+	logger.Debug("Player won the trick", "player_name", trickWinner.Name)
 	// Trick was completed, broadcast using state diff
 	return "Won the trick", nil
 }
@@ -173,7 +173,7 @@ func (gs *GameState) Bid(playerID string, action string) (string, error) {
 	// Determine next player and check if bidding is complete
 	gs.advanceBidding()
 
-	log.Printf("Player %s bid: %s", currentPlayer.Name, action)
+	logger.Debug("Player bid", "player_name", currentPlayer.Name, "action", action)
 	return action, nil
 }
 
@@ -191,7 +191,7 @@ func (gs *GameState) Deal(playerID string) (string, error) {
 		return "", fmt.Errorf("not in dealing phase")
 	}
 
-	log.Printf("Dealer %s dealing cards", dealer.Name)
+	logger.Debug("Dealer dealing cards", "dealer_name", dealer.Name)
 
 	// Actually deal the cards
 	deck := NewDeck()
@@ -238,9 +238,17 @@ func (gs *GameState) DeclareGame(playerID string, mode GameMode, trumpSuit Suit)
 	gs.Mode = mode
 	gs.TrumpSuit = trumpSuit
 
-	// Calculate game value
-	// Simplified for now
-	gs.GameValue = gs.BidValue
+	// Calculate the actual game value based on cards and game type
+	// Note: This is calculated before playing to validate against bid
+	// The final game value will be recalculated after the game ends
+	gameValue := gs.calculatePotentialGameValue()
+
+	// Validate that the declared game can meet the bid value
+	if gameValue < gs.BidValue {
+		return "", fmt.Errorf("game value %d is less than bid value %d", gameValue, gs.BidValue)
+	}
+
+	gs.GameValue = gameValue
 
 	// Start playing phase
 	gs.Phase = PhasePlaying
@@ -249,8 +257,37 @@ func (gs *GameState) DeclareGame(playerID string, mode GameMode, trumpSuit Suit)
 		gs.CurrentPlayer = 1
 	}
 
-	log.Printf("Declarer %s declared %s %s", declarer.Name, mode, trumpSuit)
+	logger.Info("Declarer declared game", "declarer_name", declarer.Name, "mode", string(mode), "trump_suit", trumpSuit.String(), "value", gameValue)
 	return fmt.Sprintf("%s %s", mode, trumpSuit), nil
+}
+
+// calculatePotentialGameValue calculates the game value assuming the declarer wins normally
+// (without schneider or schwarz). Used for validating the game declaration against the bid.
+func (gs *GameState) calculatePotentialGameValue() int {
+	baseValue := 0
+
+	switch gs.Mode {
+	case ModeGrand:
+		baseValue = 24
+	case ModeSuit:
+		switch gs.TrumpSuit {
+		case Diamonds:
+			baseValue = 9
+		case Hearts:
+			baseValue = 10
+		case Spades:
+			baseValue = 11
+		case Clubs:
+			baseValue = 12
+		}
+	case ModeNull:
+		return 23
+	}
+
+	matadorCount := gs.countMatadors()
+	multiplier := 1 + matadorCount // Base multiplier (game + matadors)
+
+	return baseValue * multiplier
 }
 
 // HandleSkatDecision processes the declarer's decision to pick up skat or play hand
@@ -273,12 +310,12 @@ func (gs *GameState) SkatDecision(playerID string, pickup bool) (string, error) 
 		// Add skat cards to declarer's hand
 		gs.Players[gs.Declarer].Hand = append(gs.Players[gs.Declarer].Hand, gs.Skat[0], gs.Skat[1])
 		// Stay in PhaseSkatExchange so player can discard
-		log.Printf("Declarer %s picked up skat", declarer.Name)
+		logger.Debug("Declarer picked up skat", "declarer_name", declarer.Name)
 		return "Pick up skat", nil
 	} else {
 		// Play hand - skip to game declaration
 		gs.Phase = PhaseDeclarerChoice
-		log.Printf("Declarer %s playing the hand", declarer.Name)
+		logger.Debug("Declarer playing the hand", "declarer_name", declarer.Name)
 		return "Playing the hand", nil
 	}
 }
@@ -330,7 +367,7 @@ func (gs *GameState) Discard(playerID string, card1, card2 Card) (string, error)
 	// Move to game declaration phase
 	gs.Phase = PhaseDeclarerChoice
 
-	log.Printf("Declarer %s discarded cards to skat", declarer.Name)
+	logger.Debug("Declarer discarded cards to skat", "declarer_name", declarer.Name)
 	return "Discarded cards to skat", nil
 }
 
@@ -346,6 +383,6 @@ func (gs *GameState) NextGame() (string, error) {
 	for _, player := range gs.Players {
 		player.Hand = []Card{}
 	}
-	log.Printf("Started a new game with ID %s", gs.ID)
+	logger.Info("Started a new game", "game_id", gs.ID)
 	return "Started new game", nil
 }

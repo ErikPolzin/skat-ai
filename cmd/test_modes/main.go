@@ -12,8 +12,8 @@ func main() {
 	fmt.Println()
 
 	// Create test agents
-	mcts := agent.NewMCTSAgent("MCTS", 100) // Fewer sims for speed
-	bidding := agent.NewBiddingAgent()
+	mcts := agent.NewSkatAgent("MCTS", 100) // Fewer sims for speed
+	bidding := agent.NewSkatAgent("Agent", 500)
 
 	// Test each game mode
 	modes := []struct {
@@ -68,7 +68,7 @@ func main() {
 
 		// Test game mode selection
 		if testMode.mode != game.ModeNull {
-			selectedMode, selectedSuit := bidding.ChooseGameMode(g.Players[0].Hand)
+			selectedMode, selectedSuit := bidding.ChooseGame(g)
 			fmt.Printf("  → Bidding agent would choose: %s", modeName(selectedMode))
 			if selectedMode == game.ModeSuit {
 				fmt.Printf(" (%s)", suitName(selectedSuit))

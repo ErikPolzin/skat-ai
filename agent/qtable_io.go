@@ -12,7 +12,7 @@ import (
 )
 
 // SaveQTable saves the Q-table to a JSON file
-func (ba *BiddingAgent) SaveQTable(filename string) error {
+func (sa *SkatAgent) SaveQTable(filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
@@ -27,8 +27,8 @@ func (ba *BiddingAgent) SaveQTable(filename string) error {
 		QTable  map[int]map[int]float64 `json:"q_table"`
 		Epsilon float64                 `json:"epsilon"`
 	}{
-		QTable:  ba.qTable,
-		Epsilon: ba.Epsilon,
+		QTable:  sa.qTable,
+		Epsilon: sa.Epsilon,
 	}
 
 	if err := encoder.Encode(data); err != nil {
@@ -39,7 +39,7 @@ func (ba *BiddingAgent) SaveQTable(filename string) error {
 }
 
 // LoadQTable loads the Q-table from a JSON file
-func (ba *BiddingAgent) LoadQTable(filename string) error {
+func (sa *SkatAgent) LoadQTable(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
@@ -56,38 +56,38 @@ func (ba *BiddingAgent) LoadQTable(filename string) error {
 		return fmt.Errorf("failed to decode Q-table: %w", err)
 	}
 
-	ba.qTable = data.QTable
-	ba.Epsilon = data.Epsilon
+	sa.qTable = data.QTable
+	sa.Epsilon = data.Epsilon
 
 	return nil
 }
 
 // SaveQTableBinary saves the Q-table in binary format using gob encoding
-func (ba *BiddingAgent) SaveQTableBinary(filename string) error {
+func (sa *SkatAgent) SaveQTableBinary(filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
 	defer file.Close()
 
-	return ba.encodeQTableGob(file)
+	return sa.encodeQTableGob(file)
 }
 
 // LoadQTableBinary loads the Q-table from a binary gob file
-func (ba *BiddingAgent) LoadQTableBinary(filename string) error {
+func (sa *SkatAgent) LoadQTableBinary(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
-	return ba.decodeQTableGob(file)
+	return sa.decodeQTableGob(file)
 }
 
 // SaveQTableToGCS saves the Q-table to Google Cloud Storage
 // bucketName: e.g. "my-skat-models"
 // objectName: e.g. "qtables/bidding_v1.gob"
-func (ba *BiddingAgent) SaveQTableToGCS(ctx context.Context, bucketName, objectName string, binary bool) error {
+func (sa *SkatAgent) SaveQTableToGCS(ctx context.Context, bucketName, objectName string, binary bool) error {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create GCS client: %w", err)
@@ -100,7 +100,7 @@ func (ba *BiddingAgent) SaveQTableToGCS(ctx context.Context, bucketName, objectN
 
 	var encodeErr error
 	if binary {
-		encodeErr = ba.encodeQTableGob(writer)
+		encodeErr = sa.encodeQTableGob(writer)
 	} else {
 		encoder := json.NewEncoder(writer)
 		data := struct {
@@ -109,10 +109,10 @@ func (ba *BiddingAgent) SaveQTableToGCS(ctx context.Context, bucketName, objectN
 			Alpha   float64                 `json:"alpha"`
 			Gamma   float64                 `json:"gamma"`
 		}{
-			QTable:  ba.qTable,
-			Epsilon: ba.Epsilon,
-			Alpha:   ba.alpha,
-			Gamma:   ba.gamma,
+			QTable:  sa.qTable,
+			Epsilon: sa.Epsilon,
+			Alpha:   sa.alpha,
+			Gamma:   sa.gamma,
 		}
 		encodeErr = encoder.Encode(data)
 	}
@@ -130,7 +130,7 @@ func (ba *BiddingAgent) SaveQTableToGCS(ctx context.Context, bucketName, objectN
 }
 
 // LoadQTableFromGCS loads the Q-table from Google Cloud Storage
-func (ba *BiddingAgent) LoadQTableFromGCS(ctx context.Context, bucketName, objectName string, binary bool) error {
+func (sa *SkatAgent) LoadQTableFromGCS(ctx context.Context, bucketName, objectName string, binary bool) error {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create GCS client: %w", err)
@@ -146,7 +146,7 @@ func (ba *BiddingAgent) LoadQTableFromGCS(ctx context.Context, bucketName, objec
 	defer reader.Close()
 
 	if binary {
-		return ba.decodeQTableGob(reader)
+		return sa.decodeQTableGob(reader)
 	}
 
 	var data struct {
@@ -161,30 +161,30 @@ func (ba *BiddingAgent) LoadQTableFromGCS(ctx context.Context, bucketName, objec
 		return fmt.Errorf("failed to decode Q-table: %w", err)
 	}
 
-	ba.qTable = data.QTable
-	ba.Epsilon = data.Epsilon
+	sa.qTable = data.QTable
+	sa.Epsilon = data.Epsilon
 	if data.Alpha > 0 {
-		ba.alpha = data.Alpha
+		sa.alpha = data.Alpha
 	}
 	if data.Gamma > 0 {
-		ba.gamma = data.Gamma
+		sa.gamma = data.Gamma
 	}
 
 	return nil
 }
 
 // encodeQTableGob encodes the Q-table using gob format to the writer
-func (ba *BiddingAgent) encodeQTableGob(w io.Writer) error {
+func (sa *SkatAgent) encodeQTableGob(w io.Writer) error {
 	data := struct {
 		QTable  map[int]map[int]float64
 		Epsilon float64
 		Alpha   float64
 		Gamma   float64
 	}{
-		QTable:  ba.qTable,
-		Epsilon: ba.Epsilon,
-		Alpha:   ba.alpha,
-		Gamma:   ba.gamma,
+		QTable:  sa.qTable,
+		Epsilon: sa.Epsilon,
+		Alpha:   sa.alpha,
+		Gamma:   sa.gamma,
 	}
 
 	encoder := gob.NewEncoder(w)
@@ -195,7 +195,7 @@ func (ba *BiddingAgent) encodeQTableGob(w io.Writer) error {
 }
 
 // decodeQTableGob decodes the Q-table from gob format
-func (ba *BiddingAgent) decodeQTableGob(r io.Reader) error {
+func (sa *SkatAgent) decodeQTableGob(r io.Reader) error {
 	var data struct {
 		QTable  map[int]map[int]float64
 		Epsilon float64
@@ -208,17 +208,17 @@ func (ba *BiddingAgent) decodeQTableGob(r io.Reader) error {
 		return fmt.Errorf("failed to gob decode: %w", err)
 	}
 
-	ba.qTable = data.QTable
-	ba.Epsilon = data.Epsilon
-	ba.alpha = data.Alpha
-	ba.gamma = data.Gamma
+	sa.qTable = data.QTable
+	sa.Epsilon = data.Epsilon
+	sa.alpha = data.Alpha
+	sa.gamma = data.Gamma
 
 	return nil
 }
 
 // GetQTableStats returns statistics about the Q-table
-func (ba *BiddingAgent) GetQTableStats() map[string]interface{} {
-	totalStates := len(ba.qTable)
+func (sa *SkatAgent) GetQTableStats() map[string]interface{} {
+	totalStates := len(sa.qTable)
 	totalStateActions := 0
 
 	minQ := 999999.0
@@ -226,7 +226,7 @@ func (ba *BiddingAgent) GetQTableStats() map[string]interface{} {
 	sumQ := 0.0
 	count := 0
 
-	for _, actions := range ba.qTable {
+	for _, actions := range sa.qTable {
 		totalStateActions += len(actions)
 		for _, q := range actions {
 			if q < minQ {
@@ -251,6 +251,6 @@ func (ba *BiddingAgent) GetQTableStats() map[string]interface{} {
 		"min_q":              minQ,
 		"max_q":              maxQ,
 		"avg_q":              avgQ,
-		"epsilon":            ba.Epsilon,
+		"epsilon":            sa.Epsilon,
 	}
 }

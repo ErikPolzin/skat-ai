@@ -2,8 +2,9 @@ package server
 
 import (
 	"fmt"
-	"log"
 	"sync"
+
+	"skat/logger"
 
 	"github.com/gorilla/websocket"
 )
@@ -30,13 +31,13 @@ func (cm *ClientManager) RegisterClient(profileID string, conn *websocket.Conn) 
 	if existingClient, exists := cm.clients[profileID]; exists {
 		// Close old connection if it exists
 		if existingClient.conn != nil {
-			log.Printf("Closing existing connection for profile %s", profileID)
+			logger.Info("Closing existing connection for profile", "profile_id", profileID)
 			existingClient.conn.Close()
 		}
 		// Update connection
 		existingClient.conn = conn
 		existingClient.send = make(chan []byte, 256)
-		log.Printf("Updated connection for profile %s", profileID)
+		logger.Info("Updated connection for profile", "profile_id", profileID)
 		return existingClient
 	}
 
@@ -47,7 +48,7 @@ func (cm *ClientManager) RegisterClient(profileID string, conn *websocket.Conn) 
 		send:      make(chan []byte, 256),
 	}
 	cm.clients[profileID] = client
-	log.Printf("Registered new client for profile %s", profileID)
+	logger.Info("Registered new client for profile", "profile_id", profileID)
 	return client
 }
 
@@ -68,7 +69,7 @@ func (cm *ClientManager) RemoveClient(profileID string) {
 	if client, exists := cm.clients[profileID]; exists {
 		close(client.send)
 		delete(cm.clients, profileID)
-		log.Printf("Removed client for profile %s", profileID)
+		logger.Info("Removed client for profile", "profile_id", profileID)
 	}
 }
 
@@ -80,7 +81,7 @@ func (cm *ClientManager) BroadcastToClients(profileIDs []string, msg *Message) {
 	for _, profileID := range profileIDs {
 		if client, exists := cm.clients[profileID]; exists {
 			if err := client.SendMessage(msg); err != nil {
-				log.Printf("Failed to send message to profile %s: %v", profileID, err)
+				logger.Warning("Failed to send message to profile", "profile_id", profileID, "error", err)
 			}
 		}
 	}
@@ -114,4 +115,16 @@ func (cm *ClientManager) SendToClient(profileID string, msg *Message) error {
 	}
 
 	return client.SendMessage(msg)
+}
+
+// GetOnlinePlayerIDs returns a list of all currently connected profile IDs
+func (cm *ClientManager) GetOnlinePlayerIDs() []string {
+	cm.mutex.RLock()
+	defer cm.mutex.RUnlock()
+
+	playerIDs := make([]string, 0, len(cm.clients))
+	for profileID := range cm.clients {
+		playerIDs = append(playerIDs, profileID)
+	}
+	return playerIDs
 }

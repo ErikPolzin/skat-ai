@@ -28,7 +28,7 @@ func main() {
 	fmt.Println("Test 1: Load Q-table")
 	fmt.Println("--------------------")
 
-	ba := agent.NewBiddingAgent()
+	ba := agent.NewSkatAgent("Agent", 500)
 	if err := cfg.LoadQTable(ba); err != nil {
 		fmt.Printf("✗ Load failed: %v\n", err)
 		fmt.Println("\nTroubleshooting:")

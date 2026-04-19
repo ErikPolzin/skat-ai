@@ -4,6 +4,7 @@ import { useGameContext } from "../context/GameContext";
 
 export function BiddingPanel() {
   const game = useGameContext();
+
   // Get the next valid bid value based on current bid
   const getNextBidValue = () => {
     const validBids = [
@@ -15,26 +16,37 @@ export function BiddingPanel() {
 
     // Find the next bid value
     for (const bid of validBids) {
-      if (bid > game.declarerScore) {
+      if (bid > game.bidValue) {
         return bid;
       }
     }
-    return game.declarerScore + 1; // Fallback
+    return game.bidValue + 1; // Fallback
   };
+
+  // Determine if current player is in the "announcing" role
+  const isSpeaker = game.playerPosition === 2;
+  const isListener = game.playerPosition === 1;
+  const isDealer = game.playerPosition === 0;
+
+  const isAnnouncing =
+    (isSpeaker && !game.speakerPassed) ||
+    (isListener && game.speakerPassed && !game.listenerPassed) ||
+    (isDealer && game.speakerPassed && game.listenerPassed && !game.dealerPassed);
+
+  const canBid = game.bidValue > 0;
 
   return (
     <div className="bidding-panel">
       <h3>Bidding Phase</h3>
       <div className="current-bid-display">
-        Current Bid: <strong>{game.declarerScore || "No bid yet"}</strong>
+        Current Bid: <strong>{game.bidValue || "No bid yet"}</strong>
       </div>
 
       {game.isMyTurn ? (
         <div className="bid-controls">
           <div className="bid-prompt">Your turn to bid!</div>
-          {/* Simple bidding: for speaker show next bid + pass, for listener show hold + pass */}
-          {game.playerPosition === 2 ? (
-            // Speaker position - can raise or pass
+          {isAnnouncing ? (
+            // Announcing player - can raise or pass
             <>
               <button
                 className="btn btn-bid btn-raise"
@@ -50,14 +62,21 @@ export function BiddingPanel() {
               </button>
             </>
           ) : (
-            // Listener/Dealer position - can hold or pass
+            // Responding player - can hold or pass
             <>
-              {game.declarerScore > 0 && (
+              {canBid ? (
                 <button
                   className="btn btn-bid btn-hold"
                   onClick={() => game.controls.bid("hold")}
                 >
-                  Yes ({game.declarerScore})
+                  Yes ({game.bidValue})
+                </button>
+              ) : (
+                <button
+                  className="btn btn-bid btn-raise"
+                  onClick={() => game.controls.bid(String(getNextBidValue()))}
+                >
+                  Bid {getNextBidValue()}
                 </button>
               )}
               <button

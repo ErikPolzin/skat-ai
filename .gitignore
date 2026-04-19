@@ -7,3 +7,4 @@ gcp_key.json
 firebase_key.json
 **/firebase-debug.log
 **/.env
+*.log

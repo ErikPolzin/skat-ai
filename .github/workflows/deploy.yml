@@ -5,12 +5,12 @@ on:
     branches:
       - master
     paths:
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Dockerfile'
-      - 'frontend/**'
-      - '.github/workflows/deploy.yml'
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - "frontend/**"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 env:
@@ -50,7 +50,8 @@ jobs:
     name: Deploy Backend to Cloud Run
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.outputs.backend == 'true' || github.event_name ==
+      'workflow_dispatch'
 
     permissions:
       contents: read
@@ -85,7 +86,11 @@ jobs:
 
       - name: Deploy to Cloud Run
         id: deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
+          echo "DATABASE_URL length: ${#DATABASE_URL}"
+          echo "DATABASE_URL preview: ${DATABASE_URL:0:50}..."
           gcloud run deploy $SERVICE_NAME \
             --image gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA \
             --region $REGION \
@@ -95,10 +100,8 @@ jobs:
             --cpu 1 \
             --max-instances 10 \
             --min-instances 0 \
-            --set-env-vars "TURSO_DB_URL=${{ secrets.TURSO_DB_URL }}" \
-            --set-env-vars "TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}" \
-            --set-env-vars "CORS_ORIGIN=https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app" \
-            --set-env-vars "ENV=production"
+            --clear-env-vars \
+            --set-env-vars "DATABASE_URL=${DATABASE_URL},CORS_ORIGIN=https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app,ENV=production"
 
           # Get the service URL
           echo "url=$(gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)')" >> $GITHUB_OUTPUT
@@ -110,7 +113,8 @@ jobs:
     name: Deploy Frontend to Firebase
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.outputs.frontend == 'true' || github.event_name ==
+      'workflow_dispatch'
 
     steps:
       - name: Checkout code

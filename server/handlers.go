@@ -3,11 +3,11 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
 	"skat/game"
+	"skat/logger"
 	"skat/server/db"
 	"strconv"
 	"strings"
@@ -52,7 +52,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	}))
 
 	// Wrap with CORS middleware
-	allowedOrigins := []string{"http://localhost:3000", "http://192.168.1.125:3000"}
+	allowedOrigins := []string{"http://localhost:3000", "http://192.168.1.125:3000", "https://skat.erikpolzin.com"}
 
 	// Add production CORS origins from environment variable (comma-separated)
 	if corsOrigins := os.Getenv("CORS_ORIGIN"); corsOrigins != "" {
@@ -153,7 +153,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 	// If no player ID provided, generate a new one
 	if playerID == "" {
 		playerID = uuid.New().String()
-		log.Printf("Creating new profile: %s for %s", playerID, playerName)
+		logger.Info("Creating new profile", "player_id", playerID, "player_name", playerName)
 
 		// Store the new profile
 		profile := db.ProfileEntry{
@@ -161,7 +161,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 			Name: playerName,
 		}
 		if err := s.db.SaveProfile(profile); err != nil {
-			log.Printf("Failed to store player profile: %v", err)
+			logger.Warning("Failed to store player profile", "error", err)
 		}
 	} else {
 		// Existing player ID - retrieve or update name
@@ -170,13 +170,13 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 			if profile.Name != playerName && playerName != "" {
 				profile.Name = playerName
 				if err := s.db.SaveProfile(*profile); err != nil {
-					log.Printf("Failed to update player profile: %v", err)
+					logger.Warning("Failed to update player profile", "error", err)
 				}
 			} else if profile.Name != "" {
 				// Use the stored name if no new name provided
 				playerName = profile.Name
 			}
-			log.Printf("Retrieved profile: %s (%s)", playerID, playerName)
+			logger.Debug("Retrieved profile", "player_id", playerID, "player_name", playerName)
 		} else {
 			// Profile doesn't exist, create it
 			profile := db.ProfileEntry{
@@ -184,9 +184,9 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 				Name: playerName,
 			}
 			if err := s.db.SaveProfile(profile); err != nil {
-				log.Printf("Failed to store player profile: %v", err)
+				logger.Warning("Failed to store player profile", "error", err)
 			}
-			log.Printf("Created profile for existing ID: %s (%s)", playerID, playerName)
+			logger.Info("Created profile for existing ID", "player_id", playerID, "player_name", playerName)
 		}
 	}
 
@@ -218,7 +218,7 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 	// Fetch profile
 	profile, profile_err := s.db.GetProfile(playerID)
 	if profile_err == nil {
-		log.Printf("Returning player: %s (%s)", playerID, profile.Name)
+		logger.Debug("Returning player", "player_id", playerID, "player_name", profile.Name)
 	}
 	if profile_err != nil {
 		http.Error(w, profile_err.Error(), http.StatusNotFound)
@@ -249,7 +249,7 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 		"game_id": gs.ID,
 	})
 
-	log.Printf("Player %s (%s) joined game %s via HTTP", playerID, profile.Name, gs.ID)
+	logger.Info("Player joined game via HTTP", "player_id", playerID, "player_name", profile.Name, "game_id", gs.ID)
 }
 
 // handleAddAgent adds an AI agent to a game
@@ -329,7 +329,7 @@ func (s *Server) handleGetPlayerHistory(w http.ResponseWriter, r *http.Request) 
 
 	results, err := s.db.GetPlayerResults(playerID, limit)
 	if err != nil {
-		log.Printf("Failed to get player results: %v", err)
+		logger.Warning("Failed to get player results", "player_id", playerID, "error", err)
 		// Return empty array on error rather than failing
 		results = []game.PlayerResultState{}
 	}
@@ -345,7 +345,7 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 
 	playerResults, err := s.db.GetSessionResults(sessionID)
 	if err != nil {
-		log.Printf("Failed to get session results: %v", err)
+		logger.Warning("Failed to get session results", "session_id", sessionID, "error", err)
 		http.Error(w, fmt.Sprintf("Failed to get session results: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -357,7 +357,7 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 			// Fetch game to get additional info
 			gs, err := s.db.GetGameByID(pr.GameID)
 			if err != nil {
-				log.Printf("Failed to get game %s: %v", pr.GameID, err)
+				logger.Warning("Failed to get game", "game_id", pr.GameID, "error", err)
 				continue
 			}
 

@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"skat/logger"
 	"skat/server"
 	"skat/server/db"
 	"strings"
@@ -16,6 +17,19 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using system environment variables")
 	}
+
+	// Enable logging for server (always enabled unless explicitly disabled)
+	// Can be disabled with LOGGING_ENABLED=false
+	if os.Getenv("LOGGING_ENABLED") == "" {
+		os.Setenv("LOGGING_ENABLED", "true")
+	}
+
+	// Initialize logger
+	appLogger, err := logger.Initialize("skat-server")
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer appLogger.Close()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -32,43 +46,46 @@ func main() {
 			// Turso/LibSQL database
 			database, err = db.NewTursoDatabase(dbURL)
 			if err != nil {
-				log.Printf("Warning: Failed to connect to Turso database: %v", err)
+				logger.Warning("Failed to connect to Turso database", "error", err)
 			}
 		} else if strings.HasPrefix(dbURL, "postgres://") || strings.HasPrefix(dbURL, "postgresql://") || strings.Contains(dbURL, "host=") {
 			// PostgreSQL database
 			database, err = db.NewPgDatabase(dbURL)
 			if err != nil {
-				log.Printf("Warning: Failed to connect to PostgreSQL database: %v", err)
+				logger.Warning("Failed to connect to PostgreSQL database", "error", err)
 			}
 		} else {
-			log.Printf("Warning: Unknown database URL scheme: %s", dbURL)
+			logger.Warning("Unknown database URL scheme", "dbURL", dbURL)
 		}
 
 		if database != nil {
 			defer database.Close()
 			// Initialize schema
 			if err := database.InitSchema(); err != nil {
-				log.Printf("Warning: Failed to initialize database schema: %v", err)
+				logger.Warning("Failed to initialize database schema", "error", err)
 			}
 		}
 	}
 
 	if database == nil {
-		log.Println("No database configured - using in-memory database")
+		logger.Info("No database configured - using in-memory database")
 		database = db.NewMemoryDatabase()
 	}
 
 	// Ensure we always have a database (fallback to memory)
 	if database == nil {
-		log.Println("Falling back to in-memory database")
+		logger.Info("Falling back to in-memory database")
 		database = db.NewMemoryDatabase()
 	}
 
 	srv := server.NewServer(database)
 	router := srv.SetupRoutes()
 
-	log.Printf("Starting Skat server on port %s", port)
+	// Start cleanup task: check every 5 minutes for games inactive for 15+ minutes
+	srv.StartCleanupTask(5, 15)
+
+	logger.Info("Starting Skat server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {
-		log.Fatal(err)
+		logger.Fatal("Server failed", "error", err)
 	}
 }

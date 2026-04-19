@@ -37,7 +37,7 @@ func LoadFromEnv() *StorageConfig {
 }
 
 // LoadQTable loads a Q-table using the configured storage backend
-func (c *StorageConfig) LoadQTable(ba *agent.BiddingAgent) error {
+func (c *StorageConfig) LoadQTable(ba *agent.SkatAgent) error {
 	if c.UseGCS {
 		// Load from Google Cloud Storage
 		ctx := context.Background()
@@ -63,7 +63,7 @@ func (c *StorageConfig) LoadQTable(ba *agent.BiddingAgent) error {
 }
 
 // SaveQTable saves a Q-table using the configured storage backend
-func (c *StorageConfig) SaveQTable(ba *agent.BiddingAgent) error {
+func (c *StorageConfig) SaveQTable(ba *agent.SkatAgent) error {
 	// Always save locally first
 	if c.UseBinary {
 		if err := ba.SaveQTableBinary(c.BinaryPath); err != nil {

@@ -86,7 +86,7 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
       }}
     >
       <Container maxWidth="md">
-        <Paper elevation={3} sx={{ p: 4 }}>
+        <Paper elevation={3} sx={{ p: 4, minWidth: "500px" }}>
           <Typography variant="h4" component="h1" gutterBottom>
             Welcome, {username}!
           </Typography>
@@ -193,7 +193,6 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
               </List>
             )}
           </Box>
-
         </Paper>
       </Container>
     </Box>

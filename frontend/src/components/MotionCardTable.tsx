@@ -368,10 +368,10 @@ export function MotionCardTable() {
           <div
             className={`opponent-avatar-container top ${game.topPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
-            <div className="avatar-circle">
+            <div className={`avatar-circle ${game.isPlayerOffline(game.topPlayer.id) ? "offline" : ""}`}>
               <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
             </div>
-            <div className="opponent-name">
+            <div className={`opponent-name ${game.isPlayerOffline(game.topPlayer.id) ? "offline" : ""}`}>
               {game.topPlayer.name}
               {isMobile && game.declarer === game.topPlayer && " (D)"}
             </div>
@@ -397,10 +397,10 @@ export function MotionCardTable() {
           <div
             className={`opponent-avatar-container left ${game.leftPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
-            <div className="avatar-circle">
+            <div className={`avatar-circle ${game.isPlayerOffline(game.leftPlayer.id) ? "offline" : ""}`}>
               <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
             </div>
-            <div className="opponent-name">
+            <div className={`opponent-name ${game.isPlayerOffline(game.leftPlayer.id) ? "offline" : ""}`}>
               {game.leftPlayer.name}
               {isMobile && game.declarer === game.leftPlayer && " (D)"}
             </div>

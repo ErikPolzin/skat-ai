@@ -63,7 +63,7 @@ func (d *TursoDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	var profile ProfileEntry
 	var isAgent int
 	err := d.DB.QueryRow(`
-		SELECT id, name, is_agent FROM profiles WHERE id = $1
+		SELECT id, name, is_agent FROM profiles WHERE id = ?
 	`, profileID).Scan(&profile.ID, &profile.Name, &isAgent)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
@@ -74,9 +74,9 @@ func (d *TursoDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 func (d *TursoDatabase) SaveProfile(profile ProfileEntry) error {
 	_, err := d.DB.Exec(
 		`INSERT INTO profiles (id, name, is_agent)
-		 	VALUES ($1, $2, $3)
+		 	VALUES (?, ?, ?)
 		 	ON CONFLICT (id) DO UPDATE SET
-		 	id = $1, name = $2, is_agent = $3`,
+		 	id = excluded.id, name = excluded.name, is_agent = excluded.is_agent`,
 		profile.ID, profile.Name, profile.IsAgent,
 	)
 	if err != nil {
@@ -87,10 +87,13 @@ func (d *TursoDatabase) SaveProfile(profile ProfileEntry) error {
 
 func (d *TursoDatabase) SaveGameSession(session game.GameSessionState) error {
 	_, err := d.DB.Exec(
-		`INSERT INTO game_sessions (id, code, game_id, player_count, created_at, ended_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (id) DO NOTHING`,
-		session.ID, session.Code, session.GameID, session.PlayerCount, session.CreatedAt, session.EndedAt,
+		`INSERT INTO game_sessions (id, code, game_id, player_count)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET
+			code = excluded.code,
+			game_id = excluded.game_id,
+			player_count = excluded.player_count`,
+		session.ID, session.Code, session.GameID, session.PlayerCount,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save game session: %w", err)
@@ -103,7 +106,7 @@ func (d *TursoDatabase) GetGameSession(sessionID string) (*game.GameSessionState
 	err := d.DB.QueryRow(`
 		SELECT id, code, created_at, ended_at
 		FROM game_sessions
-		WHERE id = $1
+		WHERE id = ?
 	`, sessionID).Scan(&session.ID, &session.Code, &session.CreatedAt, &session.EndedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game session not found")
@@ -118,13 +121,13 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	var gs game.GameState
 	var skatString, trickString string
 	err := d.DB.QueryRow(
-		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
+		`SELECT g.id, g.session_id, gss.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
 			g.bid_value, g.listener_passed, g.speaker_passed, g.dealer_passed
 		FROM games g
 		JOIN game_sessions gss ON g.session_id = gss.id
-		WHERE g.id = $1`,
+		WHERE g.id = ?`,
 		gameID,
 	).Scan(
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
@@ -167,7 +170,7 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 			g.bid_value, g.listener_passed, g.speaker_passed, g.dealer_passed
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
-		WHERE gs.code = $1
+		WHERE gs.code = ?
 		ORDER BY g.created_at DESC
 		LIMIT 1`,
 		sessionCode,
@@ -216,14 +219,19 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			game_mode, trump_suit, bid_value,
 			listener_passed, speaker_passed, dealer_passed,
 			created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT (id) DO UPDATE SET
-			session_id = $2, game_number = $3, phase = $4, skat = $5, trick = $6,
-			trick_starter = $7, trick_winner = $8, current_player = $9,
-			declarer = $10, declarer_score = $11, opponent_score = $12,
-			game_mode = $13, trump_suit = $14, bid_value = $15,
-			listener_passed = $16, speaker_passed = $17, dealer_passed = $18,
+			session_id = excluded.session_id, game_number = excluded.game_number,
+			phase = excluded.phase, skat = excluded.skat, trick = excluded.trick,
+			trick_starter = excluded.trick_starter, trick_winner = excluded.trick_winner,
+			current_player = excluded.current_player,
+			declarer = excluded.declarer, declarer_score = excluded.declarer_score,
+			opponent_score = excluded.opponent_score,
+			game_mode = excluded.game_mode, trump_suit = excluded.trump_suit,
+			bid_value = excluded.bid_value,
+			listener_passed = excluded.listener_passed, speaker_passed = excluded.speaker_passed,
+			dealer_passed = excluded.dealer_passed,
 			updated_at = CURRENT_TIMESTAMP`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
@@ -241,9 +249,9 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			handString := player.Hand.String()
 			_, err := d.DB.Exec(
 				`INSERT INTO players (game_id, profile_id, hand, position)
-				VALUES ($1, $2, $3, $4)
+				VALUES (?, ?, ?, ?)
 				ON CONFLICT (game_id, profile_id) DO UPDATE SET
-					hand = $3, position = $4`,
+					hand = excluded.hand, position = excluded.position`,
 				gs.ID, player.ID, handString, pos,
 			)
 			if err != nil {
@@ -261,7 +269,7 @@ func (d *TursoDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 		SELECT gs.id, gs.code, gs.game_id, gs.player_count, gs.created_at, gs.ended_at
 		FROM game_sessions gs
 		JOIN games g ON g.id = gs.game_id
-		WHERE gs.player_count < 3 AND g.phase = "waiting_for_players"
+		WHERE gs.player_count < 3 AND g.phase = 'waiting_for_players'
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list open games: %w", err)
@@ -282,7 +290,7 @@ func (d *TursoDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 }
 
 func (d *TursoDatabase) DeleteGame(gameID string) error {
-	_, err := d.DB.Exec(`DELETE FROM games WHERE id = $1`, gameID)
+	_, err := d.DB.Exec(`DELETE FROM games WHERE id = ?`, gameID)
 	if err != nil {
 		return fmt.Errorf("failed to delete game: %w", err)
 	}
@@ -295,7 +303,7 @@ func (d *TursoDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error)
 		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent
 		FROM players pl
 		JOIN profiles pr ON pr.id = pl.profile_id
-		WHERE pl.game_id = $1
+		WHERE pl.game_id = ?
 	`, gameID)
 	if err != nil {
 		return [3]*game.PlayerState{}, fmt.Errorf("failed to list players: %w", err)
@@ -334,7 +342,7 @@ func (d *TursoDatabase) SavePlayerResults(results []game.PlayerResultState) erro
 		_, err := d.DB.Exec(
 			`INSERT INTO player_results (
 				game_id, session_id, player_id, player_position, player_points, is_winner
-			) VALUES ($1, $2, $3, $4, $5, $6)`,
+			) VALUES (?, ?, ?, ?, ?, ?)`,
 			result.GameID, result.SessionID, result.PlayerID, result.PlayerPosition, result.PlayerPoints, isWinner,
 		)
 		if err != nil {
@@ -348,7 +356,7 @@ func (d *TursoDatabase) CountGamesInSession(sessionID string) (int, error) {
 	var count int
 	err := d.DB.QueryRow(`
 		SELECT COUNT(*) FROM games
-		WHERE session_id = $1 AND phase = 'complete'
+		WHERE session_id = ? AND phase = 'complete'
 	`, sessionID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count games in session: %w", err)
@@ -360,7 +368,7 @@ func (d *TursoDatabase) GetSessionResults(sessionID string) ([]game.PlayerResult
 	rows, err := d.DB.Query(`
 		SELECT game_id, session_id, player_id, player_position, player_points, is_winner
 		FROM player_results
-		WHERE session_id = $1
+		WHERE session_id = ?
 		ORDER BY game_id ASC, player_position ASC
 	`, sessionID)
 	if err != nil {
@@ -387,7 +395,7 @@ func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.Pla
 	query := `
 		SELECT game_id, session_id, player_id, player_position, player_points, is_winner
 		FROM player_results
-		WHERE player_id = $1
+		WHERE player_id = ?
 		ORDER BY id DESC
 	`
 	if limit > 0 {
@@ -434,4 +442,89 @@ func (d *TursoDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 		profiles = append(profiles, profile)
 	}
 	return profiles, nil
+}
+
+// CleanupStaleGames deletes games where no moves have been made in the specified minutes
+// and no human players are currently online
+func (d *TursoDatabase) CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []string) (int, error) {
+	// Build a query to find stale games
+	// A game is stale if:
+	// 1. updated_at is older than inactiveMinutes
+	// 2. No human players in the game are currently online
+
+	// Build the NOT IN clause for online players
+	onlineClause := ""
+	if len(onlinePlayerIDs) > 0 {
+		placeholders := make([]string, len(onlinePlayerIDs))
+		for i := range placeholders {
+			placeholders[i] = "?"
+		}
+		onlineClause = fmt.Sprintf(`
+			AND g.id NOT IN (
+				SELECT DISTINCT p.game_id
+				FROM players p
+				JOIN profiles pr ON p.profile_id = pr.id
+				WHERE pr.is_agent = 0
+				AND p.profile_id IN (%s)
+			)`, strings.Join(placeholders, ","))
+	}
+
+	query := fmt.Sprintf(`
+		DELETE FROM games
+		WHERE id IN (
+			SELECT g.id
+			FROM games g
+			LEFT JOIN players p ON g.id = p.game_id
+			LEFT JOIN profiles pr ON p.profile_id = pr.id
+			WHERE datetime(g.updated_at) < datetime('now', '-%d minutes')
+			%s
+		)
+	`, inactiveMinutes, onlineClause)
+
+	// Execute the delete query
+	args := make([]interface{}, len(onlinePlayerIDs))
+	for i, id := range onlinePlayerIDs {
+		args[i] = id
+	}
+
+	result, err := d.DB.Exec(query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup stale games: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return int(rowsAffected), nil
+}
+
+func (d *TursoDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameState, error) {
+	rows, err := d.DB.Query(`
+		SELECT DISTINCT g.id
+		FROM games g
+		JOIN players p ON g.id = p.game_id
+		WHERE p.profile_id = ? AND g.phase != ?
+	`, playerID, game.PhaseComplete)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query active games by player: %w", err)
+	}
+	defer rows.Close()
+
+	var games []game.GameState
+	for rows.Next() {
+		var gameID string
+		if err := rows.Scan(&gameID); err != nil {
+			return nil, fmt.Errorf("failed to scan game ID: %w", err)
+		}
+
+		gs, err := d.GetGameByID(gameID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get game %s: %w", gameID, err)
+		}
+		games = append(games, *gs)
+	}
+
+	return games, nil
 }

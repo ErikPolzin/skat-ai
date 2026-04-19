@@ -1,12 +1,21 @@
 package agent
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"os"
 	"skat/game"
+	"skat/logger"
+	"sync"
 )
 
 type Action func() (string, error)
+
+var (
+	// Shared agent instance with loaded Q-table
+	sharedAgent     *SkatAgent
+	sharedAgentOnce sync.Once
+)
 
 // getAgentForPlayer creates an agent instance based on the player's agent type
 func getAgentForPlayer(player *game.PlayerState) Agent {
@@ -14,9 +23,48 @@ func getAgentForPlayer(player *game.PlayerState) Agent {
 		return nil
 	}
 
-	// Currently only MCTS agent is supported for full gameplay
-	// BiddingAgent only implements Bid(), not the full Agent interface
-	return NewMCTSAgent(player.Name, 500)
+	// Initialize shared agent once
+	sharedAgentOnce.Do(func() {
+		sharedAgent = NewSkatAgent("SkatAgent", 500)
+
+		// Log current working directory for debugging
+		if cwd, err := os.Getwd(); err == nil {
+			logger.Debug("Agent loading Q-table from working directory", "cwd", cwd)
+		}
+
+		// Try to load from GCS first (production), then local file (development)
+		gcsBucket := os.Getenv("GCS_BUCKET")
+		gcsPath := os.Getenv("GCS_QTABLE_PATH")
+
+		if gcsBucket != "" && gcsPath != "" {
+			// Load from GCS (production)
+			logger.Info("Loading Q-table from GCS", "bucket", gcsBucket, "path", gcsPath)
+			ctx := context.Background()
+			if err := sharedAgent.LoadQTableFromGCS(ctx, gcsBucket, gcsPath, true); err != nil {
+				logger.Error("Could not load Q-table from GCS", "error", err)
+				logger.Warning("Agent will use untrained behavior (will pass on most hands)")
+			} else {
+				logger.Info("Loaded Q-table from GCS", "states", sharedAgent.GetQTableSize())
+				sharedAgent.Epsilon = 0.0
+			}
+		} else {
+			// Load from local file (development)
+			qtablePath := "bidding_qtable.gob"
+			if path := os.Getenv("QTABLE_BINARY_PATH"); path != "" {
+				qtablePath = path
+			}
+			logger.Info("Loading Q-table from local file", "path", qtablePath)
+			if err := sharedAgent.LoadQTableBinary(qtablePath); err != nil {
+				logger.Error("Could not load Q-table from local file", "path", qtablePath, "error", err)
+				logger.Warning("Agent will use untrained behavior (will pass on most hands)")
+			} else {
+				logger.Info("Loaded Q-table from local file", "path", qtablePath, "states", sharedAgent.GetQTableSize())
+				sharedAgent.Epsilon = 0.0
+			}
+		}
+	})
+
+	return sharedAgent
 }
 
 // gameLoop manages the game flow
@@ -33,14 +81,13 @@ func NextAction(gs *game.GameState) Action {
 	}
 
 	if currentPlayer != nil {
-		log.Printf("Game loop: phase=%v, currentPlayer=%s (position=%d), isAgent=%v",
-			phase, currentPlayer.Name, gs.CurrentPlayer, currentPlayer.IsAgent)
+		logger.Debug("Game loop", "phase", phase, "currentPlayer", currentPlayer.Name, "position", gs.CurrentPlayer, "isAgent", currentPlayer.IsAgent)
 	} else {
-		log.Printf("Game loop: phase=%v, currentPlayer=nil", phase)
+		logger.Debug("Game loop", "phase", phase, "currentPlayer", "nil")
 		return nil
 	}
 	if !currentPlayer.IsAgent {
-		log.Printf("Skipping game loop: waiting for human player input")
+		logger.Debug("Skipping game loop: waiting for human player input")
 		return nil
 	}
 
@@ -102,14 +149,14 @@ func generateAgentPlayAction(gs *game.GameState, player *game.PlayerState) Actio
 	validMoves := gs.GetValidMoves()
 
 	if len(validMoves) == 0 {
-		log.Printf("No valid moves for AI %s", player.Name)
+		logger.Warning("No valid moves for AI", "player", player.Name)
 		return nil
 	}
 
 	// Get the agent for this player
 	agent := getAgentForPlayer(player)
 	if agent == nil {
-		log.Printf("No agent found for player %s", player.Name)
+		logger.Warning("No agent found for player", "player", player.Name)
 		return nil
 	}
 	move := agent.SelectMove(gs, validMoves)
@@ -123,7 +170,7 @@ func generateAgentBidAction(gs *game.GameState, player *game.PlayerState) Action
 	validBids := gs.GetValidBids()
 
 	if len(validBids) == 0 {
-		log.Printf("No valid bids for AI %s", player.Name)
+		logger.Warning("No valid bids for AI", "player", player.Name)
 		return nil
 	}
 
@@ -138,7 +185,7 @@ func generateAgentBidAction(gs *game.GameState, player *game.PlayerState) Action
 		// Get the agent for this player
 		agent := getAgentForPlayer(player)
 		if agent == nil {
-			log.Printf("No agent found for player %s", player.Name)
+			logger.Warning("No agent found for player", "player", player.Name)
 			return nil
 		}
 
@@ -175,7 +222,7 @@ func generateAgentBidAction(gs *game.GameState, player *game.PlayerState) Action
 		action = "pass"
 	}
 
-	log.Printf("AI %s choosing to %s", player.Name, action)
+	logger.Debug("AI choosing bid", "player", player.Name, "action", action)
 
 	return func() (string, error) {
 		return gs.Bid(player.ID, action)

@@ -12,7 +12,7 @@ func main() {
 
 	// Create a trained agent with some hand-coded Q-values
 	// to demonstrate the concept
-	trainedAgent := agent.NewBiddingAgent()
+	trainedAgent := agent.NewSkatAgent("Agent", 500)
 	trainedAgent.Epsilon = 0.0 // No exploration
 
 	// Pre-populate Q-table with learned values (simulating training)
@@ -65,7 +65,7 @@ func main() {
 	fmt.Println("✓ Pass with weak hands")
 }
 
-func preTrainAgent(ba *agent.BiddingAgent) {
+func preTrainAgent(ba *agent.SkatAgent) {
 	// Simulate training by setting Q-values for different hand strengths
 	// Strong hands (70-100): high bids are good
 	for strength := 70; strength <= 100; strength++ {

@@ -247,3 +247,28 @@ func (d *MemoryDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	}
 	return profiles, nil
 }
+
+func (d *MemoryDatabase) CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []string) (int, error) {
+	// Memory database doesn't track timestamps, so this is a no-op
+	// In a real scenario, you'd need to track game timestamps
+	return 0, nil
+}
+
+func (d *MemoryDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameState, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var games []game.GameState
+	for _, gameState := range d.games {
+		// Check if player is in this game and game is not complete
+		if gameState.Phase != game.PhaseComplete {
+			for _, player := range gameState.Players {
+				if player != nil && player.ID == playerID {
+					games = append(games, *gameState)
+					break
+				}
+			}
+		}
+	}
+	return games, nil
+}

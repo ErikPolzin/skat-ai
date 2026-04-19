@@ -29,7 +29,7 @@ func main() {
 	fmt.Println("====================================\n")
 
 	// Load existing Q-table
-	ba := agent.NewBiddingAgent()
+	ba := agent.NewSkatAgent("Agent", 500)
 	if err := ba.LoadQTable("bidding_qtable.json"); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Run 'go run cmd/train_bidding/main.go' first")
@@ -67,7 +67,7 @@ func main() {
 	// Example 3: Download from GCS
 	fmt.Printf("\nDownloading from gs://%s/%s ...\n", bucketName, objectPath)
 
-	ba2 := agent.NewBiddingAgent()
+	ba2 := agent.NewSkatAgent("Agent", 500)
 	if err := ba2.LoadQTableFromGCS(ctx, bucketName, objectPath, true); err != nil {
 		fmt.Printf("✗ Download failed: %v\n", err)
 		os.Exit(1)

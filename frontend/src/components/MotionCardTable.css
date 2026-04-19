@@ -166,6 +166,12 @@
   transition: all 0.3s ease;
 }
 
+.avatar-circle.offline {
+  background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+  opacity: 0.5;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
 .current-turn .avatar-circle {
   animation: turnPulse 2s infinite;
   border-color: #2ecc71;
@@ -189,6 +195,13 @@
   color: white;
   font-weight: 600;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.3s ease;
+}
+
+.opponent-name.offline,
+.player-name.offline {
+  opacity: 0.5;
+  color: #aaaaaa;
 }
 
 .player-role {

@@ -16,14 +16,14 @@ func main() {
 
 	// Setup: 1 trained bidding agent + 2 heuristic bidders
 	// All use MCTS for card play
-	var biddingAgents [3]*agent.BiddingAgent
+	var biddingAgents [3]*agent.SkatAgent
 
 	// Load storage configuration
 	cfg := config.LoadFromEnv()
 	fmt.Printf("Storage backend: %s\n\n", cfg)
 
 	// Try to load trained agent
-	trainedAgent := agent.NewBiddingAgent()
+	trainedAgent := agent.NewSkatAgent("Agent", 500)
 	if err := cfg.LoadQTable(trainedAgent); err != nil {
 		fmt.Println("⚠ No saved Q-table found. Training a new agent...")
 		trainer := training.NewBiddingTrainer()
@@ -41,14 +41,14 @@ func main() {
 	biddingAgents[0] = trainedAgent
 
 	// Players 1-2: Heuristic bidding
-	biddingAgents[1] = agent.NewBiddingAgent()
-	biddingAgents[2] = agent.NewBiddingAgent()
+	biddingAgents[1] = agent.NewSkatAgent("Agent", 500)
+	biddingAgents[2] = agent.NewSkatAgent("Agent", 500)
 
 	// All players use MCTS for card play
-	mctsAgents := [3]*agent.MCTSAgent{
-		agent.NewMCTSAgent("MCTS-0", 300),
-		agent.NewMCTSAgent("MCTS-1", 300),
-		agent.NewMCTSAgent("MCTS-2", 300),
+	mctsAgents := [3]*agent.SkatAgent{
+		agent.NewSkatAgent("MCTS-0", 300),
+		agent.NewSkatAgent("MCTS-1", 300),
+		agent.NewSkatAgent("MCTS-2", 300),
 	}
 
 	// Play games
@@ -170,7 +170,7 @@ type PlayerStats struct {
 	TotalGameValue    int
 }
 
-func conductBidding(g *game.GameState, agents [3]*agent.BiddingAgent) (game.GamePosition, int) {
+func conductBidding(g *game.GameState, agents [3]*agent.SkatAgent) (game.GamePosition, int) {
 	// Simplified 3-player bidding
 	currentBid := 17
 	lastBidder := -1

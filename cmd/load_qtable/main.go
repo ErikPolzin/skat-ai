@@ -12,7 +12,7 @@ func main() {
 	fmt.Println()
 
 	// Create agent and load saved Q-table
-	biddingAgent := agent.NewBiddingAgent()
+	biddingAgent := agent.NewSkatAgent("Agent", 500)
 
 	fmt.Println("Loading Q-table from bidding_qtable.json...")
 	if err := biddingAgent.LoadQTable("bidding_qtable.json"); err != nil {

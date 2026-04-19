@@ -144,6 +144,30 @@
   opacity: 0.6;
 }
 
+.game-value-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 15px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.game-value-info span:first-child {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.game-value-info .valid {
+  color: #27ae60;
+}
+
+.game-value-info .invalid {
+  color: #e74c3c;
+}
+
 .declare-button {
   padding: 12px 30px;
   background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
@@ -156,9 +180,15 @@
   transition: all 0.2s ease;
 }
 
-.declare-button:hover {
+.declare-button:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
+}
+
+.declare-button:disabled {
+  background: #95a5a6;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* Waiting message for non-declarers */

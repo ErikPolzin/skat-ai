@@ -1,3 +1,4 @@
+import { useState, useCallback, useRef } from "react";
 import type { Card as CardType } from "../types";
 import { Game } from "./useGame";
 import { SkatWebSocket } from "./useWebSocket";
@@ -8,73 +9,140 @@ const cardToString = (card: CardType): string => {
 };
 
 export function useControls(game: Game, websocket: SkatWebSocket) {
-  const playCard = (card: CardType) => {
-    if (game.isMyTurn && !game.isBiddingPhase) {
-      // Normal card play - send card as string "rank.suit"
-      websocket.sendMessage("play_card", { card: cardToString(card), game_id: game.gameId });
+  const [isLoading, setIsLoading] = useState(false);
+  const pendingActionRef = useRef<string | null>(null);
+
+  const playCard = useCallback((card: CardType) => {
+    if (game.isMyTurn && !game.isBiddingPhase && !isLoading) {
+      setIsLoading(true);
+      const actionId = websocket.sendMessage(
+        "play_card",
+        { card: cardToString(card), game_id: game.gameId },
+        () => {
+          setIsLoading(false);
+          pendingActionRef.current = null;
+        },
+        () => {
+          setIsLoading(false);
+          pendingActionRef.current = null;
+          console.error("Play card action timed out");
+        }
+      );
+      pendingActionRef.current = actionId;
     }
-  };
+  }, [game.isMyTurn, game.isBiddingPhase, game.gameId, isLoading, websocket]);
 
-  const pickUpSkat = () => {
-    if (game.isSkatExchange && game.isDeclarer && !game.hasPickedUpSkat) {
-      websocket.sendMessage("skat_decision", {
-        pickup: true,
-        game_id: game.gameId,
-      });
-      // The backend will add the skat cards to our hand
-      // and send has_picked_up_skat: true in the state update
+  const pickUpSkat = useCallback(() => {
+    if (game.isSkatExchange && game.isDeclarer && !game.hasPickedUpSkat && !isLoading) {
+      setIsLoading(true);
+      websocket.sendMessage(
+        "skat_decision",
+        { pickup: true, game_id: game.gameId },
+        () => setIsLoading(false),
+        () => {
+          setIsLoading(false);
+          console.error("Pick up skat action timed out");
+        }
+      );
     }
-  };
+  }, [game.isSkatExchange, game.isDeclarer, game.hasPickedUpSkat, game.gameId, isLoading, websocket]);
 
-  const playHand = () => {
-    if (game.isSkatExchange && game.isDeclarer && !game.hasPickedUpSkat) {
-      websocket.sendMessage("skat_decision", {
-        pickup: false,
-        game_id: game.gameId,
-      });
+  const playHand = useCallback(() => {
+    if (game.isSkatExchange && game.isDeclarer && !game.hasPickedUpSkat && !isLoading) {
+      setIsLoading(true);
+      websocket.sendMessage(
+        "skat_decision",
+        { pickup: false, game_id: game.gameId },
+        () => setIsLoading(false),
+        () => {
+          setIsLoading(false);
+          console.error("Play hand action timed out");
+        }
+      );
     }
-  };
+  }, [game.isSkatExchange, game.isDeclarer, game.hasPickedUpSkat, game.gameId, isLoading, websocket]);
 
-  const discardCards = (cards: CardType[]) => {
-    // Convert cards to string format "rank.suit-rank.suit"
-    const cardsStr = cards.map(cardToString).join("-");
-    websocket.sendMessage("discard_cards", { cards: cardsStr, game_id: game.gameId });
-    // The backend will move to DeclarerChoice phase and reset has_picked_up_skat
-  };
+  const discardCards = useCallback((cards: CardType[]) => {
+    if (!isLoading) {
+      setIsLoading(true);
+      const cardsStr = cards.map(cardToString).join("-");
+      websocket.sendMessage(
+        "discard_cards",
+        { cards: cardsStr, game_id: game.gameId },
+        () => setIsLoading(false),
+        () => {
+          setIsLoading(false);
+          console.error("Discard cards action timed out");
+        }
+      );
+    }
+  }, [game.gameId, isLoading, websocket]);
 
-  const bid = (bid: string) => {
-    if (game.isMyTurn) {
-      websocket.sendMessage("bid", { bid, game_id: game.gameId });
-    } else {
+  const bid = useCallback((bid: string) => {
+    if (game.isMyTurn && !isLoading) {
+      setIsLoading(true);
+      websocket.sendMessage(
+        "bid",
+        { bid, game_id: game.gameId },
+        () => setIsLoading(false),
+        () => {
+          setIsLoading(false);
+          console.error("Bid action timed out");
+        }
+      );
+    } else if (!game.isMyTurn) {
       console.error("Cannot bid, it is not your turn");
     }
-  };
+  }, [game.isMyTurn, game.gameId, isLoading, websocket]);
 
-  const deal = () => {
-    if (game.isDealer) {
-      websocket.sendMessage("deal", { game_id: game.gameId });
-    } else {
+  const deal = useCallback(() => {
+    if (game.isDealer && !isLoading) {
+      setIsLoading(true);
+      websocket.sendMessage(
+        "deal",
+        { game_id: game.gameId },
+        () => setIsLoading(false),
+        () => {
+          setIsLoading(false);
+          console.error("Deal action timed out");
+        }
+      );
+    } else if (!game.isDealer) {
       console.error("Cannot deal, you are not the dealer");
     }
-  };
+  }, [game.isDealer, game.gameId, isLoading, websocket]);
 
-  const declareGame = (mode: string, trump: string) => {
-    if (game.isDeclarer && game.isDeclarerChoice) {
-      websocket.sendMessage("choose_game", {
-        mode: mode,
-        trump: trump,
-        game_id: game.gameId,
-      });
-    } else {
+  const declareGame = useCallback((mode: string, trump: string) => {
+    if (game.isDeclarer && game.isDeclarerChoice && !isLoading) {
+      setIsLoading(true);
+      websocket.sendMessage(
+        "choose_game",
+        { mode: mode, trump: trump, game_id: game.gameId },
+        () => setIsLoading(false),
+        () => {
+          setIsLoading(false);
+          console.error("Declare game action timed out");
+        }
+      );
+    } else if (!game.isDeclarer || !game.isDeclarerChoice) {
       console.error("Cannot declare the game, you are not the declarer");
     }
-  };
+  }, [game.isDeclarer, game.isDeclarerChoice, game.gameId, isLoading, websocket]);
 
-  const playNextGame = async () => {
-    websocket.sendMessage("start_next_game", {
-      game_id: game.gameId,
-    });
-  };
+  const playNextGame = useCallback(async () => {
+    if (!isLoading) {
+      setIsLoading(true);
+      websocket.sendMessage(
+        "start_next_game",
+        { game_id: game.gameId },
+        () => setIsLoading(false),
+        () => {
+          setIsLoading(false);
+          console.error("Play next game action timed out");
+        }
+      );
+    }
+  }, [game.gameId, isLoading, websocket]);
 
   return {
     playCard,
@@ -85,6 +153,8 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
     deal,
     declareGame,
     playNextGame,
+    isLoading,
+    isConnected: websocket.isConnected,
   };
 }
 

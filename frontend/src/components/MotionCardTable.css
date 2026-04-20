@@ -383,6 +383,24 @@
   }
 }
 
+/* Pending card (waiting for server response) */
+.motion-card.pending {
+  box-shadow: 0 0 15px rgba(66, 165, 245, 0.6), 0 0 30px rgba(66, 165, 245, 0.3);
+}
+
+.motion-card.pending::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  right: -5px;
+  bottom: -5px;
+  background: linear-gradient(45deg, transparent, rgba(66, 165, 245, 0.2), transparent);
+  border-radius: 8px;
+  z-index: -1;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
 /* Speech Bubbles - Same styling as global messages */
 .speech-bubble {
   position: absolute;

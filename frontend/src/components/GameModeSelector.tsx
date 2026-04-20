@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { CircularProgress } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
 import { Card } from "../types";
 import "./GameModeSelector.css";
@@ -12,13 +13,13 @@ function countMatadors(hand: Card[], skatCards: Card[]): number {
   const allCards = [...hand, ...skatCards];
 
   // Check if player has Club Jack
-  const hasClubJack = allCards.some(c => c.rank === "Jack" && c.suit === "♣");
+  const hasClubJack = allCards.some((c) => c.rank === "J" && c.suit === "♣");
 
   let matadors = 0;
   if (hasClubJack) {
     // "With" matadors - count consecutive jacks from top
     for (const suit of jackOrder) {
-      if (allCards.some(c => c.rank === "Jack" && c.suit === suit)) {
+      if (allCards.some((c) => c.rank === "J" && c.suit === suit)) {
         matadors++;
       } else {
         break;
@@ -27,7 +28,7 @@ function countMatadors(hand: Card[], skatCards: Card[]): number {
   } else {
     // "Without" matadors - count consecutive jacks from top that are missing
     for (const suit of jackOrder) {
-      if (!allCards.some(c => c.rank === "Jack" && c.suit === suit)) {
+      if (!allCards.some((c) => c.rank === "J" && c.suit === suit)) {
         matadors++;
       } else {
         break;
@@ -39,7 +40,12 @@ function countMatadors(hand: Card[], skatCards: Card[]): number {
 }
 
 // Calculate potential game value
-function calculateGameValue(mode: string, trumpSuit: string, hand: Card[], skatCards: Card[]): number {
+function calculateGameValue(
+  mode: string,
+  trumpSuit: string,
+  hand: Card[],
+  skatCards: Card[],
+): number {
   let baseValue = 0;
 
   switch (mode) {
@@ -75,30 +81,38 @@ export function GameModeSelector() {
 
   // Calculate game value for current selection
   const gameValue = useMemo(() => {
-    return calculateGameValue(selectedMode, selectedTrump, game.hand, game.skatCards);
+    return calculateGameValue(
+      selectedMode,
+      selectedTrump,
+      game.hand,
+      game.skatCards,
+    );
   }, [selectedMode, selectedTrump, game.hand, game.skatCards]);
 
+  const isDisabled = !game.controls.isConnected || game.controls.isLoading;
+
   const handleDeclare = () => {
-    game.controls.declareGame(
-      selectedMode,
-      selectedMode === "suit" ? selectedTrump : "",
-    );
+    if (!isDisabled) {
+      game.controls.declareGame(
+        selectedMode,
+        selectedMode === "suit" ? selectedTrump : "",
+      );
+    }
   };
 
   return (
     <div className="game-mode-selector">
       {everyonePassed && (
         <div className="everyone-passed-notice">
-          All players passed. As dealer, you must declare with minimum bid of 18.
+          All players passed. As dealer, you must declare with minimum bid of
+          18.
         </div>
       )}
 
       <div className="game-value-info">
         <span>Game Value: {gameValue}</span>
         {gameValue < game.bidValue && (
-          <span className="invalid">
-            ✗ Below bid ({game.bidValue})
-          </span>
+          <span className="invalid">✗ Below bid ({game.bidValue})</span>
         )}
       </div>
 
@@ -113,7 +127,9 @@ export function GameModeSelector() {
               className={`trump-option ${suit === "♥" || suit === "♦" ? "red" : "black"} ${
                 selectedTrump === suit ? "selected" : ""
               }`}
-              onClick={() => selectedMode === "suit" ? setSelectedTrump(suit) : undefined}
+              onClick={() =>
+                selectedMode === "suit" ? setSelectedTrump(suit) : undefined
+              }
               disabled={selectedMode !== "suit"}
             >
               {suit}
@@ -151,14 +167,24 @@ export function GameModeSelector() {
       <button
         className="declare-button"
         onClick={handleDeclare}
-        disabled={gameValue < game.bidValue}
+        disabled={gameValue < game.bidValue || isDisabled}
+        style={{
+          opacity: isDisabled ? 0.5 : 1,
+          cursor: isDisabled ? "not-allowed" : "pointer",
+        }}
       >
-        Declare{" "}
-        {selectedMode === "grand"
-          ? "Grand"
-          : selectedMode === "null"
-            ? "Null"
-            : `${selectedTrump} Suit`}
+        {game.controls.isLoading ? (
+          <CircularProgress size={20} />
+        ) : (
+          <>
+            Declare{" "}
+            {selectedMode === "grand"
+              ? "Grand"
+              : selectedMode === "null"
+                ? "Null"
+                : `${selectedTrump} Suit`}
+          </>
+        )}
       </button>
     </div>
   );

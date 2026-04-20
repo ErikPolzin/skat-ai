@@ -65,6 +65,17 @@ func (d *PgDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	return &profile, err
 }
 
+func (d *PgDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
+	var profile ProfileEntry
+	err := d.DB.QueryRow(`
+		SELECT id, name, is_agent FROM profiles WHERE name = $1
+	`, name).Scan(&profile.ID, &profile.Name, &profile.IsAgent)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("player profile not found")
+	}
+	return &profile, err
+}
+
 func (d *PgDatabase) SaveProfile(profile ProfileEntry) error {
 	_, err := d.DB.Exec(
 		`INSERT INTO profiles (id, name, is_agent)

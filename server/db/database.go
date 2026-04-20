@@ -8,6 +8,7 @@ type Database interface {
 	Close() error
 	InitSchema() error
 	GetProfile(profileID string) (*ProfileEntry, error)
+	GetProfileByName(name string) (*ProfileEntry, error)
 	SaveProfile(profile ProfileEntry) error
 	SaveGameSession(session game.GameSessionState) error
 	GetGameSession(sessionID string) (*game.GameSessionState, error)

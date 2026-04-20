@@ -16,6 +16,7 @@ import { type GameInfo } from "../api/games";
 const GameContext = createContext<
   | (Game & {
       controls: GameControls;
+      trickWinnerRef: React.MutableRefObject<{ winner: number; declarer: number }>;
     })
   | null
 >(null);
@@ -28,6 +29,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const socket = useWebSocketContext();
   const controls = useControls(game, socket);
   const navigate = useNavigate();
+
+  // Store trick winner in a ref that persists across renders
+  const trickWinnerRef = React.useRef<{ winner: number; declarer: number }>({
+    winner: game.trickWinner,
+    declarer: game.declarerPosition,
+  });
 
   // Handle incoming WebSocket messages
   const handleGameMessage = useCallback((message: Message) => {
@@ -44,6 +51,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
         // Handle the new state diff format
         if (message.data.diff) {
           const diff = message.data.diff as GameInfo;
+
+          // If trick is complete (3 cards) or being cleared, update the ref
+          // This allows exit animations to access the correct winner
+          if ((diff.state.trick?.length === 3 || diff.state.trick === null) && diff.state.trick_winner >= 0) {
+            trickWinnerRef.current = {
+              winner: diff.state.trick_winner,
+              declarer: diff.state.declarer,
+            };
+          }
 
           // Apply all state changes at once first
           setGameInfo(diff);
@@ -107,6 +123,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       value={{
         ...game,
         controls,
+        trickWinnerRef,
       }}
     >
       {children}

@@ -6,34 +6,46 @@ export default function Card({
   suit,
   index,
   selected,
+  pending,
   animate,
   className,
+  skipInitialAnimation = false,
+  initial: initialProp,
+  transition: transitionProp,
+  style: styleProp,
   ...props
 }: {
   rank?: string;
   suit?: string;
   index: number;
   selected?: boolean;
+  pending?: boolean;
   animate: TargetAndTransition;
   className?: string;
+  skipInitialAnimation?: boolean;
 } & Omit<HTMLMotionProps<"div">, "className">) {
   const faceDown = !(rank && suit);
-  const [hasDealt, setHasDealt] = React.useState(false);
+  const [hasDealt, setHasDealt] = React.useState(skipInitialAnimation);
 
   React.useEffect(() => {
+    if (skipInitialAnimation) return;
+
     // Mark as dealt after initial animation
     const timer = setTimeout(
       () => setHasDealt(true),
       (index * 0.1 + 0.5) * 1000,
     );
     return () => clearTimeout(timer);
-  }, [index]);
+  }, [index, skipInitialAnimation]);
 
   return (
     <motion.div
       {...props}
       animate={{ rotateY: faceDown ? 0 : 180, ...(animate || {}) }}
-      initial={{ rotateY: faceDown ? 0 : 180 }} // Start face-down
+      initial={{
+        rotateY: faceDown ? 0 : 180,
+        ...(typeof initialProp === 'object' && initialProp !== null ? initialProp : {})
+      }} // Merge with passed initial
       transition={{
         rotateY: {
           duration: 0.6,
@@ -51,13 +63,13 @@ export default function Card({
           stiffness: 100,
           delay: hasDealt ? 0 : index * 0.1, // Only stagger initial deal
         },
-        ...props.transition,
+        ...(typeof transitionProp === 'object' && transitionProp !== null ? transitionProp : {}),
       }}
-      className={className || `motion-card ${selected ? "selected" : ""}`}
+      className={`${className || "motion-card"} ${selected ? "selected" : ""} ${pending ? "pending" : ""}`}
       style={{
         zIndex: 100 + index,
         transformStyle: "preserve-3d",
-        ...props.style,
+        ...(styleProp || {}),
       }}
     >
       <div

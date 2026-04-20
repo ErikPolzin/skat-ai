@@ -45,6 +45,18 @@ func (d *MemoryDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	return profile, nil
 }
 
+func (d *MemoryDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	for _, profile := range d.profiles {
+		if profile.Name == name {
+			return profile, nil
+		}
+	}
+	return nil, fmt.Errorf("profile not found")
+}
+
 func (d *MemoryDatabase) SaveProfile(profile ProfileEntry) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

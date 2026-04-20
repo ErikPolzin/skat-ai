@@ -150,8 +150,27 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 	playerID := req.PlayerID
 	playerName := req.PlayerName
 
-	// If no player ID provided, generate a new one
+	// If no player ID provided, check if username already exists
 	if playerID == "" {
+		// Check if a profile with this name already exists
+		if existingProfile, err := s.db.GetProfileByName(playerName); err == nil {
+			// Profile with this name exists
+			if existingProfile.IsAgent {
+				// Username belongs to an agent, reject it
+				http.Error(w, "Username is reserved for an agent", http.StatusConflict)
+				return
+			}
+			// Return the existing profile
+			logger.Info("Returning existing profile", "player_id", existingProfile.ID, "player_name", existingProfile.Name)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"player_id":   existingProfile.ID,
+				"player_name": existingProfile.Name,
+			})
+			return
+		}
+
+		// No existing profile, create a new one
 		playerID = uuid.New().String()
 		logger.Info("Creating new profile", "player_id", playerID, "player_name", playerName)
 
@@ -241,7 +260,7 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.db.SaveGame(*gs)
-	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(playerID))
+	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(playerID), "") // No action_id for HTTP requests
 	go s.BroadcastAIActions(gs)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -304,7 +323,7 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.db.SaveGame(*gs)
-	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(agentProfile.ID))
+	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(agentProfile.ID), "") // No action_id for HTTP requests
 	go s.BroadcastAIActions(gs)
 
 	w.Header().Set("Content-Type", "application/json")

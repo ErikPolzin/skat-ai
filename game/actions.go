@@ -56,44 +56,43 @@ func (gs *GameState) PlayCard(playerID string, card Card) (string, error) {
 	}
 	gs.Trick = append(gs.Trick, card)
 
-	if len(gs.Trick) != 3 {
+	// If trick is complete (3 cards), calculate the winner now
+	// This ensures the winner is available before ResolveTrick clears the trick
+	if len(gs.Trick) == 3 {
+		winner := Dealer
+		winCard := gs.Trick[0]
+		for i := Listener; i < 3; i++ {
+			if gs.cardBeats(gs.Trick[i], winCard) {
+				winner = i
+				winCard = gs.Trick[i]
+			}
+		}
+		actualWinner := (gs.TrickStarter + winner) % 3
+		gs.TrickWinner = actualWinner
+		gs.CurrentPlayer = actualWinner
+	} else {
 		// Next player
 		gs.CurrentPlayer = (gs.CurrentPlayer + 1) % 3
 	}
-	logger.Debug("Player played card", "player_name", currentPlayer.Name, "card", card.String())
 	return fmt.Sprintf("%v", card), nil
 }
 
 func (gs *GameState) ResolveTrick() (string, error) {
-	winner := Dealer
-	winCard := gs.Trick[0]
-
-	for i := Listener; i < 3; i++ {
-		if gs.cardBeats(gs.Trick[i], winCard) {
-			winner = i
-			winCard = gs.Trick[i]
-		}
-	}
-
-	// Adjust winner index relative to who led
-	leadPlayer := (gs.CurrentPlayer + 3 - 2) % 3
-	actualWinner := (leadPlayer + winner) % 3
 
 	// Calculate points based on game mode
 	if gs.Mode == ModeNull {
 		// In null games, if declarer takes any trick, game ends immediately
-		if actualWinner == gs.Declarer {
+		if gs.TrickWinner == gs.Declarer {
 			gs.Phase = PhaseComplete // Game ends immediately - declarer loses
 			gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
 			gs.Trick = nil
-			gs.TrickWinner = actualWinner
 			declarer := gs.GetPlayerByPosition(gs.Declarer)
 			return fmt.Sprintf("%s lost the null game", declarer.Name), nil // Exit early - game is over
 		}
 	} else {
 		// In normal games, calculate card points
 		for _, card := range gs.Trick {
-			if actualWinner == gs.Declarer {
+			if gs.TrickWinner == gs.Declarer {
 				gs.DeclarerScore += card.Value()
 			} else {
 				gs.OpponentScore += card.Value()
@@ -103,9 +102,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 
 	gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
 	gs.Trick = nil
-	gs.TrickWinner = actualWinner
-	gs.CurrentPlayer = actualWinner
-	gs.TrickStarter = actualWinner
+	gs.TrickStarter = gs.TrickWinner
 
 	// Check if game is over
 	if len(gs.Players[0].Hand) == 0 {
@@ -116,8 +113,6 @@ func (gs *GameState) ResolveTrick() (string, error) {
 		}
 	}
 
-	trickWinner := gs.GetPlayerByPosition(gs.TrickWinner)
-	logger.Debug("Player won the trick", "player_name", trickWinner.Name)
 	// Trick was completed, broadcast using state diff
 	return "Won the trick", nil
 }
@@ -380,6 +375,8 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.ListenerPassed = false
 	gs.SpeakerPassed = false
 	gs.DealerPassed = false
+	gs.DeclarerScore = 0
+	gs.OpponentScore = 0
 	for _, player := range gs.Players {
 		player.Hand = []Card{}
 	}

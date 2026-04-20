@@ -12,8 +12,8 @@ import {
   ListItemText,
   ListItemSecondaryAction,
   Alert,
-  Divider,
   IconButton,
+  CircularProgress,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { createGame, joinGame, getGames, type GameSession } from "../api/games";
@@ -29,6 +29,8 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
   const [gameCode, setGameCode] = useState("");
   const [games, setGames] = useState<GameSession[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
 
   useEffect(() => {
     fetchGames();
@@ -37,10 +39,13 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
 
   const fetchGames = async () => {
     try {
+      setIsFetching(true);
       const data = await getGames();
       setGames(data);
     } catch (error) {
       console.error("Failed to fetch games:", error);
+    } finally {
+      setIsFetching(false);
     }
   };
 
@@ -48,6 +53,7 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
     let currentGameCode = gameCode.trim();
     try {
       setError(null);
+      setIsLoading(true);
 
       if (!currentGameCode) {
         // Create a new game and get the code
@@ -67,6 +73,8 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
     } catch (error) {
       console.error("Error in handleJoinOrCreate:", error);
       setError((error as Error).message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -102,17 +110,19 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
           )}
 
           <Box sx={{ mb: 4 }}>
-            <Typography variant="h6" gutterBottom>
+            <Typography variant="subtitle1" gutterBottom>
               Join or Create Game
             </Typography>
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <TextField
-                placeholder="Enter game code or leave empty to create"
+                placeholder="Enter game code"
                 value={gameCode}
                 onChange={(e) => setGameCode(e.target.value.toUpperCase())}
+                disabled={isLoading}
                 sx={{
                   "& input": {
                     textTransform: "uppercase",
+                    textAlign: "center",
                     letterSpacing: "2px",
                   },
                 }}
@@ -122,35 +132,68 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
                 variant="contained"
                 color="primary"
                 onClick={handleJoinOrCreate}
+                disabled={isLoading}
                 size="large"
                 fullWidth={!gameCode}
+                startIcon={isLoading ? <CircularProgress size={20} /> : null}
               >
-                {gameCode ? "Join Game" : "Create New Game"}
+                {isLoading
+                  ? "Loading..."
+                  : gameCode
+                    ? "Join Game"
+                    : "Create Game"}
               </Button>
             </Box>
           </Box>
 
-          <Divider sx={{ my: 3 }} />
-
-          <Box sx={{ mb: 3 }}>
+          <Box
+            sx={{
+              minHeight: "200px",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
             <Box
               sx={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                mb: 2,
               }}
             >
-              <Typography variant="h6">Available Games</Typography>
-              <IconButton onClick={fetchGames} color="primary">
-                <RefreshIcon />
+              <Typography variant="subtitle1">Available Games</Typography>
+              <IconButton
+                onClick={fetchGames}
+                color="primary"
+                disabled={isFetching}
+              >
+                {isFetching ? <CircularProgress size={24} /> : <RefreshIcon />}
               </IconButton>
             </Box>
 
-            {games.length === 0 ? (
-              <Typography color="text.secondary" align="center" sx={{ py: 2 }}>
-                No active games
-              </Typography>
+            {isFetching ? (
+              <Box
+                sx={{
+                  flexGrow: 1,
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <CircularProgress />
+              </Box>
+            ) : games.length === 0 ? (
+              <Box
+                sx={{
+                  flexGrow: 1,
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Typography sx={{ py: 2 }} color="textDisabled">
+                  No active games
+                </Typography>
+              </Box>
             ) : (
               <List>
                 {games.map((game) => (
@@ -166,7 +209,11 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
                     <ListItemText
                       primary={
                         <Box
-                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1,
+                          }}
                         >
                           <Typography
                             variant="subtitle1"
@@ -184,6 +231,7 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
                       <Button
                         variant="outlined"
                         onClick={() => handleQuickJoin(game.code)}
+                        disabled={isLoading}
                       >
                         Join
                       </Button>

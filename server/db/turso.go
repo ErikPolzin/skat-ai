@@ -68,6 +68,20 @@ func (d *TursoDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
 	}
+	profile.IsAgent = isAgent != 0
+	return &profile, err
+}
+
+func (d *TursoDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
+	var profile ProfileEntry
+	var isAgent int
+	err := d.DB.QueryRow(`
+		SELECT id, name, is_agent FROM profiles WHERE name = ?
+	`, name).Scan(&profile.ID, &profile.Name, &isAgent)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("player profile not found")
+	}
+	profile.IsAgent = isAgent != 0
 	return &profile, err
 }
 

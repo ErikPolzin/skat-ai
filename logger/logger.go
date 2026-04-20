@@ -22,24 +22,18 @@ var defaultLogger *Logger
 
 // Initialize sets up the logger. Call this once at application startup.
 // If projectID is empty or GCP credentials are not available, falls back to local logging.
-// Set LOGGING_ENABLED=true to enable logging output.
+// Set CLOUD_LOGGING_ENABLED=true to enable GCP Cloud Logging (requires GCP_PROJECT_ID).
 func Initialize(serviceName string) (*Logger, error) {
 	l := &Logger{
 		serviceName: serviceName,
-		disabled:    os.Getenv("LOGGING_ENABLED") != "true",
-	}
-
-	// If logging is disabled, skip initialization
-	if l.disabled {
-		log.Printf("Logging disabled for service: %s", serviceName)
-		defaultLogger = l
-		return l, nil
+		disabled:    false,
 	}
 
 	projectID := os.Getenv("GCP_PROJECT_ID")
-	l.local = projectID == ""
+	cloudLoggingEnabled := os.Getenv("CLOUD_LOGGING_ENABLED") == "true"
+	l.local = projectID == "" || !cloudLoggingEnabled
 
-	// Try to initialize GCP Cloud Logging if projectID is set
+	// Try to initialize GCP Cloud Logging if enabled and projectID is set
 	if !l.local {
 		ctx := context.Background()
 		client, err := logging.NewClient(ctx, projectID)

@@ -18,10 +18,10 @@ func main() {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	// Enable logging for server (always enabled unless explicitly disabled)
-	// Can be disabled with LOGGING_ENABLED=false
-	if os.Getenv("LOGGING_ENABLED") == "" {
-		os.Setenv("LOGGING_ENABLED", "true")
+	// Enable Cloud Logging automatically when running on Cloud Run
+	isCloudRun := os.Getenv("K_SERVICE") != ""
+	if isCloudRun && os.Getenv("CLOUD_LOGGING_ENABLED") == "" {
+		os.Setenv("CLOUD_LOGGING_ENABLED", "true")
 	}
 
 	// Initialize logger

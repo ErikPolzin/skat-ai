@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -18,7 +18,6 @@ import WarningIcon from "@mui/icons-material/Warning";
 import { GameProvider, useGameContext } from "../context/GameContext";
 import { MotionCardTable } from "../components/MotionCardTable";
 import { SessionResults } from "../components/SessionResults";
-import "./GameScreen.css";
 
 function GameScreenContent() {
   const game = useGameContext();
@@ -46,7 +45,6 @@ function GameScreenContent() {
   if (game.isLoading) {
     return (
       <Box
-        className="game-screen"
         sx={{
           display: "flex",
           alignItems: "center",
@@ -66,7 +64,6 @@ function GameScreenContent() {
   if (game.error) {
     return (
       <Box
-        className="game-screen"
         sx={{
           display: "flex",
           alignItems: "center",
@@ -98,7 +95,6 @@ function GameScreenContent() {
   // Main game screen - always use MotionCardTable for consistency
   return (
     <Box
-      className="game-screen"
       sx={{
         display: "flex",
         flexDirection: "row",
@@ -245,8 +241,12 @@ function GameScreenContent() {
                 size="large"
                 fullWidth
                 onClick={handlePlayNextGame}
+                disabled={!game.controls.isConnected || game.controls.isLoading}
+                startIcon={game.controls.isLoading ? <CircularProgress size={20} /> : null}
               >
-                Play Another Game ({game.gamesPlayed + 1}/10)
+                {game.controls.isLoading
+                  ? "Loading..."
+                  : `Play Another Game (${game.gamesPlayed + 1}/10)`}
               </Button>
             )}
             <Button
@@ -258,6 +258,11 @@ function GameScreenContent() {
             >
               Back to Lobby
             </Button>
+            {!game.controls.isConnected && (
+              <Typography variant="caption" color="warning.main" align="center">
+                Disconnected from server
+              </Typography>
+            )}
           </Box>
         </Paper>
       </Modal>

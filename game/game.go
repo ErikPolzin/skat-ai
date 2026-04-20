@@ -88,15 +88,9 @@ const (
 type GameCode string
 
 func NewGameCode() GameCode {
-	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-	code := ""
-	for i := 0; i < 4; i++ {
-		code += string(chars[rand.Intn(len(chars))])
-	}
-
-	// Fallback to longer code if we can't find a unique 4-char code
-	return GameCode(fmt.Sprintf("%08X", rand.Uint32()))
+	// Generate a 4-character hexadecimal code (1000-FFFF)
+	code := rand.Intn(0xF000) + 0x1000
+	return GameCode(fmt.Sprintf("%04X", code))
 }
 
 // PlayerState represents one player's state

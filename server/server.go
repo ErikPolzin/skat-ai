@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"skat/logger"
@@ -29,6 +30,12 @@ func NewServer(database db.Database) *Server {
 		db:      database,
 		clients: NewClientManager(),
 	}
+}
+
+// IsCloudRun returns true if running on Google Cloud Run
+// Cloud Run automatically sets K_SERVICE environment variable
+func (s *Server) IsCloudRun() bool {
+	return os.Getenv("K_SERVICE") != ""
 }
 
 // HandleWebSocket upgrades HTTP connections to WebSocket

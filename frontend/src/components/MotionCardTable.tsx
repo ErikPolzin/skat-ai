@@ -1,6 +1,13 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMediaQuery, useTheme } from "@mui/material";
+import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
 import { Card as CardType } from "../api/games";
 import "./MotionCardTable.css";
 import { useGameContext } from "../context/GameContext";
@@ -54,6 +61,11 @@ export function MotionCardTable() {
   const isTablet = useMediaQuery(theme.breakpoints.down("md"));
 
   const [selectedCards, setSelectedCards] = useState<CardType[]>([]);
+  const [pendingCard, setPendingCard] = useState<CardType | null>(null);
+
+  // Track whether cards should animate from deck (true) or spread from left (false)
+  const [shouldAnimateFromDeck, setShouldAnimateFromDeck] = useState(false);
+  const hasInitializedRef = useRef(false);
 
   // Track window size for responsive positioning
   const [windowSize, setWindowSize] = useState({
@@ -105,6 +117,20 @@ export function MotionCardTable() {
     };
   };
 
+  // Determine animation behavior: animate from deck when dealing, spread from left on reload
+  useEffect(() => {
+    if (!hasInitializedRef.current) {
+      // On first render: animate from deck only if we're actively dealing or have no cards
+      const animateFromDeck =
+        game.phase === "dealing" || game.playerHand.length === 0;
+      setShouldAnimateFromDeck(animateFromDeck);
+      hasInitializedRef.current = true;
+    } else if (game.phase === "dealing") {
+      // When entering dealing phase, enable deck animation
+      setShouldAnimateFromDeck(true);
+    }
+  }, [game.phase, game.playerHand.length]);
+
   // Update window size on resize
   useEffect(() => {
     const handleResize = () => {
@@ -126,6 +152,11 @@ export function MotionCardTable() {
   };
 
   const handlePlayCard = (card: CardType) => {
+    // Don't allow actions when disconnected or loading
+    if (!game.controls.isConnected || game.controls.isLoading) {
+      return;
+    }
+
     if (game.isSkatExchange && game.isDeclarer && game.hasPickedUpSkat) {
       // In skat exchange phase, clicking cards selects them for discard
       const isSelected = selectedCards.some(
@@ -144,9 +175,18 @@ export function MotionCardTable() {
         setSelectedCards([...selectedCards, card]);
       }
     } else {
+      // Set pending card when playing
+      setPendingCard(card);
       game.controls.playCard(card);
     }
   };
+
+  // Clear pending card when loading completes
+  useEffect(() => {
+    if (!game.controls.isLoading) {
+      setPendingCard(null);
+    }
+  }, [game.controls.isLoading]);
 
   const handleDiscardCards = () => {
     if (selectedCards.length === 2) {
@@ -209,6 +249,55 @@ export function MotionCardTable() {
     rotate: 0,
     scale: 1,
   });
+
+  // Get initial position for player cards (either from deck or spreading from left)
+  const getPlayerCardInitialPosition = (
+    index: number,
+    basePosition: { x: number; y: number; rotate: number; scale: number },
+    declarerOffset: number,
+  ) => {
+    if (shouldAnimateFromDeck) {
+      return getDeckPosition();
+    }
+    // Spread from left: cards start stacked on the left
+    return {
+      ...basePosition,
+      x: basePosition.x - index * 20,
+      y: basePosition.y + declarerOffset,
+      rotate: 0,
+      scale: 1,
+    };
+  };
+
+  // Get initial position for opponent cards
+  const getOpponentCardInitialPosition = (
+    index: number,
+    basePosition: { x: number; y: number; rotate: number; scale: number },
+    declarerOffset: number,
+    orientation: "horizontal" | "vertical",
+  ) => {
+    if (shouldAnimateFromDeck) {
+      return getDeckPosition();
+    }
+    // Spread from left for horizontal, from bottom for vertical
+    if (orientation === "horizontal") {
+      return {
+        ...basePosition,
+        x: basePosition.x - index * 20,
+        y: basePosition.y + declarerOffset,
+        rotate: 0,
+        scale: 1,
+      };
+    } else {
+      return {
+        ...basePosition,
+        x: basePosition.x + declarerOffset,
+        y: basePosition.y + index * 20,
+        rotate: 90,
+        scale: 1,
+      };
+    }
+  };
 
   // Get game.trick position for a card
   const getTrickPosition = (index: number, ntricks: number) => {
@@ -338,8 +427,48 @@ export function MotionCardTable() {
   return (
     <div className="motion-card-table" style={cardTableStyle}>
       <div className="table-surface">
-        {/* Center UI: Lobby, Bidding, Skat Exchange, Game Mode Selection, or Game Mode Display */}
-        {game.isInLobby ? (
+        {/* Center UI: Disconnected indicator takes priority over everything */}
+        {!game.controls.isConnected ? (
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 2000,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "16px",
+            }}
+          >
+            <SignalWifiOffIcon
+              sx={{
+                fontSize: 60,
+                color: "warning.main",
+                filter: "drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))",
+              }}
+            />
+            <span
+              style={{
+                fontSize: "20px",
+                fontWeight: "bold",
+                color: "#ed6c02",
+                textShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+              }}
+            >
+              Disconnected from server
+            </span>
+            <span
+              style={{
+                fontSize: "14px",
+                color: "#d4d4d4",
+              }}
+            >
+              Attempting to reconnect...
+            </span>
+          </div>
+        ) : game.isInLobby ? (
           <GameLobbyWaiting />
         ) : game.isBiddingPhase ? (
           <BiddingControls />
@@ -368,10 +497,14 @@ export function MotionCardTable() {
           <div
             className={`opponent-avatar-container top ${game.topPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
-            <div className={`avatar-circle ${game.isPlayerOffline(game.topPlayer.id) ? "offline" : ""}`}>
+            <div
+              className={`avatar-circle ${!game.controls.isConnected || game.isPlayerOffline(game.topPlayer.id) ? "offline" : ""}`}
+            >
               <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
             </div>
-            <div className={`opponent-name ${game.isPlayerOffline(game.topPlayer.id) ? "offline" : ""}`}>
+            <div
+              className={`opponent-name ${!game.controls.isConnected || game.isPlayerOffline(game.topPlayer.id) ? "offline" : ""}`}
+            >
               {game.topPlayer.name}
               {isMobile && game.declarer === game.topPlayer && " (D)"}
             </div>
@@ -397,10 +530,14 @@ export function MotionCardTable() {
           <div
             className={`opponent-avatar-container left ${game.leftPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
-            <div className={`avatar-circle ${game.isPlayerOffline(game.leftPlayer.id) ? "offline" : ""}`}>
+            <div
+              className={`avatar-circle ${!game.controls.isConnected || game.isPlayerOffline(game.leftPlayer.id) ? "offline" : ""}`}
+            >
               <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
             </div>
-            <div className={`opponent-name ${game.isPlayerOffline(game.leftPlayer.id) ? "offline" : ""}`}>
+            <div
+              className={`opponent-name ${!game.controls.isConnected || game.isPlayerOffline(game.leftPlayer.id) ? "offline" : ""}`}
+            >
               {game.leftPlayer.name}
               {isMobile && game.declarer === game.leftPlayer && " (D)"}
             </div>
@@ -469,30 +606,53 @@ export function MotionCardTable() {
               key="deal-button"
               className="deal-button"
               onClick={game.controls.deal}
+              disabled={!game.controls.isConnected || game.controls.isLoading}
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               whileTap={{ scale: 0.95 }}
+              style={{
+                opacity:
+                  !game.controls.isConnected || game.controls.isLoading
+                    ? 0.5
+                    : 1,
+                cursor:
+                  !game.controls.isConnected || game.controls.isLoading
+                    ? "not-allowed"
+                    : "pointer",
+              }}
             >
-              Deal Cards
+              {game.controls.isLoading ? "Dealing..." : "Deal Cards"}
             </motion.button>
           )}
 
           {/* Player Hand - only show after deal started */}
           {sortedPlayerHand.map((card, index) => {
             const selected = isCardSelected(card);
+            const isPending =
+              pendingCard !== null &&
+              card.rank === pendingCard.rank &&
+              card.suit === pendingCard.suit;
             const basePosition = getPlayerCardPosition(
               index,
               sortedPlayerHand.length,
             );
             const canClickCard =
-              (game.phase === "playing" && game.isMyTurn) ||
-              (game.isSkatExchange && game.hasPickedUpSkat);
+              game.controls.isConnected &&
+              !game.controls.isLoading &&
+              ((game.phase === "playing" && game.isMyTurn) ||
+                (game.isSkatExchange && game.hasPickedUpSkat));
 
-            // Apply declarer choice offset
             const declarerOffset = game.isDeclarerChoice ? 40 : 0;
-            const animatePosition = selected
-              ? { ...basePosition, y: basePosition.y + declarerOffset - 20 }
-              : { ...basePosition, y: basePosition.y + declarerOffset };
+            // Raise card if selected or pending
+            const animatePosition =
+              selected || isPending
+                ? { ...basePosition, y: basePosition.y + declarerOffset - 20 }
+                : { ...basePosition, y: basePosition.y + declarerOffset };
+            const initialPosition = getPlayerCardInitialPosition(
+              index,
+              basePosition,
+              declarerOffset,
+            );
 
             return (
               <Card
@@ -500,9 +660,11 @@ export function MotionCardTable() {
                 rank={card.rank}
                 suit={card.suit}
                 key={playerKeys[index]}
-                className={`motion-card ${selected ? "selected" : ""}`}
+                selected={selected}
+                pending={isPending}
                 animate={animatePosition}
-                initial={{ ...getDeckPosition() }}
+                initial={initialPosition}
+                skipInitialAnimation={!shouldAnimateFromDeck}
                 whileHover={
                   canClickCard
                     ? { y: basePosition.y + declarerOffset - 20 }
@@ -513,10 +675,13 @@ export function MotionCardTable() {
                 }}
                 style={{
                   cursor:
-                    game.isBiddingPhase ||
-                    (game.isSkatExchange && !game.hasPickedUpSkat)
+                    !game.controls.isConnected || game.controls.isLoading
                       ? "not-allowed"
-                      : "pointer",
+                      : game.isBiddingPhase ||
+                          (game.isSkatExchange && !game.hasPickedUpSkat)
+                        ? "not-allowed"
+                        : "pointer",
+                  opacity: !game.controls.isConnected ? 0.6 : 1,
                   zIndex: 100 + index,
                 }}
               />
@@ -530,19 +695,26 @@ export function MotionCardTable() {
               index,
               game.topPlayer?.card_count ?? 0,
             );
-            // Apply declarer choice offset - move cards up when choosing
             const declarerOffset = game.isDeclarerChoice ? -40 : 0;
+            const animatePosition = {
+              ...basePosition,
+              y: basePosition.y + declarerOffset,
+            };
+            const initialPosition = getOpponentCardInitialPosition(
+              index,
+              basePosition,
+              declarerOffset,
+              "horizontal",
+            );
 
             return (
               <Card
                 index={index}
                 key={key}
                 className="motion-card opponent-card"
-                animate={{
-                  ...basePosition,
-                  y: basePosition.y + declarerOffset,
-                }}
-                initial={{ ...getDeckPosition() }}
+                animate={animatePosition}
+                initial={initialPosition}
+                skipInitialAnimation={!shouldAnimateFromDeck}
                 style={{
                   zIndex: 50 + index,
                 }}
@@ -557,19 +729,26 @@ export function MotionCardTable() {
               index,
               game.leftPlayer?.card_count ?? 0,
             );
-            // Apply declarer choice offset - move cards left when choosing
             const declarerOffset = game.isDeclarerChoice ? -30 : 0;
+            const animatePosition = {
+              ...basePosition,
+              x: basePosition.x + declarerOffset,
+            };
+            const initialPosition = getOpponentCardInitialPosition(
+              index,
+              basePosition,
+              declarerOffset,
+              "vertical",
+            );
 
             return (
               <Card
                 index={index}
                 key={key}
                 className="motion-card opponent-card"
-                animate={{
-                  ...basePosition,
-                  x: basePosition.x + declarerOffset,
-                }}
-                initial={{ ...getDeckPosition() }}
+                animate={animatePosition}
+                initial={initialPosition}
+                skipInitialAnimation={!shouldAnimateFromDeck}
                 style={{
                   zIndex: 50 + index,
                 }}
@@ -588,10 +767,17 @@ export function MotionCardTable() {
               animate={{
                 ...getTrickPosition(index, game.trick.length),
               }}
+              // Pass custom exit prop that will be used when card is removed
+              custom={{
+                trickWinner: game.trickWinner,
+                declarerPosition: game.declarerPosition,
+                playerIsDeclarer,
+              }}
               exit={(() => {
-                // Determine which pile based on who won and who is declarer
-                const trickWinner = game.trickWinner;
-                const declarerPosition = game.declarer?.position;
+                // Use the trick winner stored when the WebSocket message arrived
+                // This is the most reliable way to get the correct winner for exit animations
+                const trickWinner = game.trickWinnerRef.current.winner;
+                const declarerPosition = game.trickWinnerRef.current.declarer;
 
                 // Check if the trick winner is the declarer
                 const declarerWonTrick = trickWinner === declarerPosition;

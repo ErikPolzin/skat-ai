@@ -1,9 +1,11 @@
 import React from "react";
+import { CircularProgress } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
 import "./BiddingControls.css";
 
 export function BiddingControls() {
   const game = useGameContext();
+  const isDisabled = !game.controls.isConnected || game.controls.isLoading;
 
   // Get the next valid bid value based on current bid
   const getNextBidValue = () => {
@@ -61,14 +63,18 @@ export function BiddingControls() {
             <button
               className="bid-btn raise"
               onClick={() => game.controls.bid(String(getNextBidValue()))}
+              disabled={isDisabled}
+              style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
             >
-              Bid {getNextBidValue()}
+              {game.controls.isLoading ? <CircularProgress size={20} /> : `Bid ${getNextBidValue()}`}
             </button>
             <button
               className="bid-btn pass"
               onClick={() => game.controls.bid("pass")}
+              disabled={isDisabled}
+              style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
             >
-              Pass
+              {game.controls.isLoading ? <CircularProgress size={20} /> : "Pass"}
             </button>
           </>
         ) : (
@@ -78,22 +84,28 @@ export function BiddingControls() {
               <button
                 className="bid-btn hold"
                 onClick={() => game.controls.bid("hold")}
+                disabled={isDisabled}
+                style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
               >
-                Yes ({game.bidValue})
+                {game.controls.isLoading ? <CircularProgress size={20} /> : `Yes (${game.bidValue})`}
               </button>
             ) : (
               <button
                 className="bid-btn raise"
                 onClick={() => game.controls.bid(String(getNextBidValue()))}
+                disabled={isDisabled}
+                style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
               >
-                Bid {getNextBidValue()}
+                {game.controls.isLoading ? <CircularProgress size={20} /> : `Bid ${getNextBidValue()}`}
               </button>
             )}
             <button
               className="bid-btn pass"
               onClick={() => game.controls.bid("pass")}
+              disabled={isDisabled}
+              style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
             >
-              Pass
+              {game.controls.isLoading ? <CircularProgress size={20} /> : "Pass"}
             </button>
           </>
         )}

@@ -75,16 +75,17 @@ export function MotionCardTable() {
 
   // Calculate table size based on window size
   // This matches the CSS table-surface dimensions
+  const showSessionResults = isMobile && game.playerCount === 3;
   const tableSize = {
     width: isMobile ? windowSize.width : Math.min(1000, windowSize.width - 24),
-    height: isMobile ? windowSize.height : windowSize.height - 16,
+    height: isMobile ? windowSize.height - 30 : windowSize.height - 16,
   };
 
   const showDeck = game.phase === "dealing";
   const showDealButton = game.phase === "dealing" && game.isDealer;
 
   // Card dimensions - single source of truth
-  const CARD_HEIGHT = isMobile ? 90 : isTablet ? 100 : 110;
+  const CARD_HEIGHT = isMobile ? 120 : isTablet ? 100 : 110;
   const CARD_WIDTH = CARD_HEIGHT * (5 / 7);
 
   // Responsive card dimensions and spacing
@@ -201,10 +202,12 @@ export function MotionCardTable() {
     const totalWidth = total * spacing;
     const startX = -totalWidth / 2;
     const yPosition = tableSize.height / 2 - CARD_HEIGHT / 2;
+    // Shift cards up slightly on mobile
+    const yOffset = isMobile ? -40 : 0;
 
     return {
       x: startX + index * spacing + spacing / 2,
-      y: yPosition - getCardPadding(),
+      y: yPosition - getCardPadding() + yOffset,
       rotate: 0,
       scale: 1,
     };
@@ -234,7 +237,7 @@ export function MotionCardTable() {
       const startY = -totalHeight / 2;
       const xPosition = -tableSize.width / 2 + CARD_HEIGHT / 2;
       return {
-        x: xPosition + getCardPadding(),
+        x: Math.min(xPosition + getCardPadding(), -190),
         y: startY + index * spacing + spacing / 2,
         rotate: 90,
         scale: 1,
@@ -426,7 +429,9 @@ export function MotionCardTable() {
 
   return (
     <div className="motion-card-table" style={cardTableStyle}>
-      <div className="table-surface">
+      <div
+        className={`table-surface ${showSessionResults ? "with-session-bar" : ""}`}
+      >
         {/* Center UI: Disconnected indicator takes priority over everything */}
         {!game.controls.isConnected ? (
           <div
@@ -682,7 +687,7 @@ export function MotionCardTable() {
                         ? "not-allowed"
                         : "pointer",
                   opacity: !game.controls.isConnected ? 0.6 : 1,
-                  zIndex: 100 + index,
+                  zIndex: 300 + index,
                 }}
               />
             );
@@ -764,6 +769,7 @@ export function MotionCardTable() {
               rank={card.rank}
               suit={card.suit}
               className="motion-card"
+              skipInitialAnimation={true}
               animate={{
                 ...getTrickPosition(index, game.trick.length),
               }}

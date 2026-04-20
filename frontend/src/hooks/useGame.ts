@@ -33,8 +33,8 @@ export function useGame(
       declarer_score: 0,
       opponent_score: 0,
       declarer: -1,
-      mode: "",
-      trump_suit: "",
+      mode: "grand",
+      trump_suit: "♣",
       trick_starter: 0,
       trick_winner: -1,
       game_value: 0,
@@ -76,7 +76,7 @@ export function useGame(
   const isInLobby = state.phase === "waiting_for_players";
   const isDeclarer = playerPosition === state.declarer;
   const isDealer = playerPosition === 0;
-  const isNull = state.mode === "Null";
+  const isNull = state.mode === "null";
   const gameOver = state.phase === "complete";
 
   // Check if it's my turn by comparing position
@@ -232,8 +232,8 @@ export function useGame(
         declarer_score: 0,
         opponent_score: 0,
         declarer: -1,
-        mode: "",
-        trump_suit: "",
+        mode: "grand",
+        trump_suit: "♣",
         trick_starter: 0,
         trick_winner: -1,
         game_value: 0,

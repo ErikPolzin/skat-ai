@@ -10,7 +10,7 @@ export function GameDeclarationPanel() {
   const handleDeclare = () => {
     game.controls.declareGame(
       selectedMode,
-      selectedMode === "suit" ? selectedTrump : "",
+      selectedMode === "suit" ? selectedTrump : "♣",
     );
   };
 

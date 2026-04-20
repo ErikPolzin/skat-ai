@@ -20,6 +20,9 @@ export type { Card } from "../types";
 
 const getApiUrl = () => process.env.REACT_APP_API_URL || "";
 
+export type GameMode = "grand" | "suit" | "null";
+export type TrumpSuit = "♣" | "♠" | "♥" | "♦";
+
 export interface GameState {
   id: string;
   code: string;
@@ -28,8 +31,8 @@ export interface GameState {
   players: [ServerPlayer | null, ServerPlayer | null, ServerPlayer | null];
   current_player: number;
   declarer: number;
-  mode: string;
-  trump_suit: string;
+  mode: GameMode;
+  trump_suit: TrumpSuit;
   trick: Card[] | null;
   trick_winner: number;
   trick_starter: number;
@@ -156,7 +159,7 @@ export interface GameHistoryEntry {
   is_winner: boolean;
   is_declarer: boolean;
   final_score: number;
-  game_mode: string;
+  game_mode: GameMode;
   opponent_names: string[];
   vs_ai: boolean;
   finished_at: string;
@@ -185,8 +188,8 @@ export interface SessionResults {
     game_number: number;
     declarer_name: string;
     declarer_won: boolean;
-    game_mode: string;
-    trump_suit: string;
+    game_mode: GameMode;
+    trump_suit: TrumpSuit;
     game_value: number;
     player_results: { [playerId: string]: number };
     player_names: { [playerId: string]: string };

@@ -20,8 +20,8 @@ export interface SessionGameResult {
   game_number: number;
   declarer_name: string;
   declarer_won: boolean;
-  game_mode: string;
-  trump_suit: string;
+  game_mode: "grand" | "suit" | "null";
+  trump_suit: "♣" | "♠" | "♥" | "♦";
   game_value: number;
   player_results: { [playerId: string]: number };
   player_names: { [playerId: string]: string };

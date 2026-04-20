@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Paper,
   Typography,
@@ -8,7 +8,13 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  IconButton,
+  Box,
+  useMediaQuery,
+  useTheme,
+  Backdrop,
 } from "@mui/material";
+import { ExpandMore, ExpandLess } from "@mui/icons-material";
 import type { SessionGameResult } from "../types";
 import type { Player } from "../api/games";
 
@@ -27,6 +33,10 @@ export function SessionResults({
   maxGames,
   players,
 }: SessionResultsProps) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   // Get player IDs from results or from players prop
   let playerIds: string[] = [];
   let playerNames: { [id: string]: string } = {};
@@ -64,33 +74,52 @@ export function SessionResults({
     });
   }
 
-  return (
-    <Paper
-      elevation={3}
-      sx={{
-        my: "12px",
-        marginRight: "8px",
-        height: "calc(100% - 24px)",
-        display: "flex",
-        flexDirection: "column",
-        borderRadius: "20px",
-        bgcolor: "white",
-      }}
-    >
-      <Typography variant="h6" gutterBottom sx={{ my: 1, mx: 3 }}>
-        Session Results ({gamesPlayed}/{maxGames})
-      </Typography>
+  const resultsContent = (
+    <>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          px: 3,
+          minHeight: "62px",
+          bgcolor: "#2a2a2a",
+        }}
+      >
+        <Typography variant="subtitle1" sx={{ color: "white" }}>
+          Session Results ({gamesPlayed}/{maxGames})
+        </Typography>
+        {isMobile && (
+          <IconButton
+            onClick={(e) => {
+              e.stopPropagation();
+              setDrawerOpen(!drawerOpen);
+            }}
+            size="small"
+            sx={{ color: "rgba(255, 255, 255, 0.7)" }}
+          >
+            {drawerOpen ? <ExpandLess /> : <ExpandMore />}
+          </IconButton>
+        )}
+      </Box>
 
       {/* Player Cumulative Scores Table */}
-      <TableContainer sx={{ flexGrow: 1, overflowY: "auto" }}>
-        <Table size="small" stickyHeader>
+      <TableContainer
+        sx={{ flexGrow: 1, overflowY: "auto", bgcolor: "#2a2a2a" }}
+      >
+        <Table
+          size="small"
+          stickyHeader
+          sx={{ height: cumulativeData.length === 0 ? "100%" : "auto" }}
+        >
           <TableHead>
             <TableRow>
               <TableCell
                 sx={{
-                  bgcolor: "white",
+                  bgcolor: "#3a3a3a",
+                  color: "rgba(255, 255, 255, 0.9)",
                   fontWeight: "bold",
-                  borderBottom: "2px solid rgba(0,0,0,0.1)",
+                  borderBottom: "2px solid rgba(255,255,255,0.1)",
                 }}
               >
                 #
@@ -100,10 +129,11 @@ export function SessionResults({
                   key={id}
                   align="center"
                   sx={{
-                    bgcolor: "white",
-                    color: id === playerId ? "#764ba2" : "text.primary",
+                    bgcolor: "#3a3a3a",
+                    color:
+                      id === playerId ? "#bb86fc" : "rgba(255, 255, 255, 0.9)",
                     fontWeight: "bold",
-                    borderBottom: "2px solid rgba(0,0,0,0.1)",
+                    borderBottom: "2px solid rgba(255,255,255,0.1)",
                   }}
                 >
                   {playerNames[id] || id.substring(0, 8)}
@@ -115,9 +145,16 @@ export function SessionResults({
           <TableBody>
             {cumulativeData.length > 0 ? (
               cumulativeData.map((scores, index) => (
-                <TableRow key={index} hover>
+                <TableRow
+                  key={index}
+                  hover
+                  sx={{ "&:hover": { bgcolor: "rgba(255, 255, 255, 0.05)" } }}
+                >
                   <TableCell
-                    sx={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
+                    sx={{
+                      color: "rgba(255, 255, 255, 0.7)",
+                      borderBottom: "1px solid rgba(255,255,255,0.05)",
+                    }}
                   >
                     {index + 1}
                   </TableCell>
@@ -128,12 +165,12 @@ export function SessionResults({
                       sx={{
                         color:
                           scores[id] > 0
-                            ? "success.main"
+                            ? "#4caf50"
                             : scores[id] < 0
-                              ? "error.main"
-                              : "text.primary",
+                              ? "#f44336"
+                              : "rgba(255, 255, 255, 0.7)",
                         fontWeight: id === playerId ? "bold" : "normal",
-                        borderBottom: "1px solid rgba(0,0,0,0.05)",
+                        borderBottom: "1px solid rgba(255,255,255,0.05)",
                       }}
                     >
                       {scores[id] > 0 && "+"}
@@ -143,11 +180,16 @@ export function SessionResults({
                 </TableRow>
               ))
             ) : (
-              <TableRow>
+              <TableRow sx={{ height: "100%" }}>
                 <TableCell
                   colSpan={playerIds.length + 1}
                   align="center"
-                  sx={{ color: "text.secondary", py: 4 }}
+                  sx={{
+                    color: "rgba(255, 255, 255, 0.5)",
+                    py: 4,
+                    height: "100%",
+                    verticalAlign: "middle",
+                  }}
                 >
                   No games completed yet
                 </TableCell>
@@ -156,6 +198,62 @@ export function SessionResults({
           </TableBody>
         </Table>
       </TableContainer>
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <>
+        <Backdrop
+          open={drawerOpen}
+          onClick={() => setDrawerOpen(false)}
+          sx={{
+            zIndex: 999,
+            bgcolor: "rgba(0, 0, 0, 0.5)",
+          }}
+        />
+        <Paper
+          elevation={3}
+          onClick={() => !drawerOpen && setDrawerOpen(true)}
+          sx={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: drawerOpen ? "80vh" : "64px",
+            display: "flex",
+            flexDirection: "column",
+            borderRadius: 0,
+            borderBottomLeftRadius: drawerOpen ? "20px" : 0,
+            borderBottomRightRadius: drawerOpen ? "20px" : 0,
+            bgcolor: "#2a2a2a",
+            zIndex: 1000,
+            transition: "height 0.3s ease, border-radius 0.3s ease",
+            cursor: !drawerOpen ? "pointer" : "default",
+            overflow: "hidden",
+          }}
+        >
+          {resultsContent}
+        </Paper>
+      </>
+    );
+  }
+
+  return (
+    <Paper
+      elevation={3}
+      sx={{
+        my: "12px",
+        marginRight: "8px",
+        height: "calc(100% - 24px)",
+        display: "flex",
+        flexDirection: "column",
+        borderRadius: "20px",
+        bgcolor: "#2a2a2a",
+        overflow: "hidden",
+      }}
+    >
+      {resultsContent}
     </Paper>
   );
 }

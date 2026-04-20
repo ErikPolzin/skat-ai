@@ -38,18 +38,22 @@ export default function Card({
     return () => clearTimeout(timer);
   }, [index, skipInitialAnimation]);
 
+  // Calculate flip delay: wait for deal animation to complete, then stagger flips
+  const dealDuration = skipInitialAnimation ? 0 : (index * 0.1 + 0.5);
+  const flipDelay = skipInitialAnimation ? 0 : dealDuration + index * 0.05;
+
   return (
     <motion.div
       {...props}
       animate={{ rotateY: faceDown ? 0 : 180, ...(animate || {}) }}
       initial={{
-        rotateY: faceDown ? 0 : 180,
+        rotateY: 0, // Always start face down for initial animation
         ...(typeof initialProp === 'object' && initialProp !== null ? initialProp : {})
       }} // Merge with passed initial
       transition={{
         rotateY: {
           duration: 0.6,
-          delay: index * 0.05, // Stagger the flip
+          delay: flipDelay, // Wait for deal to complete, then stagger flips
         },
         x: {
           type: "spring",

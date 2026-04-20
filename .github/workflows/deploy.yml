@@ -100,7 +100,6 @@ jobs:
             --cpu 1 \
             --max-instances 10 \
             --min-instances 0 \
-            --clear-env-vars \
             --set-env-vars "DATABASE_URL=${DATABASE_URL},CORS_ORIGIN=https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app,ENV=production"
 
           # Get the service URL

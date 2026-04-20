@@ -343,36 +343,79 @@ func (gs *GameState) GetValidBids() []string {
 	// - Speaker announces bid values
 	// - Listener/Dealer say "yes" (hold) to match announced bid, or pass
 
-	if gs.CurrentPlayer == Speaker && !gs.SpeakerPassed {
-		// Speaker can announce the next bid value
-		nextBid := gs.getNextBidValue()
-		if nextBid <= 264 { // Max reasonable bid
-			actions = append(actions, fmt.Sprintf("%d", nextBid))
-		}
-	} else if gs.CurrentPlayer == Listener && !gs.ListenerPassed {
-		// If Speaker has passed, Listener takes over the announcing role
-		if gs.SpeakerPassed && gs.BidValue == 0 {
-			// Listener can now announce bid values
+	// Round 1: Speaker vs Listener
+	if !gs.ListenerPassed && !gs.SpeakerPassed {
+		if gs.CurrentPlayer == Speaker {
+			// Speaker announces bid values
 			nextBid := gs.getNextBidValue()
-			if nextBid <= 264 { // Max reasonable bid
+			if nextBid <= 264 {
 				actions = append(actions, fmt.Sprintf("%d", nextBid))
 			}
-		} else if gs.BidValue > 0 {
-			// Normal case: Listener says "yes" to match Speaker's bid or passes
-			actions = append(actions, "hold")
+		} else if gs.CurrentPlayer == Listener {
+			// Listener responds with "hold" or "pass"
+			if gs.BidValue > 0 {
+				actions = append(actions, "hold")
+			}
 		}
-	} else if gs.CurrentPlayer == Dealer && !gs.DealerPassed {
-		// If both Speaker and Listener passed without bidding, Dealer can announce
-		if gs.SpeakerPassed && gs.ListenerPassed && gs.BidValue == 0 {
-			// Dealer can now announce bid values
+		return actions
+	}
+
+	// Round 2: Winner of Round 1 vs Dealer
+	// The Round 1 winner becomes the responder, Dealer announces
+	if gs.ListenerPassed && !gs.SpeakerPassed && !gs.DealerPassed {
+		// Speaker won Round 1, now Dealer announces and Speaker responds
+		if gs.CurrentPlayer == Dealer {
+			// Dealer announces the next bid value
 			nextBid := gs.getNextBidValue()
-			if nextBid <= 264 { // Max reasonable bid
+			if nextBid <= 264 {
 				actions = append(actions, fmt.Sprintf("%d", nextBid))
 			}
-		} else if gs.BidValue > 0 {
-			// Normal case: Dealer says "yes" to match bid or passes
-			actions = append(actions, "hold")
+		} else if gs.CurrentPlayer == Speaker {
+			// Speaker responds with "hold" or "pass"
+			if gs.BidValue > 0 {
+				actions = append(actions, "hold")
+			}
 		}
+		return actions
+	}
+
+	if gs.SpeakerPassed && !gs.ListenerPassed && !gs.DealerPassed {
+		// Listener won Round 1, now Dealer announces and Listener responds
+		if gs.CurrentPlayer == Dealer {
+			// Dealer announces the next bid value
+			nextBid := gs.getNextBidValue()
+			if nextBid <= 264 {
+				actions = append(actions, fmt.Sprintf("%d", nextBid))
+			}
+		} else if gs.CurrentPlayer == Listener {
+			// Listener responds with "hold" or "pass"
+			if gs.BidValue > 0 {
+				actions = append(actions, "hold")
+			}
+		}
+		return actions
+	}
+
+	// Special case: If Speaker passes without bidding, Listener can start
+	if gs.SpeakerPassed && !gs.ListenerPassed && gs.BidValue == 0 {
+		if gs.CurrentPlayer == Listener {
+			nextBid := gs.getNextBidValue()
+			if nextBid <= 264 {
+				actions = append(actions, fmt.Sprintf("%d", nextBid))
+			}
+		}
+		return actions
+	}
+
+	// Special case: Both Speaker and Listener passed without bidding, Dealer can announce
+	if gs.SpeakerPassed && gs.ListenerPassed && gs.BidValue == 0 {
+		if gs.CurrentPlayer == Dealer {
+			nextBid := gs.getNextBidValue()
+			if nextBid <= 264 {
+				actions = append(actions, fmt.Sprintf("%d", nextBid))
+			}
+		}
+		return actions
 	}
 
 	return actions
@@ -431,9 +474,8 @@ func (gs *GameState) advanceBidding() {
 	}
 
 	// Bidding continues - determine next bidder
-	// Bidding alternates: Speaker announces, Listener/Dealer respond
-	// Round 1: Speaker vs Listener
-	// Round 2: Winner vs Dealer
+	// Round 1: Speaker announces, Listener responds
+	// Round 2: Dealer announces, Round 1 winner responds
 
 	if !gs.ListenerPassed && !gs.SpeakerPassed {
 		// Round 1: Speaker announces, Listener responds
@@ -445,19 +487,30 @@ func (gs *GameState) advanceBidding() {
 			gs.CurrentPlayer = Speaker
 		}
 	} else if gs.ListenerPassed && !gs.SpeakerPassed && !gs.DealerPassed {
-		// Round 2: Speaker vs Dealer
-		if gs.CurrentPlayer == Speaker {
+		// Round 2: Speaker won Round 1
+		// Now Dealer announces and Speaker responds
+		if gs.CurrentPlayer == Listener {
+			// Listener just passed, switch to Dealer to start Round 2
 			gs.CurrentPlayer = Dealer
-		} else {
+		} else if gs.CurrentPlayer == Dealer {
+			// After Dealer announces, Speaker responds
 			gs.CurrentPlayer = Speaker
+		} else {
+			// After Speaker responds (hold), Dealer can raise
+			gs.CurrentPlayer = Dealer
 		}
 	} else if gs.SpeakerPassed && !gs.ListenerPassed && !gs.DealerPassed {
-		// Round 2: Listener vs Dealer
-		// Listener now takes Speaker role (announces)
-		if gs.CurrentPlayer == Listener {
+		// Round 2: Listener won Round 1
+		// Now Dealer announces and Listener responds
+		if gs.CurrentPlayer == Speaker {
+			// Speaker just passed, switch to Dealer to start Round 2
 			gs.CurrentPlayer = Dealer
-		} else {
+		} else if gs.CurrentPlayer == Dealer {
+			// After Dealer announces, Listener responds
 			gs.CurrentPlayer = Listener
+		} else {
+			// After Listener responds (hold), Dealer can raise
+			gs.CurrentPlayer = Dealer
 		}
 	}
 }

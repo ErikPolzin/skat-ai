@@ -14,12 +14,12 @@
   width: calc(100% - 24px);
   height: calc(100% - 16px);
   max-width: 1000px;
-  background-color: #135926;
   border-radius: 20px;
   overflow: visible;
   display: flex;
   align-items: center;
   justify-content: center;
+  background-color: #135926;
 }
 
 /* Add responsive padding */
@@ -30,6 +30,13 @@
     padding: 0;
     border-radius: 0;
     margin: 0;
+  }
+
+  .table-surface.with-session-bar {
+    height: calc(100% - 64px);
+    width: 100%;
+    top: 32px;
+    border-radius: 0;
   }
 }
 
@@ -130,7 +137,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  z-index: 20;
+  z-index: 200;
 }
 
 .opponent-avatar-container.top {
@@ -152,18 +159,32 @@
 }
 
 .avatar-circle {
-  width: 50px;
-  height: 50px;
+  width: 45px;
+  height: 45px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: bold;
   color: white;
   border: 3px solid rgba(255, 255, 255, 0.3);
   transition: all 0.3s ease;
+  position: relative;
+}
+
+.avatar-circle::before {
+  content: '';
+  position: absolute;
+  width: 85px;
+  height: 85px;
+  border-radius: 50%;
+  background-color: #0f4a1f;
+  z-index: -1;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .avatar-circle.offline {
@@ -173,18 +194,16 @@
 }
 
 .current-turn .avatar-circle {
-  animation: turnPulse 2s infinite;
   border-color: #2ecc71;
   box-shadow: 0 0 20px rgba(46, 204, 113, 0.5);
+  animation: turnPulse 2s infinite;
 }
 
 @keyframes turnPulse {
   0%, 100% {
-    transform: scale(1);
     box-shadow: 0 0 20px rgba(46, 204, 113, 0.5);
   }
   50% {
-    transform: scale(1.05);
     box-shadow: 0 0 30px rgba(46, 204, 113, 0.7);
   }
 }
@@ -477,10 +496,10 @@
 }
 
 @keyframes fadeInOut {
-  0% { opacity: 0; transform: translateY(-10px); }
-  10% { opacity: 1; transform: translateY(0); }
-  90% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(-10px); }
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* Tablet responsive adjustments */
@@ -551,19 +570,24 @@
   }
 
   .avatar-circle {
-    width: 40px;
-    height: 40px;
-    font-size: 16px;
-    border-width: 2px;
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+    border-width: 3px;
+  }
+
+  .avatar-circle::before {
+    width: 110px;
+    height: 110px;
   }
 
   .opponent-name,
   .player-name {
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .player-role {
-    font-size: 10px;
+    font-size: 12px;
     margin-top: 2px;
   }
 
@@ -593,18 +617,23 @@
   }
 
   .mobile .avatar-circle {
-    width: 36px;
-    height: 36px;
-    font-size: 15px;
+    width: 56px;
+    height: 56px;
+    font-size: 22px;
+  }
+
+  .mobile .avatar-circle::before {
+    width: 106px;
+    height: 106px;
   }
 
   .mobile .opponent-name,
   .mobile .player-name {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .mobile .player-role {
-    font-size: 9px;
+    font-size: 11px;
     margin-top: 1px;
   }
 

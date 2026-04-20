@@ -1,13 +1,13 @@
-import { useRef, useCallback, useState } from "react";
+import { useRef, useCallback, useSyncExternalStore } from "react";
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlersRef = useRef<Map<string, (message: any) => void>>(
     new Map(),
   );
-  const [isConnected, setIsConnected] = useState(false);
   const pendingActionsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const actionIdCounter = useRef(0);
+  const subscribersRef = useRef<Set<() => void>>(new Set());
 
   // Add a message handler - returns a cleanup function
   const addMessageHandler = useCallback(
@@ -21,54 +21,57 @@ export function useWebSocket() {
     [],
   );
 
-  const sendMessage = useCallback((type: string, data: any, onAck?: () => void, onTimeout?: () => void) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      // Generate unique action ID
-      const actionId = `${type}_${Date.now()}_${++actionIdCounter.current}`;
+  const sendMessage = useCallback(
+    (type: string, data: any, onAck?: () => void, onTimeout?: () => void) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        // Generate unique action ID
+        const actionId = `${type}_${Date.now()}_${++actionIdCounter.current}`;
 
-      // Set up timeout for this action (10 seconds)
-      const timeoutId = setTimeout(() => {
-        pendingActionsRef.current.delete(actionId);
-        console.warn(`Action ${actionId} timed out after 10 seconds`);
+        // Set up timeout for this action (10 seconds)
+        const timeoutId = setTimeout(() => {
+          pendingActionsRef.current.delete(actionId);
+          console.warn(`Action ${actionId} timed out after 10 seconds`);
+          if (onTimeout) {
+            onTimeout();
+          }
+        }, 10000);
+
+        // Store the pending action with its callbacks
+        pendingActionsRef.current.set(actionId, timeoutId);
+
+        // Add acknowledgment handler
+        if (onAck) {
+          const ackKey = `ack_${actionId}`;
+          const cleanup = addMessageHandler(ackKey, () => {
+            // Clear timeout
+            const timeout = pendingActionsRef.current.get(actionId);
+            if (timeout) {
+              clearTimeout(timeout);
+              pendingActionsRef.current.delete(actionId);
+            }
+            // Call acknowledgment callback
+            onAck();
+            // Clean up this handler
+            cleanup();
+          });
+        }
+
+        wsRef.current.send(JSON.stringify({ type, data, action_id: actionId }));
+        return actionId;
+      } else {
+        console.error(
+          "Cannot send message, socket is",
+          wsRef.current?.readyState,
+          ", not open",
+        );
         if (onTimeout) {
           onTimeout();
         }
-      }, 10000);
-
-      // Store the pending action with its callbacks
-      pendingActionsRef.current.set(actionId, timeoutId);
-
-      // Add acknowledgment handler
-      if (onAck) {
-        const ackKey = `ack_${actionId}`;
-        const cleanup = addMessageHandler(ackKey, () => {
-          // Clear timeout
-          const timeout = pendingActionsRef.current.get(actionId);
-          if (timeout) {
-            clearTimeout(timeout);
-            pendingActionsRef.current.delete(actionId);
-          }
-          // Call acknowledgment callback
-          onAck();
-          // Clean up this handler
-          cleanup();
-        });
+        return null;
       }
-
-      wsRef.current.send(JSON.stringify({ type, data, action_id: actionId }));
-      return actionId;
-    } else {
-      console.error(
-        "Cannot send message, socket is",
-        wsRef.current?.readyState,
-        ", not open",
-      );
-      if (onTimeout) {
-        onTimeout();
-      }
-      return null;
-    }
-  }, [addMessageHandler]);
+    },
+    [addMessageHandler],
+  );
 
   const connect = useCallback((profileId: string) => {
     if (
@@ -94,7 +97,7 @@ export function useWebSocket() {
     ws.onopen = () => {
       console.log("WebSocket connected for profile:", profileId);
       wsRef.current = ws;
-      setIsConnected(true);
+      notifySubscribers();
     };
 
     ws.onmessage = (event: MessageEvent) => {
@@ -127,13 +130,13 @@ export function useWebSocket() {
 
     ws.onerror = (error: Event) => {
       console.error("WebSocket error:", error);
-      setIsConnected(false);
+      notifySubscribers();
     };
 
     ws.onclose = (event: CloseEvent) => {
       console.log("WebSocket closed:", event.code, event.reason);
       wsRef.current = null;
-      setIsConnected(false);
+      notifySubscribers();
     };
   }, []);
 
@@ -143,6 +146,23 @@ export function useWebSocket() {
       wsRef.current = null;
     }
   }, []);
+
+  const notifySubscribers = () => {
+    subscribersRef.current.forEach((callback) => callback());
+  };
+
+  const subscribe = useCallback((callback: () => void) => {
+    subscribersRef.current.add(callback);
+    return () => {
+      subscribersRef.current.delete(callback);
+    };
+  }, []);
+
+  const getSnapshot = useCallback(() => {
+    return wsRef.current?.readyState === WebSocket.OPEN;
+  }, []);
+
+  const isConnected = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   return {
     connect,

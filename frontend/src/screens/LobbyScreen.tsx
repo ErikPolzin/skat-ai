@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
-  Container,
   Typography,
   TextField,
   Button,
@@ -87,15 +86,35 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
     <Box
       sx={{
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: { xs: "stretch", sm: "center" },
+        justifyContent: { xs: "stretch", sm: "center" },
         minHeight: "100vh",
-        py: 3,
+        py: { xs: 0, sm: 3 },
       }}
     >
-      <Container maxWidth="md">
-        <Paper elevation={3} sx={{ p: 4, minWidth: "500px" }}>
-          <Typography variant="h4" component="h1" gutterBottom>
+      <Box
+        sx={{
+          width: { xs: "100%", sm: "auto" },
+          maxWidth: { xs: "100%", sm: "900px" },
+          mx: { xs: 0, sm: "auto" },
+        }}
+      >
+        <Paper
+          elevation={3}
+          sx={{
+            p: { xs: 2, sm: 3, md: 4 },
+            minWidth: { xs: "auto", sm: "500px" },
+            width: "100%",
+            borderRadius: { xs: 0, sm: 1 },
+            minHeight: { xs: "100vh", sm: "auto" },
+          }}
+        >
+          <Typography
+            variant="h4"
+            component="h1"
+            gutterBottom
+            sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
+          >
             Welcome, {username}!
           </Typography>
 
@@ -242,7 +261,7 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
             )}
           </Box>
         </Paper>
-      </Container>
+      </Box>
     </Box>
   );
 }

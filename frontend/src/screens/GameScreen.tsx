@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -139,6 +139,17 @@ function GameScreenContent() {
         </Box>
       )}
 
+      {/* Session results FAB for mobile */}
+      {!isWideScreen && game.playerCount === 3 && (
+        <SessionResults
+          results={game.sessionResults}
+          playerId={game.playerId}
+          gamesPlayed={game.gamesPlayed}
+          maxGames={10}
+          players={game.players}
+        />
+      )}
+
       {/* Game Over Modal */}
       <Modal
         open={game.gameOver}
@@ -242,7 +253,11 @@ function GameScreenContent() {
                 fullWidth
                 onClick={handlePlayNextGame}
                 disabled={!game.controls.isConnected || game.controls.isLoading}
-                startIcon={game.controls.isLoading ? <CircularProgress size={20} /> : null}
+                startIcon={
+                  game.controls.isLoading ? (
+                    <CircularProgress size={20} />
+                  ) : null
+                }
               >
                 {game.controls.isLoading
                   ? "Loading..."

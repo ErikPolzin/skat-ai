@@ -31,7 +31,10 @@ export function BiddingPanel() {
   const isAnnouncing =
     (isSpeaker && !game.speakerPassed) ||
     (isListener && game.speakerPassed && !game.listenerPassed) ||
-    (isDealer && game.speakerPassed && game.listenerPassed && !game.dealerPassed);
+    (isDealer &&
+      game.speakerPassed &&
+      game.listenerPassed &&
+      !game.dealerPassed);
 
   const canBid = game.bidValue > 0;
 

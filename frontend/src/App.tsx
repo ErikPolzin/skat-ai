@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
-import { CssBaseline, Box, Container, Typography, Button, CircularProgress } from "@mui/material";
+import {
+  CssBaseline,
+  Box,
+  Container,
+  Typography,
+  Button,
+  CircularProgress,
+} from "@mui/material";
 import {
   useProfileStore,
   selectUsername,
@@ -14,7 +21,6 @@ import { WebSocketProvider } from "./context/WebSocketContext";
 import UsernameScreen from "./screens/UsernameScreen";
 import LobbyScreen from "./screens/LobbyScreen";
 import GameScreen from "./screens/GameScreen";
-import "./App.css";
 
 // Create MUI theme
 const theme = createTheme({
@@ -68,7 +74,10 @@ function App() {
 
     try {
       // Try to retrieve existing profile with current playerId (if any)
-      const profile = await createOrRetrieveProfile(newUsername, playerId || undefined);
+      const profile = await createOrRetrieveProfile(
+        newUsername,
+        playerId || undefined,
+      );
       setPlayerId(profile.player_id);
       setUsername(profile.player_name);
     } catch (err) {
@@ -94,13 +103,15 @@ function App() {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  minHeight: "100vh"
+                  minHeight: "100vh",
                 }}
               >
                 <Container maxWidth="sm">
                   <Box sx={{ textAlign: "center" }}>
                     <CircularProgress sx={{ mb: 2 }} />
-                    <Typography variant="h5">Connecting to server...</Typography>
+                    <Typography variant="h5">
+                      Connecting to server...
+                    </Typography>
                   </Box>
                 </Container>
               </Box>
@@ -125,8 +136,9 @@ function App() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                minHeight: "100vh"
-              }}>
+                minHeight: "100vh",
+              }}
+            >
               <Container maxWidth="sm">
                 <Box sx={{ textAlign: "center" }}>
                   <Typography variant="h4" gutterBottom>
@@ -159,17 +171,15 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box className="App">
-        <WebSocketProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<LobbyScreen username={username} />} />
-              <Route path="/game/:gameId" element={<GameScreen />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </BrowserRouter>
-        </WebSocketProvider>
-      </Box>
+      <WebSocketProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<LobbyScreen username={username} />} />
+            <Route path="/game/:gameId" element={<GameScreen />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </WebSocketProvider>
     </ThemeProvider>
   );
 }

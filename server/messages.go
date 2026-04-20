@@ -92,7 +92,14 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 			break
 		}
 		currentPlayer := gs.CurrentPlayer
-		time.Sleep(1 * time.Second)
+
+		// Wait longer if this is resolving a trick (3 cards on table)
+		if len(gs.Trick) == 3 {
+			time.Sleep(2 * time.Second)
+		} else {
+			time.Sleep(1 * time.Second)
+		}
+
 		response, err := action()
 		if err != nil {
 			s.clients.BroadcastToPlayers(gs, &Message{

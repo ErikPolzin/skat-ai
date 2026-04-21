@@ -38,32 +38,59 @@ func main() {
 	for i := 0; i < numGames; i++ {
 		g := game.NewGame()
 
-		// Bidding phase
-		currentBid := 17
-		bids := [3]int{0, 0, 0}
-
-		// Trained agent is player 0
-		if shouldBid := trainedAgent.Bid(g, currentBid); shouldBid > currentBid {
-			bids[0] = shouldBid
-			currentBid = shouldBid
-		}
-
-		// Heuristic bidders (players 1, 2)
-		for p := 1; p < 3; p++ {
-			handScore := evaluateHandSimple(g.Players[p].Hand)
-			if handScore > 30 && currentBid < 30 {
-				bids[p] = currentBid + 1
-				currentBid = currentBid + 1
+		// Initialize players
+		for p := 0; p < 3; p++ {
+			g.Players[p] = &game.PlayerState{
+				ID:      fmt.Sprintf("player-%d", p),
+				Name:    fmt.Sprintf("Player %d", p),
+				Hand:    []game.Card{},
+				IsAgent: true,
 			}
 		}
 
-		// Find highest bidder
-		declarer := -1
-		highestBid := 17
+		// Deal cards
+		deck := game.NewDeck()
+		idx := 0
+		for round := 0; round < 3; round++ {
+			for p := 0; p < 3; p++ {
+				count := 3
+				if round == 1 {
+					count = 4
+				}
+				for j := 0; j < count; j++ {
+					g.Players[p].Hand = append(g.Players[p].Hand, deck[idx])
+					idx++
+				}
+			}
+		}
+		g.Skat[0] = deck[30]
+		g.Skat[1] = deck[31]
+
+		// Bidding phase - use game's bidding logic
+		g.Phase = game.PhaseBidding
+		g.CurrentPlayer = game.Speaker
+		g.BidValue = 0
+
+		// Simple bidding: each player decides once whether to accept starting bid
+		accepts := [3]bool{}
 		for p := 0; p < 3; p++ {
-			if bids[p] > highestBid {
-				highestBid = bids[p]
+			g.CurrentPlayer = game.GamePosition(p)
+			if p == 0 {
+				// Trained agent
+				accepts[p] = trainedAgent.Bid(g)
+			} else {
+				// Heuristic: accept if hand is strong enough
+				handScore := evaluateHandSimple(g.Players[p].Hand)
+				accepts[p] = handScore > 40
+			}
+		}
+
+		// Find declarer (first to accept)
+		declarer := -1
+		for p := 0; p < 3; p++ {
+			if accepts[p] {
 				declarer = p
+				break
 			}
 		}
 

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"skat/game"
 	"skat/logger"
@@ -42,11 +41,12 @@ func getAgentForPlayer(player *game.PlayerState) Agent {
 			ctx := context.Background()
 			if err := sharedAgent.LoadQTableFromGCS(ctx, gcsBucket, gcsPath, true); err != nil {
 				logger.Error("Could not load Q-table from GCS", "error", err)
-				logger.Warning("Agent will use untrained behavior (will pass on most hands)")
+				logger.Warning("Agent will use untrained behavior with heuristics")
 			} else {
 				logger.Info("Loaded Q-table from GCS", "states", sharedAgent.GetQTableSize())
-				sharedAgent.Epsilon = 0.0
 			}
+			// Always disable exploration in production
+			sharedAgent.Epsilon = 0.0
 		} else {
 			// Load from local file (development)
 			qtablePath := "bidding_qtable.gob"
@@ -56,11 +56,12 @@ func getAgentForPlayer(player *game.PlayerState) Agent {
 			logger.Info("Loading Q-table from local file", "path", qtablePath)
 			if err := sharedAgent.LoadQTableBinary(qtablePath); err != nil {
 				logger.Error("Could not load Q-table from local file", "path", qtablePath, "error", err)
-				logger.Warning("Agent will use untrained behavior (will pass on most hands)")
+				logger.Warning("Agent will use untrained behavior with heuristics")
 			} else {
 				logger.Info("Loaded Q-table from local file", "path", qtablePath, "states", sharedAgent.GetQTableSize())
-				sharedAgent.Epsilon = 0.0
 			}
+			// Always disable exploration in production
+			sharedAgent.Epsilon = 0.0
 		}
 	})
 
@@ -96,11 +97,14 @@ func NextAction(gs *game.GameState) Action {
 		return generateAgentDealAction(gs, currentPlayer)
 	case game.PhaseBidding:
 		return generateAgentBidAction(gs, currentPlayer)
+	case game.PhaseSkatExchange:
+		return generateAgentSkatExchangeAction(gs, currentPlayer)
 	case game.PhaseDeclarerChoice:
 		return generateAgentDeclarationAction(gs, currentPlayer)
 	case game.PhasePlaying:
 		return generateAgentPlayAction(gs, currentPlayer)
 	default:
+		logger.Error("Unknown agent game phase", phase)
 		return nil
 	}
 }
@@ -114,6 +118,45 @@ func generateAgentDealAction(gs *game.GameState, player *game.PlayerState) Actio
 func generateResolveTrickAction(gs *game.GameState) Action {
 	return func() (string, error) {
 		return gs.ResolveTrick()
+	}
+}
+
+func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerState) Action {
+	// Check if agent has already picked up skat
+	if len(player.Hand) == 12 {
+		// Agent has picked up skat, needs to discard 2 cards
+		// Simple strategy: discard 2 lowest value non-jack cards
+		type cardValue struct {
+			card  game.Card
+			value int
+		}
+
+		cards := make([]cardValue, len(player.Hand))
+		for i, card := range player.Hand {
+			val := card.Value()
+			if card.Rank == game.Jack {
+				val = 100 // Never discard jacks
+			}
+			cards[i] = cardValue{card, val}
+		}
+
+		// Sort by value
+		for i := 0; i < len(cards)-1; i++ {
+			for j := i + 1; j < len(cards); j++ {
+				if cards[i].value > cards[j].value {
+					cards[i], cards[j] = cards[j], cards[i]
+				}
+			}
+		}
+
+		return func() (string, error) {
+			return gs.Discard(player.ID, cards[0].card, cards[1].card)
+		}
+	} else {
+		// Agent hasn't picked up skat yet - always pick it up
+		return func() (string, error) {
+			return gs.SkatDecision(player.ID, true)
+		}
 	}
 }
 
@@ -167,64 +210,23 @@ func generateAgentPlayAction(gs *game.GameState, player *game.PlayerState) Actio
 }
 
 func generateAgentBidAction(gs *game.GameState, player *game.PlayerState) Action {
-	validBids := gs.GetValidBids()
-
-	if len(validBids) == 0 {
-		logger.Warning("No valid bids for AI", "player", player.Name)
+	// Get the agent for this player
+	agent := getAgentForPlayer(player)
+	if agent == nil {
+		logger.Warning("No agent found for player", "player", player.Name)
 		return nil
 	}
-
-	// Use the agent's Bid method for intelligent bidding
-	var action string
-
-	if player.IsAgent {
-		// Get a copy of the game state for the agent
-		currentBid := gs.BidValue
-		stateCopy := gs // Make a copy
-
-		// Get the agent for this player
-		agent := getAgentForPlayer(player)
-		if agent == nil {
-			logger.Warning("No agent found for player", "player", player.Name)
-			return nil
-		}
-
-		// Call the agent's Bid method
-		agentBid := agent.Bid(stateCopy, currentBid)
-
-		if agentBid == 0 {
-			// Agent wants to pass
-			action = "pass"
-		} else {
-			// Agent wants to bid or hold
-			// Check if the agent's bid matches any valid action
-			bidStr := fmt.Sprintf("%d", agentBid)
-
-			// Check if this bid value is in valid bids
-			for _, validBid := range validBids {
-				if validBid == bidStr {
-					action = bidStr
-					break
-				} else if validBid == "hold" && agentBid == currentBid {
-					// Agent wants to hold at current bid
-					action = "hold"
-					break
-				}
-			}
-
-			// If agent's bid isn't valid, default to pass
-			if action == "" {
-				action = "pass"
-			}
-		}
-	} else {
-		// Fallback if no agent (shouldn't happen)
-		action = "pass"
+	// Get a copy of the game state for the agent
+	stateCopy := gs // Make a copy
+	// Call the agent's Bid method
+	accept := agent.Bid(stateCopy)
+	// Log debug info if we have a SkatAgent
+	if skatAgent, ok := agent.(*SkatAgent); ok {
+		logger.Debug("Agent bid decision", "player", player.Name, "handScore", skatAgent.CurrentHandScore, "bidDecision", accept, "currentBid", gs.BidValue)
 	}
-
-	logger.Debug("AI choosing bid", "player", player.Name, "action", action)
+	logger.Debug("AI choosing bid", "player", player.Name, "accept", accept)
 
 	return func() (string, error) {
-		return gs.Bid(player.ID, action)
+		return gs.Bid(player.ID, accept)
 	}
 }

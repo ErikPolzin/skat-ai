@@ -64,6 +64,11 @@ func (t *Trainer) RunEpisode(episodeNum int) {
 			break
 		}
 
+		// Resolve trick if complete
+		if len(g.Trick) == 3 {
+			g.ResolveTrick()
+		}
+
 		moveCount++
 	}
 
@@ -125,6 +130,11 @@ func (t *Trainer) Evaluate(numGames int) {
 			}
 
 			g.PlayCard("", move)
+
+			// Resolve trick if complete
+			if len(g.Trick) == 3 {
+				g.ResolveTrick()
+			}
 		}
 
 		totalPoints += g.DeclarerScore

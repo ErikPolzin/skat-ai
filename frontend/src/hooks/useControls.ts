@@ -78,12 +78,12 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
     }
   }, [game.gameId, isLoading, websocket]);
 
-  const bid = useCallback((bid: string) => {
+  const bid = useCallback((accept: boolean) => {
     if (game.isMyTurn && !isLoading) {
       setIsLoading(true);
       websocket.sendMessage(
         "bid",
-        { bid, game_id: game.gameId },
+        { accept, game_id: game.gameId },
         () => setIsLoading(false),
         () => {
           setIsLoading(false);

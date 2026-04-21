@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"fmt"
 	"math/rand"
 	"skat/game"
 )
@@ -22,26 +21,9 @@ func (ra *RandomAgent) SelectMove(state *game.GameState, validMoves []game.Card)
 	return validMoves[rand.Intn(len(validMoves))]
 }
 
-func (ra *RandomAgent) Bid(state *game.GameState, currentBid int) int {
-	// Random bidding strategy
-	if rand.Float32() < 0.3 {
-		// Try to bid the next valid value
-		validBids := state.GetValidBids()
-		for _, bid := range validBids {
-			if bid != "pass" && bid != "hold" {
-				// Try to parse the bid value
-				var bidValue int
-				if _, err := fmt.Sscanf(bid, "%d", &bidValue); err == nil {
-					return bidValue
-				}
-			}
-		}
-		// If we're responding, we can hold
-		if currentBid > 0 && rand.Float32() < 0.5 {
-			return currentBid // Hold
-		}
-	}
-	return 0 // Pass
+func (ra *RandomAgent) Bid(state *game.GameState) bool {
+	// Random bidding strategy: 50% chance to accept
+	return rand.Float32() < 0.5
 }
 
 func (ra *RandomAgent) ChooseGame(state *game.GameState) (game.GameMode, game.Suit) {

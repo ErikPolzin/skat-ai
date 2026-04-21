@@ -17,7 +17,7 @@ export function SkatExchange({
   const game = useGameContext();
 
   // Check if everyone passed (minimum bid of 18 was assigned)
-  const everyonePassed = game.bidValue === 18 && game.isDeclarer;
+  const everyonePassed = game.bidValue === 0 && game.isDeclarer;
   const isDisabled = !game.controls.isConnected || game.controls.isLoading;
 
   if (!game.hasPickedUpSkat) {
@@ -27,7 +27,8 @@ export function SkatExchange({
           <h3>Skat Decision</h3>
           {everyonePassed && (
             <p className="everyone-passed-notice">
-              All players passed. As dealer, you must declare with minimum bid of 18.
+              All players passed. As dealer, you must declare with minimum bid
+              of 18.
             </p>
           )}
           <div className="skat-cards">
@@ -46,17 +47,31 @@ export function SkatExchange({
               className="skat-btn pickup"
               onClick={game.controls.pickUpSkat}
               disabled={isDisabled}
-              style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
+              style={{
+                opacity: isDisabled ? 0.5 : 1,
+                cursor: isDisabled ? "not-allowed" : "pointer",
+              }}
             >
-              {game.controls.isLoading ? <CircularProgress size={20} /> : "Pick Up Skat"}
+              {game.controls.isLoading ? (
+                <CircularProgress size={20} />
+              ) : (
+                "Pick Up Skat"
+              )}
             </button>
             <button
               className="skat-btn play-hand"
               onClick={game.controls.playHand}
               disabled={isDisabled}
-              style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
+              style={{
+                opacity: isDisabled ? 0.5 : 1,
+                cursor: isDisabled ? "not-allowed" : "pointer",
+              }}
             >
-              {game.controls.isLoading ? <CircularProgress size={20} /> : "Play Hand"}
+              {game.controls.isLoading ? (
+                <CircularProgress size={20} />
+              ) : (
+                "Play Hand"
+              )}
             </button>
           </div>
         </div>
@@ -73,9 +88,16 @@ export function SkatExchange({
           className="skat-btn discard"
           onClick={onDiscardCards}
           disabled={selectedCards.length !== 2 || isDisabled}
-          style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
+          style={{
+            opacity: isDisabled ? 0.5 : 1,
+            cursor: isDisabled ? "not-allowed" : "pointer",
+          }}
         >
-          {game.controls.isLoading ? <CircularProgress size={20} /> : "Discard Selected"}
+          {game.controls.isLoading ? (
+            <CircularProgress size={20} />
+          ) : (
+            "Discard Selected"
+          )}
         </button>
       </div>
     </div>

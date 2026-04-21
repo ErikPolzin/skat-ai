@@ -13,8 +13,8 @@ func main() {
 
 	trainer := training.NewBiddingTrainer()
 
-	// Train bidding through self-play (reduced for testing new rewards)
-	trainer.TrainBidding(300)
+	// Train bidding through self-play
+	trainer.TrainBidding(5000)
 
 	// Save the trained Q-table using config system
 	fmt.Println("\nSaving trained agent...")

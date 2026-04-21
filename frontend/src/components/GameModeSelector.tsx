@@ -77,7 +77,7 @@ export function GameModeSelector() {
   const [selectedTrump, setSelectedTrump] = useState<string>("♣");
 
   // Check if everyone passed (minimum bid of 18 was assigned)
-  const everyonePassed = game.bidValue === 18;
+  const everyonePassed = game.bidValue === 0;
 
   // Calculate game value for current selection
   const gameValue = useMemo(() => {

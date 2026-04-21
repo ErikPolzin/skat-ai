@@ -85,7 +85,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         }
         break;
       case "start_next_game":
-        navigate(`/game/${message.data.game_id}`);
+        navigate(`/game/${message.data.game_id}`, { replace: true });
         break;
       case "player_offline":
         // Mark player as offline and optionally show a message

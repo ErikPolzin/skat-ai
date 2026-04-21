@@ -16,14 +16,14 @@ type BiddingTrainer struct {
 func NewBiddingTrainer() *BiddingTrainer {
 	return &BiddingTrainer{
 		biddingAgents: [3]*agent.SkatAgent{
-			agent.NewSkatAgent("Agent", 50), // Reduced for faster training
-			agent.NewSkatAgent("Agent", 50),
-			agent.NewSkatAgent("Agent", 50),
+			agent.NewSkatAgent("Agent", 100),
+			agent.NewSkatAgent("Agent", 100),
+			agent.NewSkatAgent("Agent", 100),
 		},
 		mctsAgents: [3]*agent.SkatAgent{
-			agent.NewSkatAgent("MCTS-1", 50), // Reduced for faster training
-			agent.NewSkatAgent("MCTS-2", 50),
-			agent.NewSkatAgent("MCTS-3", 50),
+			agent.NewSkatAgent("MCTS-1", 100),
+			agent.NewSkatAgent("MCTS-2", 100),
+			agent.NewSkatAgent("MCTS-3", 100),
 		},
 	}
 }
@@ -94,17 +94,41 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 		g.Declarer = declarer
 		declarerInt := int(declarer)
 
-		// Declarer picks up skat and discards
-		g.Players[declarer].Hand = append(g.Players[declarer].Hand, g.Skat[:]...)
-		bt.discardCards(g, declarer)
+		// Use proper game flow for skat exchange
+		g.Phase = game.PhaseSkatExchange
+		g.CurrentPlayer = declarer
 
-		// Declarer chooses game mode based on hand
-		g.Declarer = game.GamePosition(declarer)
-		g.CurrentPlayer = game.GamePosition(declarer)
-		g.Mode, g.TrumpSuit = bt.biddingAgents[declarer].ChooseGame(g)
-		g.Phase = game.PhasePlaying
-		// In Skat, forehand (player 0) leads first
-		g.CurrentPlayer = 0
+		// Declarer picks up skat
+		if _, err := g.SkatDecision(g.Players[declarer].ID, true); err != nil {
+			panic(fmt.Sprintf("SkatDecision error: %v", err))
+		}
+
+		// Declarer discards 2 cards
+		card1, card2 := bt.getCardsToDiscard(g, declarer)
+		if _, err := g.Discard(g.Players[declarer].ID, card1, card2); err != nil {
+			panic(fmt.Sprintf("Discard error: %v", err))
+		}
+
+		// Now in PhaseDeclarerChoice - choose game mode
+		mode, trump := bt.biddingAgents[declarer].ChooseGame(g)
+		if _, err := g.DeclareGame(g.Players[declarer].ID, mode, trump); err != nil {
+			// Agent bid too high - treat as automatic loss with heavy penalty
+			declarerWon := false
+			gameValue := g.BidValue
+
+			// Update agent with heavy penalty for overbidding
+			for i := 0; i < 3; i++ {
+				becameDeclarer := i == int(declarer)
+				bt.biddingAgents[i].OnGameEnd(becameDeclarer, declarerWon, gameValue, 0)
+			}
+
+			// Decay exploration
+			for i := 0; i < 3; i++ {
+				bt.biddingAgents[i].Epsilon = max(bt.biddingAgents[i].Epsilon*0.995, 0.01)
+			}
+
+			continue // Skip to next game
+		}
 
 		// Play the game using MCTS
 		for g.Phase == game.PhasePlaying {
@@ -114,7 +138,16 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 			}
 
 			move := bt.mctsAgents[g.CurrentPlayer].SelectMove(g, validMoves)
-			g.PlayCard("", move)
+			if _, err := g.PlayCard("", move); err != nil {
+				panic(fmt.Sprintf("PlayCard error: %v", err))
+			}
+
+			// Resolve trick if complete
+			if len(g.Trick) == 3 {
+				if _, err := g.ResolveTrick(); err != nil {
+					panic(fmt.Sprintf("ResolveTrick error: %v", err))
+				}
+			}
 		}
 
 		// Determine outcome
@@ -128,14 +161,13 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 
 		// Update all bidding agents
 		for i := 0; i < 3; i++ {
-			wonBid := i == declarerInt || (i != declarerInt && bt.biddingAgents[i].CurrentBid > 0)
 			becameDeclarer := i == declarerInt
-			bt.biddingAgents[i].OnGameEnd(wonBid, becameDeclarer, declarerWon, gameValue, g.DeclarerScore)
+			bt.biddingAgents[i].OnGameEnd(becameDeclarer, declarerWon, gameValue, g.DeclarerScore)
 		}
 
-		// Decay exploration
+		// Decay exploration (higher minimum for more exploration)
 		for i := 0; i < 3; i++ {
-			bt.biddingAgents[i].DecayEpsilon(0.05)
+			bt.biddingAgents[i].DecayEpsilon(0.15)
 		}
 
 		// Progress reporting - more frequent for long training
@@ -181,123 +213,40 @@ func (bt *BiddingTrainer) GetBiddingAgent(index int) *agent.SkatAgent {
 // runBidding conducts the bidding phase
 // Returns (declarer index, final bid) or (-1, 0) if all passed
 func (bt *BiddingTrainer) runBidding(g *game.GameState) (game.GamePosition, int) {
-	// Simplified Skat bidding: middlehand vs forehand, then winner vs rearhand
-	// Players: 0=forehand, 1=middlehand, 2=rearhand
+	// Use the game's bidding logic directly
+	g.Phase = game.PhaseBidding
+	g.CurrentPlayer = game.Speaker
+	g.BidValue = 0
+	g.ListenerPassed = false
+	g.SpeakerPassed = false
+	g.DealerPassed = false
 
-	currentBid := 17 // Minimum bid is 18
+	// Run bidding until 2+ players have passed
+	maxBids := 100 // Prevent infinite loops
+	for bidCount := 0; bidCount < maxBids; bidCount++ {
+		currentAgent := bt.biddingAgents[g.CurrentPlayer]
+		accept := currentAgent.Bid(g)
 
-	// Phase 1: Middlehand (1) vs Forehand (0)
-	middlehand := game.Listener
-	forehand := game.Dealer
-	active := [2]bool{true, true}
-
-	for active[0] || active[1] {
-		// Middlehand bids first
-		if active[1] {
-			g.CurrentPlayer = middlehand
-			bid := bt.biddingAgents[middlehand].Bid(g, currentBid)
-			if bid == 0 || bid <= currentBid {
-				active[1] = false
-			} else {
-				currentBid = bid
-			}
+		// Make the bid in the game
+		if _, err := g.Bid(g.Players[g.CurrentPlayer].ID, accept); err != nil {
+			panic(fmt.Sprintf("Bid error: %v", err))
 		}
 
-		if !active[1] {
-			break
-		}
-
-		// Forehand responds
-		if active[0] {
-			g.CurrentPlayer = forehand
-			bid := bt.biddingAgents[forehand].Bid(g, currentBid)
-			if bid == 0 || bid < currentBid {
-				active[0] = false
-			} else if bid > currentBid {
-				currentBid = bid
-			}
-		}
-
-		if !active[0] {
-			break
-		}
-
-		// Prevent infinite loops
-		if currentBid > 100 {
+		// Check if bidding is complete
+		if g.Phase != game.PhaseBidding {
 			break
 		}
 	}
 
-	// Determine phase 1 winner
-	var phase1Winner game.GamePosition
-	if active[0] {
-		phase1Winner = forehand
-	} else if active[1] {
-		phase1Winner = middlehand
-	} else {
-		// Both passed, check who bid last
-		phase1Winner = forehand // Default
-	}
-
-	// Phase 2: Winner vs Rearhand (2)
-	rearhand := game.Speaker
-	active2 := [2]bool{true, true}
-
-	for active2[0] && active2[1] {
-		// Rearhand bids
-		if active2[1] {
-			g.CurrentPlayer = rearhand
-			bid := bt.biddingAgents[rearhand].Bid(g, currentBid)
-			if bid == 0 || bid <= currentBid {
-				active2[1] = false
-			} else {
-				currentBid = bid
-			}
-		}
-
-		if !active2[1] {
-			break
-		}
-
-		// Phase 1 winner responds
-		if active2[0] {
-			g.CurrentPlayer = phase1Winner
-			bid := bt.biddingAgents[phase1Winner].Bid(g, currentBid)
-			if bid == 0 || bid < currentBid {
-				active2[0] = false
-			} else if bid > currentBid {
-				currentBid = bid
-			}
-		}
-
-		if !active2[0] {
-			break
-		}
-
-		if currentBid > 100 {
-			break
-		}
-	}
-
-	// Determine final winner
-	var finalWinner game.GamePosition
-	if active2[0] {
-		finalWinner = phase1Winner
-	} else if active2[1] {
-		finalWinner = rearhand
-	} else {
-		finalWinner = phase1Winner
-	}
-
-	// Check if everyone passed
-	if currentBid == 17 {
+	// Check if all passed
+	if g.Declarer == -1 {
 		return -1, 0
 	}
 
-	return finalWinner, currentBid
+	return g.Declarer, g.BidValue
 }
 
-func (bt *BiddingTrainer) discardCards(g *game.GameState, declarer game.GamePosition) {
+func (bt *BiddingTrainer) getCardsToDiscard(g *game.GameState, declarer game.GamePosition) (game.Card, game.Card) {
 	player := g.Players[declarer]
 
 	// Simple: discard 2 lowest value non-jacks
@@ -324,17 +273,5 @@ func (bt *BiddingTrainer) discardCards(g *game.GameState, declarer game.GamePosi
 		}
 	}
 
-	discard1 := cards[0].card
-	discard2 := cards[1].card
-
-	newHand := make([]game.Card, 0, 10)
-	discarded := 0
-	for _, card := range player.Hand {
-		if discarded < 2 && (card == discard1 || card == discard2) {
-			discarded++
-			continue
-		}
-		newHand = append(newHand, card)
-	}
-	player.Hand = newHand
+	return cards[0].card, cards[1].card
 }

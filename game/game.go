@@ -17,6 +17,15 @@ const (
 	ModeNull  GameMode = "null"  // No trumps, declarer tries to lose
 )
 
+// ValidBidValues are the legal bid values in Skat (based on game values)
+var ValidBidValues = []int{
+	0, 18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50,
+	54, 55, 59, 60, 63, 66, 70, 72, 77, 80, 81, 84, 88, 90, 96, 99,
+	100, 108, 110, 117, 120, 121, 126, 130, 132, 135, 140, 143, 144,
+	150, 153, 154, 156, 160, 162, 165, 168, 170, 176, 180, 187, 192,
+	198, 204, 216, 240, 264,
+}
+
 type GamePosition int
 
 const (
@@ -112,7 +121,7 @@ func NewGame() *GameState {
 		Phase:          PhaseWaitingForPlayers, // Start waiting for players
 		Declarer:       -1,                     // Not determined yet
 		CurrentPlayer:  0,                      // Dealer starts as the current player
-		BidValue:       0,                      // No bid yet, Speaker will bid 18 first
+		BidValue:       0,                      // Bidding starts at 0
 		ListenerPassed: false,
 		SpeakerPassed:  false,
 		DealerPassed:   false,
@@ -165,7 +174,11 @@ func (gs *GameState) GetValidMoves() []Card {
 func (gs *GameState) effectiveSuit(card Card) Suit {
 	// Jacks are their own "suit" (trump) in Grand and Suit games
 	if gs.Mode != ModeNull && card.Rank == Jack {
-		// Use a special marker - we'll treat all jacks as same "suit"
+		// In Grand mode, use a special marker for all Jacks
+		// In Suit mode, use the trump suit
+		if gs.Mode == ModeGrand {
+			return NoSuit // All Jacks have same effective suit in Grand
+		}
 		return gs.TrumpSuit
 	}
 
@@ -330,189 +343,19 @@ func (gs *GameState) CanBid() bool {
 	return gs.Phase == PhaseBidding
 }
 
-// GetValidBids returns the valid bidding actions for the current player
-// Returns: "pass", "hold" (match current bid), or bid values >= BidValue+1
-func (gs *GameState) GetValidBids() []string {
-	if gs.Phase != PhaseBidding {
-		return nil
-	}
-
-	actions := []string{"pass"}
-
-	// In Skat bidding:
-	// - Speaker announces bid values
-	// - Listener/Dealer say "yes" (hold) to match announced bid, or pass
-
-	// Round 1: Speaker vs Listener
-	if !gs.ListenerPassed && !gs.SpeakerPassed {
-		if gs.CurrentPlayer == Speaker {
-			// Speaker announces bid values
-			nextBid := gs.getNextBidValue()
-			if nextBid <= 264 {
-				actions = append(actions, fmt.Sprintf("%d", nextBid))
-			}
-		} else if gs.CurrentPlayer == Listener {
-			// Listener responds with "hold" or "pass"
-			if gs.BidValue > 0 {
-				actions = append(actions, "hold")
-			}
-		}
-		return actions
-	}
-
-	// Round 2: Winner of Round 1 vs Dealer
-	// The Round 1 winner becomes the responder, Dealer announces
-	if gs.ListenerPassed && !gs.SpeakerPassed && !gs.DealerPassed {
-		// Speaker won Round 1, now Dealer announces and Speaker responds
-		if gs.CurrentPlayer == Dealer {
-			// Dealer announces the next bid value
-			nextBid := gs.getNextBidValue()
-			if nextBid <= 264 {
-				actions = append(actions, fmt.Sprintf("%d", nextBid))
-			}
-		} else if gs.CurrentPlayer == Speaker {
-			// Speaker responds with "hold" or "pass"
-			if gs.BidValue > 0 {
-				actions = append(actions, "hold")
-			}
-		}
-		return actions
-	}
-
-	if gs.SpeakerPassed && !gs.ListenerPassed && !gs.DealerPassed {
-		// Listener won Round 1, now Dealer announces and Listener responds
-		if gs.CurrentPlayer == Dealer {
-			// Dealer announces the next bid value
-			nextBid := gs.getNextBidValue()
-			if nextBid <= 264 {
-				actions = append(actions, fmt.Sprintf("%d", nextBid))
-			}
-		} else if gs.CurrentPlayer == Listener {
-			// Listener responds with "hold" or "pass"
-			if gs.BidValue > 0 {
-				actions = append(actions, "hold")
-			}
-		}
-		return actions
-	}
-
-	// Special case: If Speaker passes without bidding, Listener can start
-	if gs.SpeakerPassed && !gs.ListenerPassed && gs.BidValue == 0 {
-		if gs.CurrentPlayer == Listener {
-			nextBid := gs.getNextBidValue()
-			if nextBid <= 264 {
-				actions = append(actions, fmt.Sprintf("%d", nextBid))
-			}
-		}
-		return actions
-	}
-
-	// Special case: Both Speaker and Listener passed without bidding, Dealer can announce
-	if gs.SpeakerPassed && gs.ListenerPassed && gs.BidValue == 0 {
-		if gs.CurrentPlayer == Dealer {
-			nextBid := gs.getNextBidValue()
-			if nextBid <= 264 {
-				actions = append(actions, fmt.Sprintf("%d", nextBid))
-			}
-		}
-		return actions
-	}
-
-	return actions
-}
-
-// getNextBidValue returns the next valid bid value
-// Valid bids in Skat: 18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50, 54, 55, ...
+// getNextBidValue returns the next valid bid value (uses the global function)
 func (gs *GameState) getNextBidValue() int {
-	validBids := []int{18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50, 54, 55, 59, 60, 63, 66, 70, 72, 77, 80, 81, 84, 88, 90, 96, 99, 100, 108, 110, 117, 120, 121, 126, 130, 132, 135, 140, 143, 144, 150, 153, 154, 156, 160, 162, 165, 168, 170, 176, 180, 187, 192, 198, 204, 216, 240, 264}
-
-	// If no bid yet (BidValue == 0), start with 18
-	if gs.BidValue == 0 {
-		return 18
-	}
-
-	for _, bid := range validBids {
+	for _, bid := range ValidBidValues {
 		if bid > gs.BidValue {
 			return bid
 		}
 	}
-	return gs.BidValue + 1 // Fallback
+	return 0 // No higher bid available
 }
 
-// advanceBidding determines the next bidder or ends bidding
-func (gs *GameState) advanceBidding() {
-	// Check if bidding is over
-	passCount := 0
-	if gs.ListenerPassed {
-		passCount++
-	}
-	if gs.SpeakerPassed {
-		passCount++
-	}
-	if gs.DealerPassed {
-		passCount++
-	}
-
-	if passCount >= 2 {
-		// Bidding is over, determine declarer
-		if !gs.ListenerPassed {
-			gs.Declarer = Listener
-		} else if !gs.SpeakerPassed {
-			gs.Declarer = Speaker
-		} else if !gs.DealerPassed {
-			gs.Declarer = Dealer
-		} else {
-			// All passed - dealer becomes declarer by default with minimum bid
-			gs.Declarer = Dealer
-			gs.BidValue = 18
-		}
-
-		// Move to skat exchange phase
-		gs.Phase = PhaseSkatExchange
-		gs.CurrentPlayer = gs.Declarer
-		return
-	}
-
-	// Bidding continues - determine next bidder
-	// Round 1: Speaker announces, Listener responds
-	// Round 2: Dealer announces, Round 1 winner responds
-
-	if !gs.ListenerPassed && !gs.SpeakerPassed {
-		// Round 1: Speaker announces, Listener responds
-		if gs.CurrentPlayer == Speaker {
-			// After Speaker announces, Listener responds
-			gs.CurrentPlayer = Listener
-		} else {
-			// After Listener responds (hold), Speaker can raise
-			gs.CurrentPlayer = Speaker
-		}
-	} else if gs.ListenerPassed && !gs.SpeakerPassed && !gs.DealerPassed {
-		// Round 2: Speaker won Round 1
-		// Now Dealer announces and Speaker responds
-		if gs.CurrentPlayer == Listener {
-			// Listener just passed, switch to Dealer to start Round 2
-			gs.CurrentPlayer = Dealer
-		} else if gs.CurrentPlayer == Dealer {
-			// After Dealer announces, Speaker responds
-			gs.CurrentPlayer = Speaker
-		} else {
-			// After Speaker responds (hold), Dealer can raise
-			gs.CurrentPlayer = Dealer
-		}
-	} else if gs.SpeakerPassed && !gs.ListenerPassed && !gs.DealerPassed {
-		// Round 2: Listener won Round 1
-		// Now Dealer announces and Listener responds
-		if gs.CurrentPlayer == Speaker {
-			// Speaker just passed, switch to Dealer to start Round 2
-			gs.CurrentPlayer = Dealer
-		} else if gs.CurrentPlayer == Dealer {
-			// After Dealer announces, Listener responds
-			gs.CurrentPlayer = Listener
-		} else {
-			// After Listener responds (hold), Dealer can raise
-			gs.CurrentPlayer = Dealer
-		}
-	}
+// GetNextBidValue is the exported version for agent access
+func (gs *GameState) GetNextBidValue() int {
+	return gs.getNextBidValue()
 }
 
 // IsSchneider returns true if the game ended with Schneider

@@ -172,25 +172,35 @@ type PlayerStats struct {
 
 func conductBidding(g *game.GameState, agents [3]*agent.SkatAgent) (game.GamePosition, int) {
 	// Simplified 3-player bidding
-	currentBid := 17
-	lastBidder := -1
+	// Use game's bidding logic
+	g.Phase = game.PhaseBidding
+	g.CurrentPlayer = game.Speaker
+	g.BidValue = 0
+	g.ListenerPassed = false
+	g.SpeakerPassed = false
+	g.DealerPassed = false
 
-	// Each player bids once in sequence
-	for round := 0; round < 3; round++ {
-		for p := 0; p < 3; p++ {
-			bid := agents[p].Bid(g, currentBid)
-			if bid > currentBid {
-				currentBid = bid
-				lastBidder = p
-			}
+	// Simplified: each player decides once whether to accept the starting bid
+	accepts := [3]bool{}
+	for p := 0; p < 3; p++ {
+		g.CurrentPlayer = game.GamePosition(p)
+		accepts[p] = agents[p].Bid(g)
+	}
+
+	// Find declarer (first to accept)
+	declarer := -1
+	for p := 0; p < 3; p++ {
+		if accepts[p] {
+			declarer = p
+			break
 		}
 	}
 
-	if lastBidder == -1 {
+	if declarer == -1 {
 		return -1, 0 // Everyone passed
 	}
 
-	return game.GamePosition(lastBidder), currentBid
+	return game.GamePosition(declarer), g.BidValue
 }
 
 func discardCards(g *game.GameState, declarer game.GamePosition) {

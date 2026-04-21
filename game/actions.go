@@ -118,7 +118,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 }
 
 // HandleBid processes a bidding action
-func (gs *GameState) Bid(playerID string, action string) (string, error) {
+func (gs *GameState) Bid(playerID string, accept bool) (string, error) {
 	currentPlayer := gs.GetCurrentPlayer()
 	if currentPlayer.ID != playerID {
 		return "", fmt.Errorf("not your turn to bid")
@@ -128,47 +128,87 @@ func (gs *GameState) Bid(playerID string, action string) (string, error) {
 		return "", fmt.Errorf("not in bidding phase")
 	}
 
-	if gs.Phase != PhaseBidding {
-		return "", fmt.Errorf("not in bidding phase")
-	}
+	bidValue := gs.BidValue
 
-	validActions := gs.GetValidBids()
-	isValid := false
-	for _, a := range validActions {
-		if a == action {
-			isValid = true
-			break
-		}
-	}
-	if !isValid {
-		return "", fmt.Errorf("invalid bid action: %s", action)
-	}
-
-	switch action {
-	case "pass":
+	if !accept {
 		// Player passes
 		switch gs.CurrentPlayer {
-		case Listener:
-			gs.ListenerPassed = true
 		case Speaker:
 			gs.SpeakerPassed = true
+			gs.CurrentPlayer = Listener
+		case Listener:
+			gs.ListenerPassed = true
+			gs.CurrentPlayer = Dealer
 		case Dealer:
 			gs.DealerPassed = true
 		}
-	case "hold":
-		// Player matches the current bid
-		// Bid value stays the same, other player must raise or pass
-	default:
-		// Player raises the bid
-		var newBid int
-		fmt.Sscanf(action, "%d", &newBid)
-		gs.BidValue = newBid
+	} else {
+		switch gs.CurrentPlayer {
+		case Speaker:
+			if !gs.ListenerPassed {
+				gs.CurrentPlayer = Listener
+				// Speaker raises the bid when bidding speaker-listener
+				gs.BidValue = gs.getNextBidValue()
+			} else {
+				gs.CurrentPlayer = Dealer
+			}
+		case Listener:
+			if !gs.SpeakerPassed {
+				gs.CurrentPlayer = Speaker
+			} else {
+				gs.CurrentPlayer = Dealer
+				// Listener raises the bid when bidding listener-dealer
+				gs.BidValue = gs.getNextBidValue()
+			}
+		case Dealer:
+			if !gs.ListenerPassed {
+				gs.CurrentPlayer = Listener
+			} else {
+				gs.CurrentPlayer = Speaker
+				// Dealer raises the bid when bidding dealer-speaker
+				gs.BidValue = gs.getNextBidValue()
+			}
+		}
 	}
 
-	// Determine next player and check if bidding is complete
-	gs.advanceBidding()
+	// Check if bidding is over
+	passCount := 0
+	if gs.ListenerPassed {
+		passCount++
+	}
+	if gs.SpeakerPassed {
+		passCount++
+	}
+	if gs.DealerPassed {
+		passCount++
+	}
 
-	logger.Debug("Player bid", "player_name", currentPlayer.Name, "action", action)
+	if passCount >= 2 {
+		// Bidding is over, determine declarer
+		if !gs.ListenerPassed {
+			gs.Declarer = Listener
+		} else if !gs.SpeakerPassed {
+			gs.Declarer = Speaker
+		} else if !gs.DealerPassed {
+			gs.Declarer = Dealer
+		} else {
+			// All passed - dealer becomes declarer by default with minimum bid
+			gs.Declarer = Dealer
+		}
+		// Move to skat exchange phase
+		gs.Phase = PhaseSkatExchange
+		gs.CurrentPlayer = gs.Declarer
+	}
+	action := "pass"
+	if accept {
+		if gs.BidValue > bidValue {
+			action = fmt.Sprintf("I raise the bid to %d", gs.BidValue)
+		} else {
+			action = fmt.Sprintf("I accept %d", bidValue)
+		}
+	}
+
+	logger.Debug("Player bid", "player_name", currentPlayer.Name, "accept", accept, "bid value", gs.BidValue)
 	return action, nil
 }
 
@@ -239,7 +279,7 @@ func (gs *GameState) DeclareGame(playerID string, mode GameMode, trumpSuit Suit)
 	gameValue := gs.calculatePotentialGameValue()
 
 	// Validate that the declared game can meet the bid value
-	if gameValue < gs.BidValue {
+	if gameValue < int(gs.BidValue) {
 		return "", fmt.Errorf("game value %d is less than bid value %d", gameValue, gs.BidValue)
 	}
 
@@ -259,30 +299,9 @@ func (gs *GameState) DeclareGame(playerID string, mode GameMode, trumpSuit Suit)
 // calculatePotentialGameValue calculates the game value assuming the declarer wins normally
 // (without schneider or schwarz). Used for validating the game declaration against the bid.
 func (gs *GameState) calculatePotentialGameValue() int {
-	baseValue := 0
-
-	switch gs.Mode {
-	case ModeGrand:
-		baseValue = 24
-	case ModeSuit:
-		switch gs.TrumpSuit {
-		case Diamonds:
-			baseValue = 9
-		case Hearts:
-			baseValue = 10
-		case Spades:
-			baseValue = 11
-		case Clubs:
-			baseValue = 12
-		}
-	case ModeNull:
-		return 23
-	}
-
-	matadorCount := gs.countMatadors()
-	multiplier := 1 + matadorCount // Base multiplier (game + matadors)
-
-	return baseValue * multiplier
+	// Use the Cards.GameValue method for consistency
+	hand := Cards(gs.Players[gs.Declarer].Hand)
+	return hand.GameValue(gs.Mode, gs.TrumpSuit)
 }
 
 // HandleSkatDecision processes the declarer's decision to pick up skat or play hand

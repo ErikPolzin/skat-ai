@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/rand"
 	"skat/game"
+	"skat/logger"
 	"sync"
 )
 
@@ -12,8 +13,8 @@ type Agent interface {
 	// SelectMove chooses a card to play from valid moves
 	SelectMove(state *game.GameState, validMoves []game.Card) game.Card
 
-	// Bid decides whether to bid and at what value
-	Bid(state *game.GameState, currentBid int) int
+	// Bid decides whether to accept the current bid (true) or pass (false)
+	Bid(state *game.GameState) bool
 
 	// ChooseGame selects the game mode after winning the bid
 	ChooseGame(state *game.GameState) (game.GameMode, game.Suit)
@@ -105,8 +106,8 @@ func (sa *SkatAgent) SelectMove(state *game.GameState, validMoves []game.Card) g
 	return bestMove
 }
 
-// Bid uses Q-learning to make bidding decisions
-func (sa *SkatAgent) Bid(state *game.GameState, currentBid int) int {
+// Bid uses Q-learning to make bidding decisions (accept=true, pass=false)
+func (sa *SkatAgent) Bid(state *game.GameState) bool {
 	handScore := sa.evaluateHand(state.Players[state.CurrentPlayer].Hand)
 	sa.CurrentHandScore = handScore
 
@@ -114,31 +115,54 @@ func (sa *SkatAgent) Bid(state *game.GameState, currentBid int) int {
 		sa.qTable[handScore] = make(map[int]float64)
 	}
 
-	possibleBids := []int{0}
-	for bid := currentBid + 1; bid <= 60; bid++ {
-		possibleBids = append(possibleBids, bid)
+	// Two actions: pass (0) or accept (which will raise bid to nextBid)
+	// We need to evaluate accepting at the NEXT bid value, since accepting raises the bid
+	nextBid := state.GetNextBidValue()
+
+	// If no higher bid is available, must pass
+	if nextBid == 0 {
+		sa.CurrentBid = 0
+		return false
 	}
 
-	var selectedBid int
+	qPass := sa.getQ(handScore, 0)
+	qAccept := sa.getQ(handScore, nextBid)
+
+	// Debug logging for high bids
+	if nextBid > 50 {
+		logger.Debug("High bid evaluation", "handScore", handScore, "nextBid", nextBid, "qPass", qPass, "qAccept", qAccept, "epsilon", sa.Epsilon)
+	}
+
+	var accept bool
 	if rand.Float64() < sa.Epsilon {
-		selectedBid = possibleBids[rand.Intn(len(possibleBids))]
+		// Explore: random choice
+		accept = rand.Float64() < 0.5
 	} else {
-		bestBid := 0
-		bestQ := sa.getQ(handScore, 0)
-
-		for _, bid := range possibleBids {
-			q := sa.getQ(handScore, bid)
-			if q > bestQ {
-				bestQ = q
-				bestBid = bid
-			}
+		// Exploit: choose best action
+		// If qAccept is untrained (zero), use heuristic instead of blindly accepting
+		if qAccept == 0.0 {
+			// Smarter heuristic: estimate the best achievable game value
+			hand := game.Cards(state.Players[state.CurrentPlayer].Hand)
+			estimatedGameValue := hand.EstimateBestGameValue()
+			// Only accept if we can likely achieve a game worth at least the next bid
+			accept = estimatedGameValue >= nextBid
+		} else if qAccept > qPass {
+			accept = true
+		} else if qPass > qAccept {
+			accept = false
+		} else {
+			// Tied (both non-zero) - randomize to avoid systematic bias
+			accept = rand.Float64() < 0.5
 		}
-
-		selectedBid = bestBid
 	}
 
-	sa.CurrentBid = selectedBid
-	return selectedBid
+	if accept {
+		sa.CurrentBid = nextBid // Store the bid we're committing to (next value)
+	} else {
+		sa.CurrentBid = 0
+	}
+
+	return accept
 }
 
 // ChooseGame selects the best game mode based on hand composition
@@ -185,24 +209,11 @@ func (sa *SkatAgent) ChooseGame(state *game.GameState) (game.GameMode, game.Suit
 }
 
 // OnGameEnd updates Q-values based on game outcome
-func (sa *SkatAgent) OnGameEnd(wonBid bool, becameDeclarer bool, wonGame bool, gameValue int, pointsScored int) {
+func (sa *SkatAgent) OnGameEnd(becameDeclarer bool, wonGame bool, gameValue int, pointsScored int) {
 	reward := 0.0
 
-	if !becameDeclarer {
-		if wonBid {
-			reward = -0.05
-		} else {
-			if !wonGame && pointsScored < 40 {
-				regretPenalty := -0.3 * (float64(sa.CurrentHandScore) / 100.0)
-				reward = regretPenalty
-			} else if !wonGame && pointsScored < 50 {
-				regretPenalty := -0.15 * (float64(sa.CurrentHandScore) / 100.0)
-				reward = regretPenalty
-			} else {
-				reward = 0.05
-			}
-		}
-	} else {
+	if becameDeclarer {
+		// Agent became declarer - reward based on game outcome
 		if wonGame {
 			safetyMargin := float64(pointsScored-61) / 60.0
 			reward = 1.0 + safetyMargin*0.5
@@ -211,6 +222,7 @@ func (sa *SkatAgent) OnGameEnd(wonBid bool, becameDeclarer bool, wonGame bool, g
 				reward += 0.2
 			}
 		} else {
+			// Lost as declarer - penalize based on how badly
 			if pointsScored >= 55 {
 				reward = -0.2
 				if sa.CurrentHandScore >= 70 {
@@ -225,6 +237,33 @@ func (sa *SkatAgent) OnGameEnd(wonBid bool, becameDeclarer bool, wonGame bool, g
 			if sa.CurrentBid > 30 && pointsScored < 40 {
 				reward -= 0.5
 			}
+		}
+	} else {
+		// Agent did not become declarer
+		if sa.CurrentBid == 0 {
+			// Agent passed - penalize more for missing opportunities
+			if wonGame {
+				// Declarer won - small penalty, could have competed
+				if sa.CurrentHandScore >= 60 {
+					reward = -0.15 // Should have bid with decent hand
+				} else {
+					reward = -0.02 // Minor regret
+				}
+			} else {
+				// Declarer lost - maybe should have bid
+				if sa.CurrentHandScore >= 70 {
+					reward = -0.3 // Strong regret for not bidding with strong hand
+				} else if sa.CurrentHandScore >= 55 {
+					reward = -0.15
+				} else if sa.CurrentHandScore >= 40 {
+					reward = -0.05
+				} else {
+					reward = 0.05 // Good decision to pass with weak hand
+				}
+			}
+		} else {
+			// Agent bid but didn't become declarer - slight penalty for losing bidding war
+			reward = -0.05
 		}
 	}
 
@@ -356,6 +395,11 @@ func (sa *SkatAgent) expand(node *MCTSNode) *MCTSNode {
 	childState := node.state.Clone()
 	childState.PlayCard("", move)
 
+	// Resolve trick if complete
+	if len(childState.Trick) == 3 {
+		childState.ResolveTrick()
+	}
+
 	child := newMCTSNode(childState, node, &move, node.playerID)
 	node.children = append(node.children, child)
 
@@ -374,6 +418,12 @@ func (sa *SkatAgent) simulate(node *MCTSNode) float64 {
 		}
 		move := validMoves[rand.Intn(len(validMoves))]
 		state.PlayCard("", move)
+
+		// Resolve trick if complete
+		if len(state.Trick) == 3 {
+			state.ResolveTrick()
+		}
+
 		moves++
 	}
 

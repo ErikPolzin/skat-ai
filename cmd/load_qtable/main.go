@@ -43,9 +43,14 @@ func main() {
 		hand := g.Players[0].Hand
 
 		handScore := evaluateHandStrength(hand)
-		bid := biddingAgent.Bid(g, 18)
+		accept := biddingAgent.Bid(g)
 
-		fmt.Printf("Hand %2d: Score=%2d, Bid=%2d", i+1, handScore, bid)
+		action := "Pass"
+		if accept {
+			action = "Accept 18"
+		}
+
+		fmt.Printf("Hand %2d: Score=%2d, Action=%s", i+1, handScore, action)
 
 		// Show a few cards
 		fmt.Printf(" [")

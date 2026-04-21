@@ -4,7 +4,8 @@ package game
 type Suit int
 
 const (
-	Clubs Suit = iota
+	NoSuit Suit = iota // Special marker for Jack effective suit in Grand games
+	Clubs
 	Spades
 	Hearts
 	Diamonds
@@ -54,10 +55,113 @@ type SkatCards [2]Card
 // NewDeck creates a standard Skat deck (32 cards)
 func NewDeck() Cards {
 	deck := make([]Card, 0, 32)
-	for suit := Clubs; suit <= Diamonds; suit++ {
+	suits := []Suit{Clubs, Spades, Hearts, Diamonds}
+	for _, suit := range suits {
 		for rank := Seven; rank <= Ace; rank++ {
 			deck = append(deck, Card{Suit: suit, Rank: rank})
 		}
 	}
 	return deck
+}
+
+// GameValue calculates the game value for a hand given a mode and trump suit
+// This is the value BEFORE playing - it's based on matadors only
+func (c Cards) GameValue(mode GameMode, trumpSuit Suit) int {
+	// Count matadors (consecutive jacks from club jack)
+	jackSuits := make(map[Suit]bool)
+	for _, card := range c {
+		if card.Rank == Jack {
+			jackSuits[card.Suit] = true
+		}
+	}
+
+	// Calculate matadors (with or without)
+	matadors := 0
+	withJacks := jackSuits[Clubs] // "with" if we have club jack, "without" if not
+
+	if withJacks {
+		// "With" - count consecutive jacks from clubs
+		if jackSuits[Clubs] {
+			matadors++
+			if jackSuits[Spades] {
+				matadors++
+				if jackSuits[Hearts] {
+					matadors++
+					if jackSuits[Diamonds] {
+						matadors++
+					}
+				}
+			}
+		}
+	} else {
+		// "Without" - count how many top jacks are missing
+		if !jackSuits[Clubs] {
+			matadors++
+			if !jackSuits[Spades] {
+				matadors++
+				if !jackSuits[Hearts] {
+					matadors++
+					if !jackSuits[Diamonds] {
+						matadors++
+					}
+				}
+			}
+		}
+	}
+
+	// Get base value for the game type
+	baseValue := 0
+	switch mode {
+	case ModeGrand:
+		baseValue = 24
+	case ModeSuit:
+		switch trumpSuit {
+		case Diamonds:
+			baseValue = 9
+		case Hearts:
+			baseValue = 10
+		case Spades:
+			baseValue = 11
+		case Clubs:
+			baseValue = 12
+		}
+	case ModeNull:
+		return 23 // Null games have fixed value
+	}
+
+	// Game value = base value × (matadors + 1 + game/schneider/schwarz bonuses)
+	// For estimation purposes, we just use matadors + 1 (minimum multiplier)
+	return baseValue * (matadors + 1)
+}
+
+// EstimateBestGameValue returns the highest achievable game value for this hand
+func (c Cards) EstimateBestGameValue() int {
+	maxValue := 0
+
+	// Try Grand
+	grandValue := c.GameValue(ModeGrand, NoSuit)
+	if grandValue > maxValue {
+		maxValue = grandValue
+	}
+
+	// Try each suit
+	for _, suit := range []Suit{Diamonds, Hearts, Spades, Clubs} {
+		// Count cards in this suit
+		suitCount := 0
+		for _, card := range c {
+			if card.Suit == suit && card.Rank != Jack {
+				suitCount++
+			}
+		}
+
+		// Only consider suits where we have decent length (3+ cards)
+		if suitCount >= 3 {
+			suitValue := c.GameValue(ModeSuit, suit)
+			if suitValue > maxValue {
+				maxValue = suitValue
+			}
+		}
+	}
+
+	return maxValue
 }

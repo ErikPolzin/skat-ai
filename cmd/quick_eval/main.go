@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"skat/agent"
 	"skat/game"
 )
@@ -27,22 +28,34 @@ func main() {
 
 	for i := 0; i < totalTests; i++ {
 		g := game.NewGame()
-		hand := g.Players[0].Hand
+
+		// Initialize player with a random hand
+		deck := game.NewDeck()
+		rand.Shuffle(len(deck), func(i, j int) {
+			deck[i], deck[j] = deck[j], deck[i]
+		})
+		hand := deck[:10]
+		g.Players[0] = &game.PlayerState{
+			ID:   "player-0",
+			Name: "Player 0",
+			Hand: hand,
+		}
+		g.CurrentPlayer = 0
 
 		// Evaluate hand objectively
 		actualStrength := evaluateHandStrength(hand)
 
-		// Get agent's bid
-		agentBid := trainedAgent.Bid(g, 18)
+		// Get agent's decision
+		accept := trainedAgent.Bid(g)
 
 		// Check if decision makes sense
 		correct := false
-		if actualStrength >= 60 && agentBid >= 24 {
-			correct = true // Strong hand, high bid
-		} else if actualStrength >= 40 && agentBid >= 18 && agentBid <= 30 {
-			correct = true // Medium hand, moderate bid
-		} else if actualStrength < 40 && agentBid == 0 {
-			correct = true // Weak hand, pass
+		if actualStrength >= 60 && accept {
+			correct = true // Strong hand, should accept
+		} else if actualStrength >= 40 && accept {
+			correct = true // Medium hand, can accept 18
+		} else if actualStrength < 40 && !accept {
+			correct = true // Weak hand, should pass
 		}
 
 		if correct {
@@ -50,8 +63,12 @@ func main() {
 		}
 
 		if i < 10 {
-			fmt.Printf("Hand %2d: Strength=%2d, Bid=%2d %s\n",
-				i+1, actualStrength, agentBid, checkmark(correct))
+			action := "Pass"
+			if accept {
+				action = "Accept"
+			}
+			fmt.Printf("Hand %2d: Strength=%2d, Action=%s %s\n",
+				i+1, actualStrength, action, checkmark(correct))
 		}
 	}
 
@@ -67,27 +84,28 @@ func main() {
 
 func preTrainAgent(ba *agent.SkatAgent) {
 	// Simulate training by setting Q-values for different hand strengths
-	// Strong hands (70-100): high bids are good
+	// Strong hands (70-100): should accept at various bid levels
 	for strength := 70; strength <= 100; strength++ {
-		ba.SetQ(strength, 0, -0.5)  // Passing is bad
-		ba.SetQ(strength, 24, 0.8)  // Bidding 24 is good
-		ba.SetQ(strength, 30, 1.0)  // Bidding 30 is great
-		ba.SetQ(strength, 36, 0.9)  // Bidding 36 is good
+		ba.SetQ(strength, 0, -0.5) // Passing is bad
+		ba.SetQ(strength, 18, 0.8) // Accepting 18 is good
+		ba.SetQ(strength, 24, 1.0) // Accepting 24 is great
+		ba.SetQ(strength, 30, 0.9) // Accepting 30 is good
+		ba.SetQ(strength, 36, 0.7) // Accepting 36 is okay
 	}
 
-	// Medium hands (40-69): moderate bids
+	// Medium hands (40-69): should accept lower bids
 	for strength := 40; strength <= 69; strength++ {
 		ba.SetQ(strength, 0, 0.2)   // Passing is okay
-		ba.SetQ(strength, 18, 0.5)  // Bidding 18 is good
-		ba.SetQ(strength, 24, 0.3)  // Bidding 24 is risky
-		ba.SetQ(strength, 30, -0.2) // Bidding 30 is bad
+		ba.SetQ(strength, 18, 0.6)  // Accepting 18 is good
+		ba.SetQ(strength, 24, 0.3)  // Accepting 24 is risky
+		ba.SetQ(strength, 30, -0.2) // Accepting 30 is bad
 	}
 
 	// Weak hands (0-39): should pass
 	for strength := 0; strength <= 39; strength++ {
 		ba.SetQ(strength, 0, 0.8)   // Passing is good
-		ba.SetQ(strength, 18, -0.3) // Bidding is bad
-		ba.SetQ(strength, 24, -0.7) // Higher bids are worse
+		ba.SetQ(strength, 18, -0.3) // Accepting 18 is bad
+		ba.SetQ(strength, 24, -0.7) // Accepting higher bids is worse
 	}
 }
 

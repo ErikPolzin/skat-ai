@@ -102,6 +102,7 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 
 		response, err := action()
 		if err != nil {
+			logger.Error("Agent encountered an error", err)
 			s.clients.BroadcastToPlayers(gs, &Message{
 				Type: "error",
 				Data: map[string]any{"message": err.Error()},
@@ -223,8 +224,8 @@ func (s *Server) handleBidMessage(client *Client, msg *Message) {
 		return
 	}
 
-	// Parse bid action (frontend sends "bid" field)
-	action, ok := msg.Data["bid"].(string)
+	// Parse bid action (frontend sends "accept" field as boolean)
+	accept, ok := msg.Data["accept"].(bool)
 	if !ok {
 		client.SendMessage(&Message{
 			Type: "error",
@@ -234,7 +235,7 @@ func (s *Server) handleBidMessage(client *Client, msg *Message) {
 	}
 
 	currentPlayer := gs.CurrentPlayer
-	response, err := gs.Bid(client.profileID, action)
+	response, err := gs.Bid(client.profileID, accept)
 	if err == nil {
 		s.db.SaveGame(*gs)
 		s.clients.BroadcastStateChange(gs, response, currentPlayer, msg.ActionID)

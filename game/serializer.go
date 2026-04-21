@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var SUIT_STRINGS = [...]string{"♣", "♠", "♥", "♦"}
+var SUIT_STRINGS = [...]string{"", "♣", "♠", "♥", "♦"}
 
 func (s Suit) String() string {
 	return SUIT_STRINGS[s]

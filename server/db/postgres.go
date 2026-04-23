@@ -57,8 +57,8 @@ func (d *PgDatabase) InitSchema() error {
 func (d *PgDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	var profile ProfileEntry
 	err := d.DB.QueryRow(`
-		SELECT id, name, is_agent FROM profiles WHERE id = $1
-	`, profileID).Scan(&profile.ID, &profile.Name, &profile.IsAgent)
+		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE id = $1
+	`, profileID).Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
 	}
@@ -68,8 +68,8 @@ func (d *PgDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 func (d *PgDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
 	var profile ProfileEntry
 	err := d.DB.QueryRow(`
-		SELECT id, name, is_agent FROM profiles WHERE name = $1
-	`, name).Scan(&profile.ID, &profile.Name, &profile.IsAgent)
+		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE name = $1
+	`, name).Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
 	}
@@ -78,11 +78,11 @@ func (d *PgDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
 
 func (d *PgDatabase) SaveProfile(profile ProfileEntry) error {
 	_, err := d.DB.Exec(
-		`INSERT INTO profiles (id, name, is_agent)
-		VALUES ($1, $2, $3)
+		`INSERT INTO profiles (id, name, is_agent, profile_icon, is_online)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (id) DO UPDATE SET
-		name = $2, is_agent = $3`,
-		profile.ID, profile.Name, profile.IsAgent,
+		name = $2, is_agent = $3, profile_icon = $4, is_online = $5`,
+		profile.ID, profile.Name, profile.IsAgent, profile.ProfileIcon, profile.IsOnline,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save profile: %w", err)
@@ -126,7 +126,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.listener_passed, g.speaker_passed, g.dealer_passed
+			g.bid_value, g.game_value, g.listener_passed, g.speaker_passed, g.dealer_passed
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE g.id = $1`,
@@ -135,7 +135,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
+		&gs.BidValue, &gs.GameValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
 	}
@@ -168,7 +168,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.listener_passed, g.speaker_passed, g.dealer_passed
+			g.bid_value, g.game_value, g.listener_passed, g.speaker_passed, g.dealer_passed
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE gs.code = $1
@@ -179,7 +179,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
+		&gs.BidValue, &gs.GameValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
 	}
@@ -216,22 +216,22 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 			id, session_id, game_number, phase, skat, trick,
 			trick_starter, trick_winner, current_player,
 			declarer, declarer_score, opponent_score,
-			game_mode, trump_suit, bid_value,
+			game_mode, trump_suit, bid_value, game_value,
 			listener_passed, speaker_passed, dealer_passed,
 			created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
 			NOW(), NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			session_id = $2, game_number = $3, phase = $4, skat = $5, trick = $6,
 			trick_starter = $7, trick_winner = $8, current_player = $9,
 			declarer = $10, declarer_score = $11, opponent_score = $12,
-			game_mode = $13, trump_suit = $14, bid_value = $15,
-			listener_passed = $16, speaker_passed = $17, dealer_passed = $18,
+			game_mode = $13, trump_suit = $14, bid_value = $15, game_value = $16,
+			listener_passed = $17, speaker_passed = $18, dealer_passed = $19,
 			updated_at = NOW()`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
 		gs.Declarer, gs.DeclarerScore, gs.OpponentScore,
-		gs.Mode, gs.TrumpSuit, gs.BidValue,
+		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.GameValue,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed,
 	)
 	if err != nil {
@@ -295,7 +295,7 @@ func (d *PgDatabase) DeleteGame(gameID string) error {
 
 func (d *PgDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 	rows, err := d.DB.Query(`
-		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent
+		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent, pr.profile_icon, pr.is_online
 		FROM players pl
 		JOIN profiles pr ON pr.id = pl.profile_id
 		WHERE pl.game_id = $1
@@ -311,7 +311,7 @@ func (d *PgDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 		var position int
 		var ps game.PlayerState
 		if err := rows.Scan(
-			&handString, &position, &ps.ID, &ps.Name, &ps.IsAgent); err != nil {
+			&handString, &position, &ps.ID, &ps.Name, &ps.IsAgent, &ps.ProfileIcon, &ps.IsOnline); err != nil {
 			return [3]*game.PlayerState{}, fmt.Errorf("failed to scan player: %w", err)
 		}
 		ps.Hand, err = game.ParseCards(handString)
@@ -410,7 +410,7 @@ func (d *PgDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultSta
 
 func (d *PgDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	rows, err := d.DB.Query(`
-		SELECT id, name, is_agent FROM profiles WHERE is_agent = TRUE
+		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE is_agent = TRUE
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agent profiles: %w", err)
@@ -420,7 +420,7 @@ func (d *PgDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	var profiles []ProfileEntry
 	for rows.Next() {
 		var profile ProfileEntry
-		if err := rows.Scan(&profile.ID, &profile.Name, &profile.IsAgent); err != nil {
+		if err := rows.Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline); err != nil {
 			return nil, fmt.Errorf("failed to scan agent profile: %w", err)
 		}
 		profiles = append(profiles, profile)

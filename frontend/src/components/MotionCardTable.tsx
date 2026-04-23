@@ -16,6 +16,7 @@ import { GameModeSelector } from "./GameModeSelector";
 import { GameLobbyWaiting } from "./GameLobbyWaiting";
 import { BiddingControls } from "./BiddingControls";
 import { SkatExchange } from "./SkatExchange";
+import { GameOverScreen } from "./GameOverScreen";
 
 // Helper function to convert suit emoji to word
 function getSuitName(suitEmoji?: string): string {
@@ -61,7 +62,6 @@ export function MotionCardTable() {
   const isTablet = useMediaQuery(theme.breakpoints.down("md"));
 
   const [selectedCards, setSelectedCards] = useState<CardType[]>([]);
-  const [pendingCard, setPendingCard] = useState<CardType | null>(null);
 
   // Track whether cards should animate from deck (true) or spread from left (false)
   const [shouldAnimateFromDeck, setShouldAnimateFromDeck] = useState(false);
@@ -176,18 +176,10 @@ export function MotionCardTable() {
         setSelectedCards([...selectedCards, card]);
       }
     } else {
-      // Set pending card when playing
-      setPendingCard(card);
+      // Play card
       game.controls.playCard(card);
     }
   };
-
-  // Clear pending card when loading completes
-  useEffect(() => {
-    if (!game.controls.isLoading) {
-      setPendingCard(null);
-    }
-  }, [game.controls.isLoading]);
 
   const handleDiscardCards = () => {
     if (selectedCards.length === 2) {
@@ -488,6 +480,8 @@ export function MotionCardTable() {
           <div className="waiting-for-declarer">
             <span>Waiting for declarer to choose game mode...</span>
           </div>
+        ) : game.gameOver ? (
+          <GameOverScreen />
         ) : game.gameMode ? (
           <div className="game-mode-display">
             <span className="mode-value">{game.trumpSuit}</span>
@@ -503,21 +497,27 @@ export function MotionCardTable() {
             className={`opponent-avatar-container top ${game.topPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
             <div
-              className={`avatar-circle ${!game.controls.isConnected || game.isPlayerOffline(game.topPlayer.id) ? "offline" : ""}`}
+              className={`avatar-circle ${!game.controls.isConnected || !game.topPlayer.is_online ? "offline" : ""}`}
             >
-              <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
+              {game.topPlayer.profile_icon ? (
+                <img src={game.topPlayer.profile_icon} alt={game.topPlayer.name} />
+              ) : (
+                <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
+              )}
             </div>
-            <div
-              className={`opponent-name ${!game.controls.isConnected || game.isPlayerOffline(game.topPlayer.id) ? "offline" : ""}`}
-            >
-              {game.topPlayer.name}
-              {isMobile && game.declarer === game.topPlayer && " (D)"}
-            </div>
-            {!isMobile && game.getRole(game.topPlayer.position) && (
-              <div className="player-role">
-                {game.getRole(game.topPlayer.position)}
+            <div className="avatar-info">
+              <div
+                className={`opponent-name ${!game.controls.isConnected || !game.topPlayer.is_online ? "offline" : ""}`}
+              >
+                {game.topPlayer.name}
+                {game.declarer === game.topPlayer && " (D)"}
               </div>
-            )}
+              {game.getRole(game.topPlayer.position) && (
+                <div className="player-role">
+                  {game.getRole(game.topPlayer.position)}
+                </div>
+              )}
+            </div>
             {/* Speech bubble for player messages */}
             {game.messages
               .filter((msg) => msg.playerPosition === game.topPlayer?.position)
@@ -536,21 +536,27 @@ export function MotionCardTable() {
             className={`opponent-avatar-container left ${game.leftPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
             <div
-              className={`avatar-circle ${!game.controls.isConnected || game.isPlayerOffline(game.leftPlayer.id) ? "offline" : ""}`}
+              className={`avatar-circle ${!game.controls.isConnected || !game.leftPlayer.is_online ? "offline" : ""}`}
             >
-              <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
+              {game.leftPlayer.profile_icon ? (
+                <img src={game.leftPlayer.profile_icon} alt={game.leftPlayer.name} />
+              ) : (
+                <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
+              )}
             </div>
-            <div
-              className={`opponent-name ${!game.controls.isConnected || game.isPlayerOffline(game.leftPlayer.id) ? "offline" : ""}`}
-            >
-              {game.leftPlayer.name}
-              {isMobile && game.declarer === game.leftPlayer && " (D)"}
-            </div>
-            {!isMobile && game.getRole(game.leftPlayer.position) && (
-              <div className="player-role">
-                {game.getRole(game.leftPlayer.position)}
+            <div className="avatar-info">
+              <div
+                className={`opponent-name ${!game.controls.isConnected || !game.leftPlayer.is_online ? "offline" : ""}`}
+              >
+                {game.leftPlayer.name}
+                {game.declarer === game.leftPlayer && " (D)"}
               </div>
-            )}
+              {game.getRole(game.leftPlayer.position) && (
+                <div className="player-role">
+                  {game.getRole(game.leftPlayer.position)}
+                </div>
+              )}
+            </div>
             {/* Speech bubble for player messages */}
             {game.messages
               .filter((msg) => msg.playerPosition === game.leftPlayer?.position)
@@ -570,15 +576,17 @@ export function MotionCardTable() {
           <div className="avatar-circle">
             <span>{game.playerName.charAt(0).toUpperCase()}</span>
           </div>
-          <div className="player-name">
-            {game.playerName}
-            {isMobile && game.isDeclarer && " (D)"}
-          </div>
-          {!isMobile && game.getRole(game.playerPosition) && (
-            <div className="player-role">
-              {game.getRole(game.playerPosition)}
+          <div className="avatar-info">
+            <div className="player-name">
+              {game.playerName}
+              {game.isDeclarer && " (D)"}
             </div>
-          )}
+            {game.getRole(game.playerPosition) && (
+              <div className="player-role">
+                {game.getRole(game.playerPosition)}
+              </div>
+            )}
+          </div>
           {/* Speech bubble for player messages */}
           {game.messages
             .filter((msg) => msg.playerPosition === game.playerPosition)
@@ -601,7 +609,7 @@ export function MotionCardTable() {
               }}
               exit={{ opacity: 0 }}
             >
-              <img src="/res/back.svg" alt="deck" className="card-back" />
+              <img src="/res/cards/back.svg" alt="deck" className="card-back" />
             </motion.div>
           )}
 
@@ -633,10 +641,6 @@ export function MotionCardTable() {
           {/* Player Hand - only show after deal started */}
           {sortedPlayerHand.map((card, index) => {
             const selected = isCardSelected(card);
-            const isPending =
-              pendingCard !== null &&
-              card.rank === pendingCard.rank &&
-              card.suit === pendingCard.suit;
             const basePosition = getPlayerCardPosition(
               index,
               sortedPlayerHand.length,
@@ -648,11 +652,10 @@ export function MotionCardTable() {
                 (game.isSkatExchange && game.hasPickedUpSkat));
 
             const declarerOffset = game.isDeclarerChoice ? 40 : 0;
-            // Raise card if selected or pending
-            const animatePosition =
-              selected || isPending
-                ? { ...basePosition, y: basePosition.y + declarerOffset - 20 }
-                : { ...basePosition, y: basePosition.y + declarerOffset };
+            // Raise card if selected
+            const animatePosition = selected
+              ? { ...basePosition, y: basePosition.y + declarerOffset - 20 }
+              : { ...basePosition, y: basePosition.y + declarerOffset };
             const initialPosition = getPlayerCardInitialPosition(
               index,
               basePosition,
@@ -666,7 +669,6 @@ export function MotionCardTable() {
                 suit={card.suit}
                 key={playerKeys[index]}
                 selected={selected}
-                pending={isPending}
                 animate={animatePosition}
                 initial={initialPosition}
                 skipInitialAnimation={!shouldAnimateFromDeck}
@@ -813,49 +815,45 @@ export function MotionCardTable() {
         </AnimatePresence>
 
         {/* Score Pile Labels - only show during playing phase when declarer is set and there are cards */}
-        {game.phase === "playing" && (
-          <>
-            {/* Player's team Score Label - always bottom right */}
-            <div
-              className={`score-pile-label player-pile`}
-              style={{
-                position: "absolute",
-                left: "50%",
-                top: "50%",
-                transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), calc(-50% + ${getPileAbsolutePosition(true).y}px))`,
-              }}
-            >
-              <span className="pile-label">Player</span>
-              <span className="pile-subtitle">
-                {playerIsDeclarer ? "DECLARER" : "DEFENDER"}
-              </span>
-              <span className="pile-score">
-                {playerIsDeclarer ? game.declarerScore : game.opponentScore}
-              </span>
-            </div>
+        {/* Player's team Score Label - always bottom right */}
+        <div
+          className={`score-pile-label player-pile`}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), calc(-50% + ${getPileAbsolutePosition(true).y}px))`,
+          }}
+        >
+          <span className="pile-label">Player</span>
+          <span className="pile-subtitle">
+            {playerIsDeclarer ? "DECLARER" : "DEFENDER"}
+          </span>
+          <span className="pile-score">
+            {playerIsDeclarer ? game.declarerScore : game.opponentScore}
+          </span>
+        </div>
 
-            {/* Opponent's team Score Label - always top right */}
-            <div
-              className={`score-pile-label opponent-pile`}
-              style={{
-                position: "absolute",
-                left: "50%",
-                top: "50%",
-                transform: `translate(calc(-50% + ${getPileAbsolutePosition(false).x}px), calc(-50% + ${getPileAbsolutePosition(false).y}px))`,
-              }}
-            >
-              <span className="pile-label">
-                {playerIsDeclarer ? "Opponents" : "Opponent"}
-              </span>
-              <span className="pile-subtitle">
-                {playerIsDeclarer ? "DEFENDERS" : "DECLARER"}
-              </span>
-              <span className="pile-score">
-                {playerIsDeclarer ? game.opponentScore : game.declarerScore}
-              </span>
-            </div>
-          </>
-        )}
+        {/* Opponent's team Score Label - always top right */}
+        <div
+          className={`score-pile-label opponent-pile`}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: `translate(calc(-50% + ${getPileAbsolutePosition(false).x}px), calc(-50% + ${getPileAbsolutePosition(false).y}px))`,
+          }}
+        >
+          <span className="pile-label">
+            {playerIsDeclarer ? "Opponents" : "Opponent"}
+          </span>
+          <span className="pile-subtitle">
+            {playerIsDeclarer ? "DEFENDERS" : "DECLARER"}
+          </span>
+          <span className="pile-score">
+            {playerIsDeclarer ? game.opponentScore : game.declarerScore}
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -28,7 +28,7 @@ type Server struct {
 func NewServer(database db.Database) *Server {
 	return &Server{
 		db:      database,
-		clients: NewClientManager(),
+		clients: NewClientManager(database),
 	}
 }
 

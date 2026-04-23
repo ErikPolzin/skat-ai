@@ -6,6 +6,7 @@ import {
   getSessionResults,
   type GameInfo,
   type Player,
+  type ServerPlayer,
 } from "../api/games";
 
 interface GameMessage {
@@ -57,10 +58,8 @@ export function useGame(
   // Transform server players (with position as index) to client players (with position field)
   const players = useMemo<(Player | null)[]>(
     () =>
-      state.players.map((p, index) =>
-        p ? { ...p, position: index } : null
-      ),
-    [state.players]
+      state.players.map((p, index) => (p ? { ...p, position: index } : null)),
+    [state.players],
   );
 
   // Derive player info from players array
@@ -92,14 +91,10 @@ export function useGame(
   const [error, setError] = useState<string | null>(null);
   const [sessionResults, setSessionResults] = useState<SessionGameResult[]>([]);
   const [gamesPlayed, setGamesPlayed] = useState(0);
-  const [offlinePlayers, setOfflinePlayers] = useState<Set<string>>(new Set());
   const messageIdCounter = useRef(0);
 
   const opponents = useMemo(
-    () =>
-      players.filter(
-        (p) => p && p.position !== state.declarer,
-      ) as Player[],
+    () => players.filter((p) => p && p.position !== state.declarer) as Player[],
     [state.declarer, players],
   );
 
@@ -204,6 +199,19 @@ export function useGame(
     }));
   }, []);
 
+  const optimisticallyPlayCard = useCallback((card: Card) => {
+    setGameInfo((prev) => ({
+      ...prev,
+      hand: (prev.hand || []).filter(
+        (c) => !(c.rank === card.rank && c.suit === card.suit),
+      ),
+      state: {
+        ...prev.state,
+        trick: [...(prev.state.trick || []), card],
+      },
+    }));
+  }, []);
+
   const addMessage = useCallback(
     (text: string, isError = false, playerPosition?: number) => {
       messageIdCounter.current += 1;
@@ -259,23 +267,19 @@ export function useGame(
     }
   };
 
-  const markPlayerOffline = useCallback((playerId: string) => {
-    setOfflinePlayers((prev) => new Set(prev).add(playerId));
-  }, []);
-
-  const markPlayerOnline = useCallback((playerId: string) => {
-    setOfflinePlayers((prev) => {
-      const next = new Set(prev);
-      next.delete(playerId);
-      return next;
-    });
-  }, []);
-
-  const isPlayerOffline = useCallback(
-    (playerId: string | undefined) => {
-      return playerId ? offlinePlayers.has(playerId) : false;
+  const updatePlayerOnlineStatus = useCallback(
+    (playerId: string, isOnline: boolean) => {
+      setGameInfo((prev) => ({
+        ...prev,
+        state: {
+          ...prev.state,
+          players: prev.state.players.map((p) =>
+            p && p.id === playerId ? { ...p, is_online: isOnline } : p
+          ) as [ServerPlayer | null, ServerPlayer | null, ServerPlayer | null],
+        },
+      }));
     },
-    [offlinePlayers],
+    []
   );
 
   return {
@@ -306,6 +310,7 @@ export function useGame(
     opponentScore: state.opponent_score,
     declarerPosition: state.declarer,
     bidValue: state.bid_value,
+    gameValue: state.game_value,
     listenerPassed: state.listener_passed,
     speakerPassed: state.speaker_passed,
     dealerPassed: state.dealer_passed,
@@ -346,15 +351,14 @@ export function useGame(
         state.opponent_score === 0),
     // Getters
     getRole,
-    isPlayerOffline,
     // Actions
     removeCardFromHand,
+    optimisticallyPlayCard,
     setGameInfo,
     addMessage,
     reset,
     addAgent,
-    markPlayerOffline,
-    markPlayerOnline,
+    updatePlayerOnlineStatus,
     // Session state
     sessionResults,
     gamesPlayed,

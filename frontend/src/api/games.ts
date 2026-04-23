@@ -5,6 +5,8 @@ export interface ServerPlayer {
   id: string;
   name: string;
   is_agent: boolean;
+  profile_icon: string;
+  is_online: boolean;
 }
 
 // Client player representation (with position derived from array index)
@@ -12,6 +14,8 @@ export interface Player {
   id: string;
   name: string;
   is_agent: boolean;
+  profile_icon: string;
+  is_online: boolean;
   position: number;
   card_count?: number;
 }

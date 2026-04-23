@@ -2,15 +2,17 @@ CREATE TABLE IF NOT EXISTS profiles (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     is_agent INTEGER NOT NULL DEFAULT 0,
+    profile_icon TEXT DEFAULT '',
+    is_online INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Insert initial agent profiles
-INSERT OR IGNORE INTO profiles (id, name, is_agent) VALUES
-    ('550e8400-e29b-41d4-a716-446655440001', 'Bill', 1),
-    ('550e8400-e29b-41d4-a716-446655440002', 'Dave', 1),
-    ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', 1);
+INSERT OR IGNORE INTO profiles (id, name, is_agent, profile_icon, is_online) VALUES
+    ('550e8400-e29b-41d4-a716-446655440001', 'Bill', 1, '/res/profile_icons/bill.svg', 1),
+    ('550e8400-e29b-41d4-a716-446655440002', 'Dave', 1, '/res/profile_icons/dave.svg', 1),
+    ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', 1, '/res/profile_icons/lisa.svg', 1);
 
 CREATE TABLE IF NOT EXISTS game_sessions (
     id TEXT PRIMARY KEY,
@@ -37,6 +39,7 @@ CREATE TABLE IF NOT EXISTS games (
     game_mode TEXT DEFAULT '',
     trump_suit INTEGER DEFAULT 0,
     bid_value INTEGER DEFAULT 0,
+    game_value INTEGER DEFAULT 0,
     listener_passed INTEGER DEFAULT 0,
     speaker_passed INTEGER DEFAULT 0,
     dealer_passed INTEGER DEFAULT 0,

@@ -309,9 +309,11 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 	agentProfile := availableProfiles[rand.Int()%len(availableProfiles)]
 
 	response, err := gs.AddPlayer(&game.PlayerState{
-		ID:      agentProfile.ID,
-		Name:    agentProfile.Name,
-		IsAgent: true,
+		ID:          agentProfile.ID,
+		Name:        agentProfile.Name,
+		IsAgent:     true,
+		ProfileIcon: agentProfile.ProfileIcon,
+		IsOnline:    true, // Agents are always online
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

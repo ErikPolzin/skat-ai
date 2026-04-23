@@ -6,7 +6,6 @@ export default function Card({
   suit,
   index,
   selected,
-  pending,
   animate,
   className,
   skipInitialAnimation = false,
@@ -19,7 +18,6 @@ export default function Card({
   suit?: string;
   index: number;
   selected?: boolean;
-  pending?: boolean;
   animate: TargetAndTransition;
   className?: string;
   skipInitialAnimation?: boolean;
@@ -39,7 +37,7 @@ export default function Card({
   }, [index, skipInitialAnimation]);
 
   // Calculate flip delay: wait for deal animation to complete, then stagger flips
-  const dealDuration = skipInitialAnimation ? 0 : (index * 0.1 + 0.5);
+  const dealDuration = skipInitialAnimation ? 0 : index * 0.1 + 0.5;
   const flipDelay = skipInitialAnimation ? 0 : dealDuration + index * 0.05;
 
   return (
@@ -48,7 +46,9 @@ export default function Card({
       animate={{ rotateY: faceDown ? 0 : 180, ...(animate || {}) }}
       initial={{
         rotateY: 0, // Always start face down for initial animation
-        ...(typeof initialProp === 'object' && initialProp !== null ? initialProp : {})
+        ...(typeof initialProp === "object" && initialProp !== null
+          ? initialProp
+          : {}),
       }} // Merge with passed initial
       transition={{
         rotateY: {
@@ -67,9 +67,11 @@ export default function Card({
           stiffness: 100,
           delay: hasDealt ? 0 : index * 0.1, // Only stagger initial deal
         },
-        ...(typeof transitionProp === 'object' && transitionProp !== null ? transitionProp : {}),
+        ...(typeof transitionProp === "object" && transitionProp !== null
+          ? transitionProp
+          : {}),
       }}
-      className={`${className || "motion-card"} ${selected ? "selected" : ""} ${pending ? "pending" : ""}`}
+      className={`${className || "motion-card"} ${selected ? "selected" : ""}`}
       style={{
         zIndex: 100 + index,
         transformStyle: "preserve-3d",
@@ -86,7 +88,7 @@ export default function Card({
       >
         {/* Card back (visible when rotateY is 0) */}
         <img
-          src="/res/back.svg"
+          src="/res/cards/back.svg"
           alt="card back"
           className="card-back"
           style={{
@@ -96,7 +98,7 @@ export default function Card({
         />
         {/* Card face (visible when rotateY is 180) */}
         <img
-          src={`/res/${rank}${suit}.svg`}
+          src={`/res/cards/${rank}${suit}.svg`}
           alt={`${rank} of ${suit}`}
           className="card-face"
           style={{

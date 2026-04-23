@@ -1,4 +1,4 @@
-import { useRef, useCallback, useSyncExternalStore } from "react";
+import { useRef, useCallback, useSyncExternalStore, useMemo } from "react";
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -164,12 +164,15 @@ export function useWebSocket() {
 
   const isConnected = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  return {
-    connect,
-    disconnect,
-    sendMessage,
-    isConnected,
-    addMessageHandler,
-  };
+  return useMemo(
+    () => ({
+      connect,
+      disconnect,
+      sendMessage,
+      isConnected,
+      addMessageHandler,
+    }),
+    [connect, disconnect, sendMessage, isConnected, addMessageHandler],
+  );
 }
 export type SkatWebSocket = ReturnType<typeof useWebSocket>;

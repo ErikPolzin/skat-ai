@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"skat/logger"
+	"skat/server/db"
 
 	"github.com/gorilla/websocket"
 )
@@ -13,12 +14,14 @@ import (
 type ClientManager struct {
 	clients map[string]*Client // profileID -> Client
 	mutex   sync.RWMutex
+	db      db.Database
 }
 
 // NewClientManager creates a new client manager
-func NewClientManager() *ClientManager {
+func NewClientManager(database db.Database) *ClientManager {
 	return &ClientManager{
 		clients: make(map[string]*Client),
+		db:      database,
 	}
 }
 
@@ -38,6 +41,10 @@ func (cm *ClientManager) RegisterClient(profileID string, conn *websocket.Conn) 
 		existingClient.conn = conn
 		existingClient.send = make(chan []byte, 256)
 		logger.Info("Updated connection for profile", "profile_id", profileID)
+
+		// Update online status in database
+		cm.updateOnlineStatus(profileID, true)
+
 		return existingClient
 	}
 
@@ -49,6 +56,10 @@ func (cm *ClientManager) RegisterClient(profileID string, conn *websocket.Conn) 
 	}
 	cm.clients[profileID] = client
 	logger.Info("Registered new client for profile", "profile_id", profileID)
+
+	// Update online status in database
+	cm.updateOnlineStatus(profileID, true)
+
 	return client
 }
 
@@ -70,6 +81,9 @@ func (cm *ClientManager) RemoveClient(profileID string) {
 		close(client.send)
 		delete(cm.clients, profileID)
 		logger.Info("Removed client for profile", "profile_id", profileID)
+
+		// Update online status in database
+		cm.updateOnlineStatus(profileID, false)
 	}
 }
 
@@ -127,4 +141,27 @@ func (cm *ClientManager) GetOnlinePlayerIDs() []string {
 		playerIDs = append(playerIDs, profileID)
 	}
 	return playerIDs
+}
+
+// updateOnlineStatus updates the online status of a profile in the database
+// This should be called with the mutex already locked
+func (cm *ClientManager) updateOnlineStatus(profileID string, isOnline bool) {
+	if cm.db == nil {
+		return
+	}
+
+	// Get the profile from database
+	profile, err := cm.db.GetProfile(profileID)
+	if err != nil {
+		logger.Warning("Failed to get profile for online status update", "profile_id", profileID, "error", err)
+		return
+	}
+
+	// Update the online status
+	profile.IsOnline = isOnline
+	if err := cm.db.SaveProfile(*profile); err != nil {
+		logger.Warning("Failed to update online status", "profile_id", profileID, "is_online", isOnline, "error", err)
+	} else {
+		logger.Info("Updated online status", "profile_id", profileID, "is_online", isOnline)
+	}
 }

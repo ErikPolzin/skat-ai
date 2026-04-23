@@ -2,15 +2,17 @@ CREATE TABLE IF NOT EXISTS profiles (
     id VARCHAR(255) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     is_agent BOOLEAN NOT NULL DEFAULT FALSE,
+    profile_icon VARCHAR(255) DEFAULT '',
+    is_online BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     last_seen TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- Insert initial agent profiles
-INSERT INTO profiles (id, name, is_agent) VALUES
-    ('550e8400-e29b-41d4-a716-446655440001', 'Bill', TRUE),
-    ('550e8400-e29b-41d4-a716-446655440002', 'Dave', TRUE),
-    ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', TRUE)
+INSERT INTO profiles (id, name, is_agent, profile_icon, is_online) VALUES
+    ('550e8400-e29b-41d4-a716-446655440001', 'Bill', TRUE, '/res/profile_icons/bill.svg', TRUE),
+    ('550e8400-e29b-41d4-a716-446655440002', 'Dave', TRUE, '/res/profile_icons/dave.svg', TRUE),
+    ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', TRUE, '/res/profile_icons/lisa.svg', TRUE)
 ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS game_sessions (
@@ -38,6 +40,7 @@ CREATE TABLE IF NOT EXISTS games (
     game_mode VARCHAR(50) DEFAULT '',
     trump_suit INT DEFAULT 0,
     bid_value INT DEFAULT 0,
+    game_value INT DEFAULT 0,
     listener_passed BOOLEAN DEFAULT FALSE,
     speaker_passed BOOLEAN DEFAULT FALSE,
     dealer_passed BOOLEAN DEFAULT FALSE,

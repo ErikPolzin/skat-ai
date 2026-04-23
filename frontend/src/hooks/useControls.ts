@@ -14,6 +14,9 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
 
   const playCard = useCallback((card: CardType) => {
     if (game.isMyTurn && !game.isBiddingPhase && !isLoading) {
+      // Optimistically update the UI before server responds
+      game.optimisticallyPlayCard(card);
+
       setIsLoading(true);
       const actionId = websocket.sendMessage(
         "play_card",
@@ -30,7 +33,7 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
       );
       pendingActionRef.current = actionId;
     }
-  }, [game.isMyTurn, game.isBiddingPhase, game.gameId, isLoading, websocket]);
+  }, [game, isLoading, websocket]);
 
   const pickUpSkat = useCallback(() => {
     if (game.isSkatExchange && game.isDeclarer && !game.hasPickedUpSkat && !isLoading) {

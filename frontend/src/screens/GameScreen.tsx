@@ -6,14 +6,10 @@ import {
   Typography,
   Paper,
   CircularProgress,
-  Modal,
-  Chip,
   Alert,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
-import HeartBrokenIcon from "@mui/icons-material/HeartBroken";
 import WarningIcon from "@mui/icons-material/Warning";
 import { GameProvider, useGameContext } from "../context/GameContext";
 import { MotionCardTable } from "../components/MotionCardTable";
@@ -24,18 +20,6 @@ function GameScreenContent() {
   const navigate = useNavigate();
   const theme = useTheme();
   const isWideScreen = useMediaQuery(theme.breakpoints.up("md")); // 900px+
-
-  const handlePlayAgain = () => {
-    navigate("/");
-  };
-
-  const handlePlayNextGame = async () => {
-    try {
-      await game.controls.playNextGame();
-    } catch (error) {
-      console.error("Failed to start next game:", error);
-    }
-  };
 
   const handleRetryLoad = () => {
     window.location.reload();
@@ -149,138 +133,6 @@ function GameScreenContent() {
           players={game.players}
         />
       )}
-
-      {/* Game Over Modal */}
-      <Modal
-        open={game.gameOver}
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Paper
-          elevation={6}
-          sx={{
-            p: 4,
-            maxWidth: 500,
-            width: "90%",
-            textAlign: "center",
-            borderRadius: 2,
-          }}
-        >
-          <Box sx={{ mb: 3 }}>
-            {game.playerWon ? (
-              <EmojiEventsIcon sx={{ fontSize: 80, color: "gold", mb: 2 }} />
-            ) : (
-              <HeartBrokenIcon
-                sx={{ fontSize: 80, color: "error.main", mb: 2 }}
-              />
-            )}
-            <Typography variant="h3" sx={{ fontWeight: "bold" }}>
-              {game.playerWon ? "YOU WON!" : "YOU LOST"}
-            </Typography>
-          </Box>
-
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              DECLARER: {game.declarerScore}
-            </Typography>
-            <Typography variant="h6" gutterBottom>
-              OPPONENTS: {game.opponentScore}
-            </Typography>
-
-            {game.isSchneider && !game.isNull && (
-              <Chip
-                label={game.isSchwarz ? "SCHWARZ!" : "SCHNEIDER!"}
-                color="secondary"
-                sx={{ mt: 2 }}
-              />
-            )}
-
-            {game.isNull && (
-              <Typography variant="body1" sx={{ mt: 2 }}>
-                {game.declarerScore === 0
-                  ? "Perfect null game - no tricks taken!"
-                  : `Null game failed - ${game.declarerScore} trick${
-                      game.declarerScore > 1 ? "s" : ""
-                    } taken`}
-              </Typography>
-            )}
-          </Box>
-
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="body2" color="text.secondary">
-              GAME MODE: {game.gameMode || "1"}
-              {game.trumpSuit && ` (${game.trumpSuit})`}
-            </Typography>
-          </Box>
-
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: "bold" }}>
-              Declarer
-            </Typography>
-            <Typography>
-              {game.declarer ? (
-                <>
-                  {game.declarer.name}
-                  {game.declarer.is_agent && " (AI)"}
-                  {game.declarer.id === game.playerId && " (You)"}
-                </>
-              ) : (
-                "Unknown"
-              )}
-            </Typography>
-
-            <Typography variant="subtitle2" sx={{ mt: 2, fontWeight: "bold" }}>
-              Opponents
-            </Typography>
-            {game.opponents.map((player) => (
-              <Typography key={player.id}>
-                {player.name}
-                {player.is_agent && " (AI)"}
-                {player.id === game.playerId && " (You)"}
-              </Typography>
-            ))}
-          </Box>
-
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {game.canPlayNext && (
-              <Button
-                variant="contained"
-                color="primary"
-                size="large"
-                fullWidth
-                onClick={handlePlayNextGame}
-                disabled={!game.controls.isConnected || game.controls.isLoading}
-                startIcon={
-                  game.controls.isLoading ? (
-                    <CircularProgress size={20} />
-                  ) : null
-                }
-              >
-                {game.controls.isLoading
-                  ? "Loading..."
-                  : `Play Another Game (${game.gamesPlayed + 1}/10)`}
-              </Button>
-            )}
-            <Button
-              variant={game.canPlayNext ? "outlined" : "contained"}
-              color="primary"
-              size="large"
-              fullWidth
-              onClick={handlePlayAgain}
-            >
-              Back to Lobby
-            </Button>
-            {!game.controls.isConnected && (
-              <Typography variant="caption" color="warning.main" align="center">
-                Disconnected from server
-              </Typography>
-            )}
-          </Box>
-        </Paper>
-      </Modal>
 
       {/* Message display for game actions */}
       <Box

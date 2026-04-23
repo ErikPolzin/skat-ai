@@ -61,37 +61,48 @@ func (d *TursoDatabase) InitSchema() error {
 
 func (d *TursoDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	var profile ProfileEntry
-	var isAgent int
+	var isAgent, isOnline int
 	err := d.DB.QueryRow(`
-		SELECT id, name, is_agent FROM profiles WHERE id = ?
-	`, profileID).Scan(&profile.ID, &profile.Name, &isAgent)
+		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE id = ?
+	`, profileID).Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
 	}
 	profile.IsAgent = isAgent != 0
+	profile.IsOnline = isOnline != 0
 	return &profile, err
 }
 
 func (d *TursoDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
 	var profile ProfileEntry
-	var isAgent int
+	var isAgent, isOnline int
 	err := d.DB.QueryRow(`
-		SELECT id, name, is_agent FROM profiles WHERE name = ?
-	`, name).Scan(&profile.ID, &profile.Name, &isAgent)
+		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE name = ?
+	`, name).Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
 	}
 	profile.IsAgent = isAgent != 0
+	profile.IsOnline = isOnline != 0
 	return &profile, err
 }
 
 func (d *TursoDatabase) SaveProfile(profile ProfileEntry) error {
+	isAgent := 0
+	if profile.IsAgent {
+		isAgent = 1
+	}
+	isOnline := 0
+	if profile.IsOnline {
+		isOnline = 1
+	}
 	_, err := d.DB.Exec(
-		`INSERT INTO profiles (id, name, is_agent)
-		 	VALUES (?, ?, ?)
+		`INSERT INTO profiles (id, name, is_agent, profile_icon, is_online)
+		 	VALUES (?, ?, ?, ?, ?)
 		 	ON CONFLICT (id) DO UPDATE SET
-		 	id = excluded.id, name = excluded.name, is_agent = excluded.is_agent`,
-		profile.ID, profile.Name, profile.IsAgent,
+		 	id = excluded.id, name = excluded.name, is_agent = excluded.is_agent,
+			profile_icon = excluded.profile_icon, is_online = excluded.is_online`,
+		profile.ID, profile.Name, isAgent, profile.ProfileIcon, isOnline,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save profile: %w", err)
@@ -138,7 +149,7 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		`SELECT g.id, g.session_id, gss.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.listener_passed, g.speaker_passed, g.dealer_passed
+			g.bid_value, g.game_value, g.listener_passed, g.speaker_passed, g.dealer_passed
 		FROM games g
 		JOIN game_sessions gss ON g.session_id = gss.id
 		WHERE g.id = ?`,
@@ -147,7 +158,7 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
+		&gs.BidValue, &gs.GameValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
 	}
@@ -181,7 +192,7 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.listener_passed, g.speaker_passed, g.dealer_passed
+			g.bid_value, g.game_value, g.listener_passed, g.speaker_passed, g.dealer_passed
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE gs.code = ?
@@ -192,7 +203,7 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
+		&gs.BidValue, &gs.GameValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
 	}
@@ -230,10 +241,10 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			id, session_id, game_number, phase, skat, trick,
 			trick_starter, trick_winner, current_player,
 			declarer, declarer_score, opponent_score,
-			game_mode, trump_suit, bid_value,
+			game_mode, trump_suit, bid_value, game_value,
 			listener_passed, speaker_passed, dealer_passed,
 			created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT (id) DO UPDATE SET
 			session_id = excluded.session_id, game_number = excluded.game_number,
@@ -243,14 +254,14 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			declarer = excluded.declarer, declarer_score = excluded.declarer_score,
 			opponent_score = excluded.opponent_score,
 			game_mode = excluded.game_mode, trump_suit = excluded.trump_suit,
-			bid_value = excluded.bid_value,
+			bid_value = excluded.bid_value, game_value = excluded.game_value,
 			listener_passed = excluded.listener_passed, speaker_passed = excluded.speaker_passed,
 			dealer_passed = excluded.dealer_passed,
 			updated_at = CURRENT_TIMESTAMP`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
 		gs.Declarer, gs.DeclarerScore, gs.OpponentScore,
-		gs.Mode, gs.TrumpSuit, gs.BidValue,
+		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.GameValue,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed,
 	)
 	if err != nil {
@@ -314,7 +325,7 @@ func (d *TursoDatabase) DeleteGame(gameID string) error {
 
 func (d *TursoDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 	rows, err := d.DB.Query(`
-		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent
+		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent, pr.profile_icon, pr.is_online
 		FROM players pl
 		JOIN profiles pr ON pr.id = pl.profile_id
 		WHERE pl.game_id = ?
@@ -329,9 +340,9 @@ func (d *TursoDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error)
 		var handString string
 		var position int
 		var ps game.PlayerState
-		var isAgent int
+		var isAgent, isOnline int
 		if err := rows.Scan(
-			&handString, &position, &ps.ID, &ps.Name, &isAgent); err != nil {
+			&handString, &position, &ps.ID, &ps.Name, &isAgent, &ps.ProfileIcon, &isOnline); err != nil {
 			return [3]*game.PlayerState{}, fmt.Errorf("failed to scan player: %w", err)
 		}
 		ps.Hand, err = game.ParseCards(handString)
@@ -339,6 +350,7 @@ func (d *TursoDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error)
 			return [3]*game.PlayerState{}, fmt.Errorf("cannot parse hand: %s", handString)
 		}
 		ps.IsAgent = isAgent != 0
+		ps.IsOnline = isOnline != 0
 		if position >= 0 && position < 3 {
 			players[position] = &ps
 		}
@@ -440,7 +452,7 @@ func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.Pla
 
 func (d *TursoDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	rows, err := d.DB.Query(`
-		SELECT id, name, is_agent FROM profiles WHERE is_agent = 1
+		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE is_agent = 1
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agent profiles: %w", err)
@@ -450,9 +462,12 @@ func (d *TursoDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	var profiles []ProfileEntry
 	for rows.Next() {
 		var profile ProfileEntry
-		if err := rows.Scan(&profile.ID, &profile.Name, &profile.IsAgent); err != nil {
+		var isAgent, isOnline int
+		if err := rows.Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline); err != nil {
 			return nil, fmt.Errorf("failed to scan agent profile: %w", err)
 		}
+		profile.IsAgent = isAgent != 0
+		profile.IsOnline = isOnline != 0
 		profiles = append(profiles, profile)
 	}
 	return profiles, nil

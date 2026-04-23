@@ -58,7 +58,7 @@ func (t *Trainer) RunEpisode(episodeNum int) {
 		}
 
 		move := currentAgent.SelectMove(g, validMoves)
-		_, err := g.PlayCard("", move)
+		_, err := g.PlayCard(move)
 		if err != nil {
 			fmt.Printf("Error playing card: %v\n", err)
 			break
@@ -129,7 +129,7 @@ func (t *Trainer) Evaluate(numGames int) {
 				move = t.randomAgent.SelectMove(g, validMoves)
 			}
 
-			g.PlayCard("", move)
+			g.PlayCard(move)
 
 			// Resolve trick if complete
 			if len(g.Trick) == 3 {

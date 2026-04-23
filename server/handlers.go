@@ -195,7 +195,6 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 				// Use the stored name if no new name provided
 				playerName = profile.Name
 			}
-			logger.Debug("Retrieved profile", "player_id", playerID, "player_name", playerName)
 		} else {
 			// Profile doesn't exist, create it
 			profile := db.ProfileEntry{
@@ -236,9 +235,6 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 	}
 	// Fetch profile
 	profile, profile_err := s.db.GetProfile(playerID)
-	if profile_err == nil {
-		logger.Debug("Returning player", "player_id", playerID, "player_name", profile.Name)
-	}
 	if profile_err != nil {
 		http.Error(w, profile_err.Error(), http.StatusNotFound)
 		return

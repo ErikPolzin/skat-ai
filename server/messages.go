@@ -23,11 +23,43 @@ func (s *Server) handleMessage(client *Client, msg *Message) {
 		time.Sleep(2 * time.Second)
 	}
 
+	// Validate game and current player for action messages
+	if msg.Type != "start_next_game" {
+		gameID, ok := msg.Data["game_id"].(string)
+		if !ok {
+			client.SendMessage(&Message{
+				Type:     "error",
+				Data:     map[string]any{"message": "game_id required"},
+				ActionID: msg.ActionID,
+			})
+			return
+		}
+
+		gs, err := s.db.GetGameByID(gameID)
+		if err != nil {
+			client.SendMessage(&Message{
+				Type:     "error",
+				Data:     map[string]any{"message": err.Error()},
+				ActionID: msg.ActionID,
+			})
+			return
+		}
+
+		currentPlayer := gs.GetCurrentPlayer()
+		if currentPlayer.ID != client.profileID {
+			client.SendMessage(&Message{
+				Type:     "error",
+				Data:     map[string]any{"message": "not your turn"},
+				ActionID: msg.ActionID,
+			})
+			return
+		}
+	}
+
 	switch msg.Type {
 	case "deal":
 		s.handleDealMessage(client, msg)
 	case "play_card":
-		logger.Debug("Handling play_card message", "data", msg.Data)
 		s.handlePlayCardMessage(client, msg)
 	case "bid":
 		s.handleBidMessage(client, msg)
@@ -117,25 +149,10 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 
 // handleDealMessage processes game deal events
 func (s *Server) handleDealMessage(client *Client, msg *Message) {
-	gameID, ok := msg.Data["game_id"].(string)
-	if !ok {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": "game_id required"},
-		})
-		return
-	}
-
-	gs, err := s.db.GetGameByID(gameID)
-	if err != nil {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": err.Error()},
-		})
-		return
-	}
+	gameID := msg.Data["game_id"].(string)
+	gs, _ := s.db.GetGameByID(gameID)
 	currentPlayer := gs.CurrentPlayer
-	response, err := gs.Deal(client.profileID)
+	response, err := gs.Deal()
 	if err == nil {
 		s.db.SaveGame(*gs)
 		s.clients.BroadcastStateChange(gs, response, currentPlayer, msg.ActionID)
@@ -151,23 +168,8 @@ func (s *Server) handleDealMessage(client *Client, msg *Message) {
 
 // handlePlayCardMessage processes card play requests
 func (s *Server) handlePlayCardMessage(client *Client, msg *Message) {
-	gameID, ok := msg.Data["game_id"].(string)
-	if !ok {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": "game_id required"},
-		})
-		return
-	}
-
-	gs, err := s.db.GetGameByID(gameID)
-	if err != nil {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": err.Error()},
-		})
-		return
-	}
+	gameID := msg.Data["game_id"].(string)
+	gs, _ := s.db.GetGameByID(gameID)
 
 	// Parse card (sent as string "rank.suit")
 	cardStr, ok := msg.Data["card"].(string)
@@ -189,7 +191,7 @@ func (s *Server) handlePlayCardMessage(client *Client, msg *Message) {
 	}
 
 	currentPlayer := gs.CurrentPlayer
-	response, err := gs.PlayCard(client.profileID, card)
+	response, err := gs.PlayCard(card)
 	if err == nil {
 		s.db.SaveGame(*gs)
 		s.maybeSaveGameResults(gs) // Save player results if game is complete
@@ -206,23 +208,8 @@ func (s *Server) handlePlayCardMessage(client *Client, msg *Message) {
 
 // handleBidMessage processes bidding
 func (s *Server) handleBidMessage(client *Client, msg *Message) {
-	gameID, ok := msg.Data["game_id"].(string)
-	if !ok {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": "game_id required"},
-		})
-		return
-	}
-
-	gs, err := s.db.GetGameByID(gameID)
-	if err != nil {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": err.Error()},
-		})
-		return
-	}
+	gameID := msg.Data["game_id"].(string)
+	gs, _ := s.db.GetGameByID(gameID)
 
 	// Parse bid action (frontend sends "accept" field as boolean)
 	accept, ok := msg.Data["accept"].(bool)
@@ -235,7 +222,7 @@ func (s *Server) handleBidMessage(client *Client, msg *Message) {
 	}
 
 	currentPlayer := gs.CurrentPlayer
-	response, err := gs.Bid(client.profileID, accept)
+	response, err := gs.Bid(accept)
 	if err == nil {
 		s.db.SaveGame(*gs)
 		s.clients.BroadcastStateChange(gs, response, currentPlayer, msg.ActionID)
@@ -251,23 +238,8 @@ func (s *Server) handleBidMessage(client *Client, msg *Message) {
 
 // handleChooseGameMessage processes game mode selection
 func (s *Server) handleChooseGameMessage(client *Client, msg *Message) {
-	gameID, ok := msg.Data["game_id"].(string)
-	if !ok {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": "game_id required"},
-		})
-		return
-	}
-
-	gs, err := s.db.GetGameByID(gameID)
-	if err != nil {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": err.Error()},
-		})
-		return
-	}
+	gameID := msg.Data["game_id"].(string)
+	gs, _ := s.db.GetGameByID(gameID)
 
 	// Parse game mode and trump suit (sent as strings)
 	modeStr, ok := msg.Data["mode"].(string)
@@ -299,7 +271,7 @@ func (s *Server) handleChooseGameMessage(client *Client, msg *Message) {
 	}
 
 	currentPlayer := gs.CurrentPlayer
-	response, err := gs.DeclareGame(client.profileID, mode, trump)
+	response, err := gs.DeclareGame(mode, trump)
 	if err == nil {
 		s.db.SaveGame(*gs)
 		s.clients.BroadcastStateChange(gs, response, currentPlayer, msg.ActionID)
@@ -315,23 +287,8 @@ func (s *Server) handleChooseGameMessage(client *Client, msg *Message) {
 
 // handleSkatDecisionMessage processes the declarer's decision to pick up skat or play hand
 func (s *Server) handleSkatDecisionMessage(client *Client, msg *Message) {
-	gameID, ok := msg.Data["game_id"].(string)
-	if !ok {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": "game_id required"},
-		})
-		return
-	}
-
-	gs, err := s.db.GetGameByID(gameID)
-	if err != nil {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": err.Error()},
-		})
-		return
-	}
+	gameID := msg.Data["game_id"].(string)
+	gs, _ := s.db.GetGameByID(gameID)
 
 	pickup, ok := msg.Data["pickup"].(bool)
 	if !ok {
@@ -343,7 +300,7 @@ func (s *Server) handleSkatDecisionMessage(client *Client, msg *Message) {
 	}
 
 	currentPlayer := gs.CurrentPlayer
-	response, err := gs.SkatDecision(client.profileID, pickup)
+	response, err := gs.SkatDecision(pickup)
 	if err == nil {
 		s.db.SaveGame(*gs)
 		s.clients.BroadcastStateChange(gs, response, currentPlayer, msg.ActionID)
@@ -359,23 +316,8 @@ func (s *Server) handleSkatDecisionMessage(client *Client, msg *Message) {
 
 // handleDiscardCardsMessage processes the declarer's card discard after picking up skat
 func (s *Server) handleDiscardCardsMessage(client *Client, msg *Message) {
-	gameID, ok := msg.Data["game_id"].(string)
-	if !ok {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": "game_id required"},
-		})
-		return
-	}
-
-	gs, err := s.db.GetGameByID(gameID)
-	if err != nil {
-		client.SendMessage(&Message{
-			Type: "error",
-			Data: map[string]any{"message": err.Error()},
-		})
-		return
-	}
+	gameID := msg.Data["game_id"].(string)
+	gs, _ := s.db.GetGameByID(gameID)
 
 	// Parse the two cards to discard (sent as string "rank.suit-rank.suit")
 	cardsStr, ok := msg.Data["cards"].(string)
@@ -397,7 +339,7 @@ func (s *Server) handleDiscardCardsMessage(client *Client, msg *Message) {
 	}
 
 	currentPlayer := gs.CurrentPlayer
-	response, err := gs.Discard(client.profileID, cards[0], cards[1])
+	response, err := gs.Discard(cards[0], cards[1])
 	if err == nil {
 		s.db.SaveGame(*gs)
 		s.clients.BroadcastStateChange(gs, response, currentPlayer, msg.ActionID)

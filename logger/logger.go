@@ -16,6 +16,7 @@ type Logger struct {
 	serviceName string
 	local       bool
 	disabled    bool
+	minLevel    logging.Severity
 }
 
 var defaultLogger *Logger
@@ -23,10 +24,27 @@ var defaultLogger *Logger
 // Initialize sets up the logger. Call this once at application startup.
 // If projectID is empty or GCP credentials are not available, falls back to local logging.
 // Set CLOUD_LOGGING_ENABLED=true to enable GCP Cloud Logging (requires GCP_PROJECT_ID).
+// Set LOG_LEVEL to one of: DEBUG, INFO, WARNING, ERROR (defaults to INFO).
 func Initialize(serviceName string) (*Logger, error) {
 	l := &Logger{
 		serviceName: serviceName,
 		disabled:    false,
+		minLevel:    logging.Info,
+	}
+
+	// Parse LOG_LEVEL environment variable
+	logLevel := os.Getenv("LOG_LEVEL")
+	switch logLevel {
+	case "DEBUG":
+		l.minLevel = logging.Debug
+	case "INFO":
+		l.minLevel = logging.Info
+	case "WARNING":
+		l.minLevel = logging.Warning
+	case "ERROR":
+		l.minLevel = logging.Error
+	default:
+		l.minLevel = logging.Info
 	}
 
 	projectID := os.Getenv("GCP_PROJECT_ID")
@@ -110,8 +128,8 @@ func (l *Logger) Printf(format string, args ...interface{}) {
 
 // log is the internal logging function
 func (l *Logger) log(severity logging.Severity, msg string, fields ...interface{}) {
-	// Skip logging if disabled
-	if l.disabled {
+	// Skip logging if disabled or below minimum level
+	if l.disabled || severity < l.minLevel {
 		return
 	}
 

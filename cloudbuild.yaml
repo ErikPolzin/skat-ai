@@ -24,7 +24,6 @@ steps:
       - '--set-env-vars=DATABASE_URL=${_DATABASE_URL}'
       - '--set-env-vars=CORS_ORIGIN=${_CORS_ORIGIN}'
       - '--set-env-vars=GCS_BUCKET=${_GCS_BUCKET}'
-      - '--set-env-vars=GCS_QTABLE_PATH=qtables/bidding_latest.gob'
 
 images:
   - 'gcr.io/$PROJECT_ID/skat-server:$COMMIT_SHA'

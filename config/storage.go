@@ -30,7 +30,7 @@ func LoadFromEnv() *StorageConfig {
 
 		// GCS configuration
 		GCSBucket:     os.Getenv("GCS_BUCKET"),
-		GCSObjectPath: getEnv("GCS_QTABLE_PATH", "qtables/bidding_latest.gob"),
+		GCSObjectPath: getEnv("GCS_QTABLE_PATH", "qtables/bidding_qtable.gob"),
 		UseGCS:        os.Getenv("GCS_BUCKET") != "",
 		UseBinary:     strings.ToLower(getEnv("QTABLE_FORMAT", "binary")) == "binary",
 	}

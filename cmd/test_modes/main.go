@@ -53,7 +53,7 @@ func main() {
 			}
 
 			move := mcts.SelectMove(g, validMoves)
-			if _, err := g.PlayCard("", move); err != nil {
+			if _, err := g.PlayCard(move); err != nil {
 				fmt.Printf("  ✗ Error: %v\n", err)
 				break
 			}

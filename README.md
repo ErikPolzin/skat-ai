@@ -167,7 +167,7 @@ The agent loads Q-tables from GCS in production and local files in development.
 export GCS_BUCKET="your-bucket-name"
 
 # Upload the Q-table
-gsutil cp bidding_qtable.gob gs://${GCS_BUCKET}/qtables/bidding_latest.gob
+gsutil cp bidding_qtable.gob gs://${GCS_BUCKET}/qtables/bidding_qtable.gob
 ```
 
 #### 2. Deploy to Cloud Run
@@ -188,7 +188,7 @@ Check the Cloud Run logs for:
 
 **How it works:**
 - **Development (local)**: Agent loads from `bidding_qtable.gob` file
-- **Production (Cloud Run)**: Agent loads from `gs://${GCS_BUCKET}/qtables/bidding_latest.gob`
+- **Production (Cloud Run)**: Agent loads from `gs://${GCS_BUCKET}/qtables/bidding_qtable.gob`
 
 The agent automatically detects which environment based on the `GCS_BUCKET` environment variable.
 

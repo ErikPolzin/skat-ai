@@ -134,34 +134,26 @@ func (c Cards) GameValue(mode GameMode, trumpSuit Suit) int {
 	return baseValue * (matadors + 1)
 }
 
-// EstimateBestGameValue returns the highest achievable game value for this hand
-func (c Cards) EstimateBestGameValue() int {
-	maxValue := 0
+// CountGamesPlayable counts how many games can be played given a certain game value
+func (c Cards) CountGamesPlayable(gameValue int) int {
+	count := 0
 
-	// Try Grand
-	grandValue := c.GameValue(ModeGrand, NoSuit)
-	if grandValue > maxValue {
-		maxValue = grandValue
+	// Check Grand
+	if c.GameValue(ModeGrand, NoSuit) >= gameValue {
+		count++
 	}
 
-	// Try each suit
+	// Check each suit
 	for _, suit := range []Suit{Diamonds, Hearts, Spades, Clubs} {
-		// Count cards in this suit
-		suitCount := 0
-		for _, card := range c {
-			if card.Suit == suit && card.Rank != Jack {
-				suitCount++
-			}
-		}
-
-		// Only consider suits where we have decent length (3+ cards)
-		if suitCount >= 3 {
-			suitValue := c.GameValue(ModeSuit, suit)
-			if suitValue > maxValue {
-				maxValue = suitValue
-			}
+		if c.GameValue(ModeSuit, suit) >= gameValue {
+			count++
 		}
 	}
 
-	return maxValue
+	// Check Null (fixed value of 23)
+	if 23 >= gameValue {
+		count++
+	}
+
+	return count
 }

@@ -100,7 +100,7 @@ jobs:
             --cpu 1 \
             --max-instances 10 \
             --min-instances 0 \
-            --set-env-vars "DATABASE_URL=${DATABASE_URL},CORS_ORIGIN=https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app,ENV=production"
+            --set-env-vars "DATABASE_URL=${DATABASE_URL},CORS_ORIGIN=https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app,LOG_LEVEL=INFO,GCS_BUCKET=skat-ai-qtables,CLOUD_LOGGING_ENABLED=true"
 
           # Get the service URL
           echo "url=$(gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)')" >> $GITHUB_OUTPUT

@@ -254,3 +254,125 @@ func (sa *SkatAgent) GetQTableStats() map[string]interface{} {
 		"epsilon":            sa.Epsilon,
 	}
 }
+
+// SaveGameChoiceQTableBinary saves the game choice Q-table in binary format
+func (sa *SkatAgent) SaveGameChoiceQTableBinary(filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer file.Close()
+
+	data := struct {
+		QTable  map[int]map[int]float64
+		Epsilon float64
+		Alpha   float64
+	}{
+		QTable:  sa.gameChoiceQTable,
+		Epsilon: sa.GameChoiceEpsilon,
+		Alpha:   sa.gameChoiceAlpha,
+	}
+
+	encoder := gob.NewEncoder(file)
+	if err := encoder.Encode(data); err != nil {
+		return fmt.Errorf("failed to gob encode: %w", err)
+	}
+	return nil
+}
+
+// LoadGameChoiceQTableBinary loads the game choice Q-table from a binary gob file
+func (sa *SkatAgent) LoadGameChoiceQTableBinary(filename string) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	var data struct {
+		QTable  map[int]map[int]float64
+		Epsilon float64
+		Alpha   float64
+	}
+
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&data); err != nil {
+		return fmt.Errorf("failed to gob decode: %w", err)
+	}
+
+	sa.gameChoiceQTable = data.QTable
+	sa.GameChoiceEpsilon = data.Epsilon
+	sa.gameChoiceAlpha = data.Alpha
+
+	return nil
+}
+
+// SaveGameChoiceQTableToGCS saves the game choice Q-table to Google Cloud Storage
+func (sa *SkatAgent) SaveGameChoiceQTableToGCS(ctx context.Context, bucketName, objectName string) error {
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create GCS client: %w", err)
+	}
+	defer client.Close()
+
+	bucket := client.Bucket(bucketName)
+	obj := bucket.Object(objectName)
+	writer := obj.NewWriter(ctx)
+
+	data := struct {
+		QTable  map[int]map[int]float64
+		Epsilon float64
+		Alpha   float64
+	}{
+		QTable:  sa.gameChoiceQTable,
+		Epsilon: sa.GameChoiceEpsilon,
+		Alpha:   sa.gameChoiceAlpha,
+	}
+
+	encoder := gob.NewEncoder(writer)
+	if err := encoder.Encode(data); err != nil {
+		writer.Close()
+		return fmt.Errorf("failed to encode game choice Q-table: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("failed to close GCS writer: %w", err)
+	}
+
+	return nil
+}
+
+// LoadGameChoiceQTableFromGCS loads the game choice Q-table from Google Cloud Storage
+func (sa *SkatAgent) LoadGameChoiceQTableFromGCS(ctx context.Context, bucketName, objectName string) error {
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create GCS client: %w", err)
+	}
+	defer client.Close()
+
+	bucket := client.Bucket(bucketName)
+	obj := bucket.Object(objectName)
+	reader, err := obj.NewReader(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create GCS reader: %w", err)
+	}
+	defer reader.Close()
+
+	var data struct {
+		QTable  map[int]map[int]float64
+		Epsilon float64
+		Alpha   float64
+	}
+
+	decoder := gob.NewDecoder(reader)
+	if err := decoder.Decode(&data); err != nil {
+		return fmt.Errorf("failed to gob decode: %w", err)
+	}
+
+	sa.gameChoiceQTable = data.QTable
+	sa.GameChoiceEpsilon = data.Epsilon
+	if data.Alpha > 0 {
+		sa.gameChoiceAlpha = data.Alpha
+	}
+
+	return nil
+}

@@ -1,7 +1,6 @@
 .claude/
 bin/
-bidding_qtable.json
-bidding_qtable.gob
+*.gob
 .env
 gcp_key.json
 firebase_key.json

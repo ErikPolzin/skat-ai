@@ -99,19 +99,19 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 		g.CurrentPlayer = declarer
 
 		// Declarer picks up skat
-		if _, err := g.SkatDecision(g.Players[declarer].ID, true); err != nil {
+		if _, err := g.SkatDecision(true); err != nil {
 			panic(fmt.Sprintf("SkatDecision error: %v", err))
 		}
 
 		// Declarer discards 2 cards
 		card1, card2 := bt.getCardsToDiscard(g, declarer)
-		if _, err := g.Discard(g.Players[declarer].ID, card1, card2); err != nil {
+		if _, err := g.Discard(card1, card2); err != nil {
 			panic(fmt.Sprintf("Discard error: %v", err))
 		}
 
 		// Now in PhaseDeclarerChoice - choose game mode
 		mode, trump := bt.biddingAgents[declarer].ChooseGame(g)
-		if _, err := g.DeclareGame(g.Players[declarer].ID, mode, trump); err != nil {
+		if _, err := g.DeclareGame(mode, trump); err != nil {
 			// Agent bid too high - treat as automatic loss with heavy penalty
 			declarerWon := false
 			gameValue := g.BidValue
@@ -138,7 +138,7 @@ func (bt *BiddingTrainer) TrainBidding(episodes int) {
 			}
 
 			move := bt.mctsAgents[g.CurrentPlayer].SelectMove(g, validMoves)
-			if _, err := g.PlayCard("", move); err != nil {
+			if _, err := g.PlayCard(move); err != nil {
 				panic(fmt.Sprintf("PlayCard error: %v", err))
 			}
 
@@ -228,7 +228,7 @@ func (bt *BiddingTrainer) runBidding(g *game.GameState) (game.GamePosition, int)
 		accept := currentAgent.Bid(g)
 
 		// Make the bid in the game
-		if _, err := g.Bid(g.Players[g.CurrentPlayer].ID, accept); err != nil {
+		if _, err := g.Bid(accept); err != nil {
 			panic(fmt.Sprintf("Bid error: %v", err))
 		}
 

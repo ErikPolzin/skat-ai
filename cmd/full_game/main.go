@@ -88,7 +88,7 @@ func main() {
 				break
 			}
 			move := mctsAgents[g.CurrentPlayer].SelectMove(g, validMoves)
-			g.PlayCard("", move)
+			g.PlayCard(move)
 		}
 
 		// Record results

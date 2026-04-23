@@ -25,12 +25,7 @@ func (gs *GameState) AddPlayer(player *PlayerState) (string, error) {
 }
 
 // HandleMove processes a move from a human player
-func (gs *GameState) PlayCard(playerID string, card Card) (string, error) {
-	currentPlayer := gs.GetCurrentPlayer()
-	if playerID != "" && currentPlayer.ID != playerID {
-		return "", fmt.Errorf("not your turn")
-	}
-
+func (gs *GameState) PlayCard(card Card) (string, error) {
 	valid := gs.GetValidMoves()
 	found := false
 	for _, c := range valid {
@@ -86,6 +81,8 @@ func (gs *GameState) ResolveTrick() (string, error) {
 			gs.Phase = PhaseComplete // Game ends immediately - declarer loses
 			gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
 			gs.Trick = nil
+			// Update GameValue with the final calculated value
+			gs.GameValue = gs.CalculateGameValue()
 			declarer := gs.GetPlayerByPosition(gs.Declarer)
 			return fmt.Sprintf("%s lost the null game", declarer.Name), nil // Exit early - game is over
 		}
@@ -111,6 +108,8 @@ func (gs *GameState) ResolveTrick() (string, error) {
 		if gs.Mode != ModeNull && gs.Declarer >= 0 {
 			gs.DeclarerScore += gs.Skat[0].Value() + gs.Skat[1].Value()
 		}
+		// Update GameValue with the final calculated value (including schneider/schwarz)
+		gs.GameValue = gs.CalculateGameValue()
 	}
 
 	// Trick was completed, broadcast using state diff
@@ -118,12 +117,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 }
 
 // HandleBid processes a bidding action
-func (gs *GameState) Bid(playerID string, accept bool) (string, error) {
-	currentPlayer := gs.GetCurrentPlayer()
-	if currentPlayer.ID != playerID {
-		return "", fmt.Errorf("not your turn to bid")
-	}
-
+func (gs *GameState) Bid(accept bool) (string, error) {
 	if gs.Phase != PhaseBidding {
 		return "", fmt.Errorf("not in bidding phase")
 	}
@@ -208,25 +202,15 @@ func (gs *GameState) Bid(playerID string, accept bool) (string, error) {
 		}
 	}
 
-	logger.Debug("Player bid", "player_name", currentPlayer.Name, "accept", accept, "bid value", gs.BidValue)
 	return action, nil
 }
 
 // HandleDeal processes the deal action from the dealer before bidding
-func (gs *GameState) Deal(playerID string) (string, error) {
-
-	// Check if the player is the dealer
-	dealer := gs.GetPlayerByPosition(0)
-	if dealer == nil || dealer.ID != playerID {
-		return "", fmt.Errorf("only the dealer can deal")
-	}
-
+func (gs *GameState) Deal() (string, error) {
 	// Check if we're in dealing phase
 	if gs.Phase != PhaseDealing {
 		return "", fmt.Errorf("not in dealing phase")
 	}
-
-	logger.Debug("Dealer dealing cards", "dealer_name", dealer.Name)
 
 	// Actually deal the cards
 	deck := NewDeck()
@@ -260,12 +244,7 @@ func (gs *GameState) Deal(playerID string) (string, error) {
 }
 
 // HandleGameDeclaration processes the declarer's game mode choice
-func (gs *GameState) DeclareGame(playerID string, mode GameMode, trumpSuit Suit) (string, error) {
-	declarer := gs.GetCurrentPlayer()
-	if declarer.ID != playerID {
-		return "", fmt.Errorf("only declarer can declare game")
-	}
-
+func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit) (string, error) {
 	if gs.Phase != PhaseDeclarerChoice {
 		return "", fmt.Errorf("not in declarer choice phase")
 	}
@@ -292,7 +271,6 @@ func (gs *GameState) DeclareGame(playerID string, mode GameMode, trumpSuit Suit)
 		gs.CurrentPlayer = 1
 	}
 
-	logger.Info("Declarer declared game", "declarer_name", declarer.Name, "mode", string(mode), "trump_suit", trumpSuit.String(), "value", gameValue)
 	return fmt.Sprintf("%s %s", mode, trumpSuit), nil
 }
 
@@ -305,17 +283,7 @@ func (gs *GameState) calculatePotentialGameValue() int {
 }
 
 // HandleSkatDecision processes the declarer's decision to pick up skat or play hand
-func (gs *GameState) SkatDecision(playerID string, pickup bool) (string, error) {
-
-	declarer := gs.GetCurrentPlayer()
-	if declarer.ID != playerID {
-		return "", fmt.Errorf("only declarer can make skat decision")
-	}
-
-	if gs.Phase != PhaseSkatExchange {
-		return "", fmt.Errorf("not in skat exchange phase")
-	}
-
+func (gs *GameState) SkatDecision(pickup bool) (string, error) {
 	if gs.Phase != PhaseSkatExchange {
 		return "", fmt.Errorf("not in skat exchange phase")
 	}
@@ -324,27 +292,16 @@ func (gs *GameState) SkatDecision(playerID string, pickup bool) (string, error) 
 		// Add skat cards to declarer's hand
 		gs.Players[gs.Declarer].Hand = append(gs.Players[gs.Declarer].Hand, gs.Skat[0], gs.Skat[1])
 		// Stay in PhaseSkatExchange so player can discard
-		logger.Debug("Declarer picked up skat", "declarer_name", declarer.Name)
 		return "Pick up skat", nil
 	} else {
 		// Play hand - skip to game declaration
 		gs.Phase = PhaseDeclarerChoice
-		logger.Debug("Declarer playing the hand", "declarer_name", declarer.Name)
 		return "Playing the hand", nil
 	}
 }
 
 // HandleDiscard processes the declarer's card discard after picking up skat
-func (gs *GameState) Discard(playerID string, card1, card2 Card) (string, error) {
-	declarer := gs.GetCurrentPlayer()
-	if declarer.ID != playerID {
-		return "", fmt.Errorf("only declarer can discard cards")
-	}
-
-	if gs.Phase != PhaseSkatExchange {
-		return "", fmt.Errorf("not in skat exchange phase")
-	}
-
+func (gs *GameState) Discard(card1, card2 Card) (string, error) {
 	if gs.Phase != PhaseSkatExchange {
 		return "", fmt.Errorf("not in skat exchange phase")
 	}
@@ -381,7 +338,6 @@ func (gs *GameState) Discard(playerID string, card1, card2 Card) (string, error)
 	// Move to game declaration phase
 	gs.Phase = PhaseDeclarerChoice
 
-	logger.Debug("Declarer discarded cards to skat", "declarer_name", declarer.Name)
 	return "Discarded cards to skat", nil
 }
 

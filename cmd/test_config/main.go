@@ -73,5 +73,4 @@ func main() {
 	fmt.Println("  QTABLE_JSON_PATH=bidding_qtable.json         # JSON file path")
 	fmt.Println("  QTABLE_BINARY_PATH=bidding_qtable.gob        # Binary file path")
 	fmt.Println("  GCS_BUCKET=my-bucket                         # Enable GCS storage")
-	fmt.Println("  GCS_QTABLE_PATH=qtables/bidding_latest.gob   # GCS object path")
 }

@@ -34,34 +34,67 @@ func getAgentForPlayer(player *game.PlayerState) Agent {
 		// Try to load from GCS first (production), then local file (development)
 		gcsBucket := os.Getenv("GCS_BUCKET")
 		gcsPath := os.Getenv("GCS_QTABLE_PATH")
+		if gcsPath == "" {
+			gcsPath = "qtables/bidding_qtable.gob"
+		}
 
-		if gcsBucket != "" && gcsPath != "" {
+		if gcsBucket != "" {
 			// Load from GCS (production)
-			logger.Info("Loading Q-table from GCS", "bucket", gcsBucket, "path", gcsPath)
+			logger.Info("Loading bidding Q-table from GCS", "bucket", gcsBucket, "path", gcsPath)
 			ctx := context.Background()
 			if err := sharedAgent.LoadQTableFromGCS(ctx, gcsBucket, gcsPath, true); err != nil {
-				logger.Error("Could not load Q-table from GCS", "error", err)
-				logger.Warning("Agent will use untrained behavior with heuristics")
+				logger.Error("Could not load bidding Q-table from GCS", "error", err)
+				logger.Warning("Agent will use untrained bidding behavior with heuristics")
 			} else {
-				logger.Info("Loaded Q-table from GCS", "states", sharedAgent.GetQTableSize())
+				logger.Info("Loaded bidding Q-table from GCS", "states", sharedAgent.GetQTableSize())
 			}
 			// Always disable exploration in production
 			sharedAgent.Epsilon = 0.0
+
+			// Load game choice Q-table from GCS
+			gameChoicePath := os.Getenv("GCS_GAME_CHOICE_PATH")
+			if gameChoicePath == "" {
+				gameChoicePath = "qtables/game_choice_qtable.gob"
+			}
+			logger.Info("Loading game choice Q-table from GCS", "bucket", gcsBucket, "path", gameChoicePath)
+			if err := sharedAgent.LoadGameChoiceQTableFromGCS(ctx, gcsBucket, gameChoicePath); err != nil {
+				logger.Error("Could not load game choice Q-table from GCS", "error", err)
+				logger.Warning("Agent will use heuristic game choice")
+			} else {
+				logger.Info("Loaded game choice Q-table from GCS")
+			}
+			// Always disable exploration in production
+			sharedAgent.GameChoiceEpsilon = 0.0
 		} else {
 			// Load from local file (development)
 			qtablePath := "bidding_qtable.gob"
 			if path := os.Getenv("QTABLE_BINARY_PATH"); path != "" {
 				qtablePath = path
 			}
-			logger.Info("Loading Q-table from local file", "path", qtablePath)
+			logger.Info("Loading bidding Q-table from local file", "path", qtablePath)
 			if err := sharedAgent.LoadQTableBinary(qtablePath); err != nil {
-				logger.Error("Could not load Q-table from local file", "path", qtablePath, "error", err)
-				logger.Warning("Agent will use untrained behavior with heuristics")
+				logger.Error("Could not load bidding Q-table from local file", "path", qtablePath, "error", err)
+				logger.Warning("Agent will use untrained bidding behavior with heuristics")
 			} else {
-				logger.Info("Loaded Q-table from local file", "path", qtablePath, "states", sharedAgent.GetQTableSize())
+				logger.Info("Loaded bidding Q-table from local file", "path", qtablePath, "states", sharedAgent.GetQTableSize())
 			}
 			// Always disable exploration in production
 			sharedAgent.Epsilon = 0.0
+
+			// Load game choice Q-table from local file
+			gameChoicePath := "game_choice_qtable.gob"
+			if path := os.Getenv("GAME_CHOICE_QTABLE_PATH"); path != "" {
+				gameChoicePath = path
+			}
+			logger.Info("Loading game choice Q-table from local file", "path", gameChoicePath)
+			if err := sharedAgent.LoadGameChoiceQTableBinary(gameChoicePath); err != nil {
+				logger.Error("Could not load game choice Q-table from local file", "path", gameChoicePath, "error", err)
+				logger.Warning("Agent will use heuristic game choice")
+			} else {
+				logger.Info("Loaded game choice Q-table from local file")
+			}
+			// Always disable exploration in production
+			sharedAgent.GameChoiceEpsilon = 0.0
 		}
 	})
 
@@ -111,7 +144,7 @@ func NextAction(gs *game.GameState) Action {
 
 func generateAgentDealAction(gs *game.GameState, player *game.PlayerState) Action {
 	return func() (string, error) {
-		return gs.Deal(player.ID)
+		return gs.Deal()
 	}
 }
 
@@ -125,37 +158,24 @@ func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerStat
 	// Check if agent has already picked up skat
 	if len(player.Hand) == 12 {
 		// Agent has picked up skat, needs to discard 2 cards
-		// Simple strategy: discard 2 lowest value non-jack cards
-		type cardValue struct {
-			card  game.Card
-			value int
-		}
+		// Use game-aware discard strategy: pre-decide game mode, then discard optimally
 
-		cards := make([]cardValue, len(player.Hand))
-		for i, card := range player.Hand {
-			val := card.Value()
-			if card.Rank == game.Jack {
-				val = 100 // Never discard jacks
-			}
-			cards[i] = cardValue{card, val}
-		}
+		// Get shared agent instance for game mode decision
+		agentInstance := getAgentForPlayer(player).(*SkatAgent)
 
-		// Sort by value
-		for i := 0; i < len(cards)-1; i++ {
-			for j := i + 1; j < len(cards); j++ {
-				if cards[i].value > cards[j].value {
-					cards[i], cards[j] = cards[j], cards[i]
-				}
-			}
-		}
+		// Agent will use Q-learning to choose game mode
+		mode, trumpSuit := agentInstance.ChooseGame(gs)
+
+		// Now choose optimal discard for that game mode
+		card1, card2 := agentInstance.ChooseSkatDiscard(player.Hand, mode, trumpSuit)
 
 		return func() (string, error) {
-			return gs.Discard(player.ID, cards[0].card, cards[1].card)
+			return gs.Discard(card1, card2)
 		}
 	} else {
 		// Agent hasn't picked up skat yet - always pick it up
 		return func() (string, error) {
-			return gs.SkatDecision(player.ID, true)
+			return gs.SkatDecision(true)
 		}
 	}
 }
@@ -184,7 +204,7 @@ func generateAgentDeclarationAction(gs *game.GameState, player *game.PlayerState
 		trump = game.Clubs
 	}
 	return func() (string, error) {
-		return gs.DeclareGame(player.ID, game.ModeSuit, trump)
+		return gs.DeclareGame(game.ModeSuit, trump)
 	}
 }
 
@@ -205,7 +225,7 @@ func generateAgentPlayAction(gs *game.GameState, player *game.PlayerState) Actio
 	move := agent.SelectMove(gs, validMoves)
 
 	return func() (string, error) {
-		return gs.PlayCard(player.ID, move)
+		return gs.PlayCard(move)
 	}
 }
 
@@ -227,6 +247,6 @@ func generateAgentBidAction(gs *game.GameState, player *game.PlayerState) Action
 	logger.Debug("AI choosing bid", "player", player.Name, "accept", accept)
 
 	return func() (string, error) {
-		return gs.Bid(player.ID, accept)
+		return gs.Bid(accept)
 	}
 }

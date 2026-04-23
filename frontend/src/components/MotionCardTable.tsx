@@ -6,7 +6,7 @@ import React, {
   useRef,
 } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { useMediaQuery, useTheme } from "@mui/material";
+import { Button, useMediaQuery, useTheme } from "@mui/material";
 import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
 import { Card as CardType } from "../api/games";
 import "./MotionCardTable.css";
@@ -500,7 +500,10 @@ export function MotionCardTable() {
               className={`avatar-circle ${!game.controls.isConnected || !game.topPlayer.is_online ? "offline" : ""}`}
             >
               {game.topPlayer.profile_icon ? (
-                <img src={game.topPlayer.profile_icon} alt={game.topPlayer.name} />
+                <img
+                  src={game.topPlayer.profile_icon}
+                  alt={game.topPlayer.name}
+                />
               ) : (
                 <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
               )}
@@ -539,7 +542,10 @@ export function MotionCardTable() {
               className={`avatar-circle ${!game.controls.isConnected || !game.leftPlayer.is_online ? "offline" : ""}`}
             >
               {game.leftPlayer.profile_icon ? (
-                <img src={game.leftPlayer.profile_icon} alt={game.leftPlayer.name} />
+                <img
+                  src={game.leftPlayer.profile_icon}
+                  alt={game.leftPlayer.name}
+                />
               ) : (
                 <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
               )}
@@ -615,14 +621,12 @@ export function MotionCardTable() {
 
           {/* Deal Button */}
           {showDealButton && (
-            <motion.button
+            <Button
+              variant="contained"
               key="deal-button"
               className="deal-button"
               onClick={game.controls.deal}
               disabled={!game.controls.isConnected || game.controls.isLoading}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              whileTap={{ scale: 0.95 }}
               style={{
                 opacity:
                   !game.controls.isConnected || game.controls.isLoading
@@ -635,7 +639,7 @@ export function MotionCardTable() {
               }}
             >
               {game.controls.isLoading ? "Dealing..." : "Deal Cards"}
-            </motion.button>
+            </Button>
           )}
 
           {/* Player Hand - only show after deal started */}

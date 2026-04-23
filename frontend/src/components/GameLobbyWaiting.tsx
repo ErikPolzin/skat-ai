@@ -102,25 +102,7 @@ export function GameLobbyWaiting() {
             Waiting for {playersNeeded} more player
             {playersNeeded > 1 ? "s" : ""}...
           </Typography>
-          <Button
-            variant="contained"
-            onClick={() => game.addAgent()}
-            sx={{
-              px: { xs: 2.5, sm: 3 },
-              py: { xs: 1.25, sm: 1.5 },
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              fontSize: { xs: "14px", sm: "16px" },
-              fontWeight: 600,
-              borderRadius: "12px",
-              mt: 1,
-              width: { xs: "100%", sm: "auto" },
-              "&:hover": {
-                background: "linear-gradient(135deg, #5568d3 0%, #63408a 100%)",
-                transform: "translateY(-2px)",
-                boxShadow: "0 4px 12px rgba(102, 126, 234, 0.3)",
-              },
-            }}
-          >
+          <Button variant="contained" onClick={() => game.addAgent()}>
             Add AI Player
           </Button>
         </>

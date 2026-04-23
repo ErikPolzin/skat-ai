@@ -91,21 +91,7 @@
 
 .deal-button {
   position: absolute;
-  padding: 12px 24px;
-  font-size: 18px;
-  font-weight: 600;
-  color: white;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 12px;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-  cursor: pointer;
-  z-index: 100;
-  margin-top: 200px;
-}
-
-.deal-button:hover {
-  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  top: 100px;
 }
 
 .opponent-card {
@@ -273,14 +259,20 @@
 }
 
 .mode-value {
-  color: #667eeaa5;
+  color: transparent;
   font-size: 140px;
   font-weight: bold;
   height: 160px;
+  background: linear-gradient(135deg, #495fc1 0%, #663696 100%);
+  background-clip: text;
+  background-size: 200px 200px;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.4);
 }
 
 .mode-title {
-  color: #667eeaa5;
+  color: #b1b9e1;
   font-size: 32px;
   font-weight: bold;
 }
@@ -515,12 +507,6 @@
     font-size: 22px;
   }
 
-  .deal-button {
-    padding: 10px 20px;
-    font-size: 16px;
-    margin-top: 150px;
-  }
-
   .score-pile-label {
     width: 80px;
     height: 120px;
@@ -540,12 +526,6 @@
 @media (max-width: 600px) {
   .motion-card-table {
     min-height: 500px;
-  }
-
-  .deal-button {
-    padding: 8px 16px;
-    font-size: 14px;
-    margin-top: 120px;
   }
 
   .score-pile-label {

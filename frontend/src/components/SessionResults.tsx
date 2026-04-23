@@ -83,7 +83,6 @@ export function SessionResults({
           justifyContent: "space-between",
           px: 3,
           minHeight: "62px",
-          bgcolor: "#2a2a2a",
         }}
       >
         <Typography variant="subtitle1" sx={{ color: "white" }}>
@@ -105,7 +104,7 @@ export function SessionResults({
 
       {/* Player Cumulative Scores Table */}
       <TableContainer
-        sx={{ flexGrow: 1, overflowY: "auto", bgcolor: "#2a2a2a" }}
+        sx={{ flexGrow: 1, overflowY: "auto" }}
       >
         <Table
           size="small"
@@ -116,7 +115,6 @@ export function SessionResults({
             <TableRow>
               <TableCell
                 sx={{
-                  bgcolor: "#3a3a3a",
                   color: "rgba(255, 255, 255, 0.9)",
                   fontWeight: "bold",
                   borderBottom: "2px solid rgba(255,255,255,0.1)",
@@ -129,7 +127,6 @@ export function SessionResults({
                   key={id}
                   align="center"
                   sx={{
-                    bgcolor: "#3a3a3a",
                     color:
                       id === playerId ? "#bb86fc" : "rgba(255, 255, 255, 0.9)",
                     fontWeight: "bold",
@@ -226,7 +223,6 @@ export function SessionResults({
             borderRadius: 0,
             borderBottomLeftRadius: drawerOpen ? "20px" : 0,
             borderBottomRightRadius: drawerOpen ? "20px" : 0,
-            bgcolor: "#2a2a2a",
             zIndex: 1000,
             transition: "height 0.3s ease, border-radius 0.3s ease",
             cursor: !drawerOpen ? "pointer" : "default",
@@ -249,7 +245,6 @@ export function SessionResults({
         display: "flex",
         flexDirection: "column",
         borderRadius: "20px",
-        bgcolor: "#2a2a2a",
         overflow: "hidden",
       }}
     >

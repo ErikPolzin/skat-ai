@@ -22,17 +22,22 @@ import UsernameScreen from "./screens/UsernameScreen";
 import LobbyScreen from "./screens/LobbyScreen";
 import GameScreen from "./screens/GameScreen";
 
-// Create MUI theme
+// Create MUI theme with dark mode
 const theme = createTheme({
   palette: {
+    mode: "dark",
     primary: {
-      main: "#3498db",
+      main: "#be47d6",
     },
     secondary: {
-      main: "#5a6c7d",
+      main: "#7ca8d0",
     },
     error: {
       main: "#e74c3c",
+    },
+    background: {
+      default: "#1a1a2e",
+      paper: "#16213e",
     },
   },
 });

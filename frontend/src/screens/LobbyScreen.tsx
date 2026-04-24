@@ -26,6 +26,7 @@ import {
   type GameSession,
 } from "../api/games";
 import { useProfileStore } from "../stores/profileStore";
+import ActiveGames from "../components/ActiveGames";
 
 interface LobbyScreenProps {
   username: string;
@@ -52,7 +53,7 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
   const fetchGames = async () => {
     try {
       setIsFetching(true);
-      const data = await getGames();
+      const data = await getGames(profilePlayerId || undefined);
       setGames(data);
     } catch (error) {
       console.error("Failed to fetch games:", error);
@@ -69,7 +70,7 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
 
       if (!currentGameCode) {
         // Create a new game and get the code
-        const createData = await createGame();
+        const createData = await createGame(profilePlayerId || undefined);
         currentGameCode = createData.code;
       }
 
@@ -268,6 +269,8 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
             </Box>
           </Box>
 
+          <ActiveGames playerId={profilePlayerId} />
+
           <Box
             sx={{
               minHeight: "200px",
@@ -319,39 +322,14 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
             ) : (
               <List>
                 {games.map((game) => (
-                  <ListItem
-                    key={game.id}
-                    sx={{
-                      border: 1,
-                      borderColor: "divider",
-                      borderRadius: 1,
-                      mb: 1,
-                    }}
-                  >
+                  <ListItem key={game.id}>
                     <ListItemText
-                      primary={
-                        <Box
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1,
-                          }}
-                        >
-                          <Typography
-                            variant="subtitle1"
-                            sx={{ fontWeight: "bold" }}
-                          >
-                            {game.code}
-                          </Typography>
-                          <Typography color="text.secondary">
-                            {game.player_count}/3 players
-                          </Typography>
-                        </Box>
-                      }
+                      primary={game.code}
+                      secondary={`${game.player_count}/3 players`}
                     />
                     <ListItemSecondaryAction>
                       <Button
-                        variant="outlined"
+                        variant="text"
                         onClick={() => handleQuickJoin(game.code)}
                         disabled={isLoading}
                       >

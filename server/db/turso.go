@@ -289,12 +289,15 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 }
 
 func (d *TursoDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
-	// Query for games where not all 3 player positions are filled
+	// Query for games in waiting_for_players phase
+	// Count actual players dynamically instead of relying on stale player_count column
 	rows, err := d.DB.Query(`
-		SELECT gs.id, gs.code, gs.game_id, gs.player_count, gs.created_at, gs.ended_at
+		SELECT gs.id, gs.code, gs.game_id, COALESCE(COUNT(p.profile_id), 0) as player_count, gs.created_at, gs.ended_at
 		FROM game_sessions gs
 		JOIN games g ON g.id = gs.game_id
-		WHERE gs.player_count < 3 AND g.phase = 'waiting_for_players'
+		LEFT JOIN players p ON p.game_id = g.id
+		WHERE g.phase = 'waiting_for_players'
+		GROUP BY gs.id, gs.code, gs.game_id, gs.created_at, gs.ended_at
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list open games: %w", err)

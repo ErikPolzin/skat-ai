@@ -78,6 +78,16 @@ export interface GameSession {
   ended_at?: string;
 }
 
+export interface ActiveGame {
+  id: string;
+  code: string;
+  session_id: string;
+  game_number: number;
+  player_count: number;
+  phase: string;
+  player_names: string[];
+}
+
 export async function fetchGameState(
   gameId: string,
   playerId?: string,
@@ -95,14 +105,21 @@ export async function fetchGameState(
   return response.json();
 }
 
-export async function createGame(): Promise<{ game_id: string; code: string }> {
-  const response = await fetch(`${getApiUrl()}/api/games`, {
+export async function createGame(
+  playerId?: string,
+): Promise<{ game_id: string; code: string }> {
+  const url = playerId
+    ? `${getApiUrl()}/api/games?player_id=${playerId}`
+    : `${getApiUrl()}/api/games`;
+
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });
 
   if (!response.ok) {
-    throw new Error("Failed to create game");
+    const errorText = await response.text();
+    throw new Error(errorText || "Failed to create game");
   }
 
   return response.json();
@@ -160,8 +177,27 @@ export async function addAIAgent(gameId: string): Promise<void> {
   }
 }
 
-export async function getGames(): Promise<GameSession[]> {
-  const response = await fetch(`${getApiUrl()}/api/games`);
+export async function getGames(
+  excludePlayerId?: string,
+): Promise<GameSession[]> {
+  const url = excludePlayerId
+    ? `${getApiUrl()}/api/games?exclude_player_id=${excludePlayerId}`
+    : `${getApiUrl()}/api/games`;
+  const response = await fetch(url);
+  const data = await response.json();
+  return data || [];
+}
+
+export async function getActiveGames(playerId: string): Promise<ActiveGame[]> {
+  const response = await fetch(
+    `${getApiUrl()}/api/players/${playerId}/active_games`,
+  );
+
+  if (!response.ok) {
+    console.error("Failed to fetch active games");
+    return [];
+  }
+
   const data = await response.json();
   return data || [];
 }

@@ -50,6 +50,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/profiles", s.handleCreateProfile).Methods("POST")
 	api.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
 	api.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
+	api.HandleFunc("/players/{id}/active_games", s.handleGetActiveGames).Methods("GET")
 
 	// Serve React build files (must be last - catch-all)
 	spa := http.FileServer(http.Dir("./frontend/build"))
@@ -94,18 +95,60 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListOpenSessions returns all open games (accepting players)
+// Optionally filters out games where the specified player is already playing
 func (s *Server) handleListOpenSessions(w http.ResponseWriter, r *http.Request) {
+	// Get optional player_id from query params to filter out games they're already in
+	playerID := r.URL.Query().Get("exclude_player_id")
+
 	games, err := s.db.ListOpenSessions()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Filter out games where the player is already playing
+	if playerID != "" {
+		activeGames, err := s.db.GetActiveGamesByPlayer(playerID)
+		if err == nil {
+			// Create a map of active game IDs for quick lookup
+			activeGameIDs := make(map[string]bool)
+			for _, ag := range activeGames {
+				activeGameIDs[ag.ID] = true
+			}
+
+			// Filter out games where player is already playing
+			filteredGames := []game.GameSessionState{}
+			for _, g := range games {
+				if !activeGameIDs[g.GameID] {
+					filteredGames = append(filteredGames, g)
+				}
+			}
+			games = filteredGames
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(games)
 }
 
 // handleCreateGame creates a new game session
 func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
+	// Get optional player_id from query params to check if they can create a game
+	playerID := r.URL.Query().Get("player_id")
+
+	// Check if player is already in an active game before creating
+	if playerID != "" {
+		activeGames, err := s.db.GetActiveGamesByPlayer(playerID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to check active games: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if len(activeGames) > 0 {
+			http.Error(w, "player is already in an active game", http.StatusConflict)
+			return
+		}
+	}
+
 	// Create empty session
 	gs := game.NewGame()
 
@@ -263,6 +306,17 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, profile_err.Error(), http.StatusNotFound)
 		return
 	}
+
+	// Check if player is already in an active game
+	activeGames, err := s.db.GetActiveGamesByPlayer(playerID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to check active games: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if len(activeGames) > 0 {
+		http.Error(w, "player is already in an active game", http.StatusConflict)
+		return
+	}
 	// Fetch game
 	gs, game_err := s.db.GetGameBySessionCode(code)
 	if game_err != nil {
@@ -378,6 +432,54 @@ func (s *Server) handleGetPlayerHistory(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
+}
+
+// handleGetActiveGames returns active games for a player
+func (s *Server) handleGetActiveGames(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	playerID := vars["id"]
+
+	games, err := s.db.GetActiveGamesByPlayer(playerID)
+	if err != nil {
+		logger.Warning("Failed to get active games", "player_id", playerID, "error", err)
+		// Return empty array on error rather than failing
+		games = []game.GameState{}
+	}
+
+	// Transform to session-like response for consistency
+	type ActiveGameResponse struct {
+		ID          string   `json:"id"`
+		Code        string   `json:"code"`
+		SessionID   string   `json:"session_id"`
+		GameNumber  int      `json:"game_number"`
+		PlayerCount int      `json:"player_count"`
+		Phase       string   `json:"phase"`
+		PlayerNames []string `json:"player_names"`
+	}
+
+	response := make([]ActiveGameResponse, len(games))
+	for i, gs := range games {
+		playerCount := 0
+		playerNames := []string{}
+		for _, p := range gs.Players {
+			if p != nil {
+				playerCount++
+				playerNames = append(playerNames, p.Name)
+			}
+		}
+		response[i] = ActiveGameResponse{
+			ID:          gs.ID,
+			Code:        string(gs.Code),
+			SessionID:   gs.SessionID,
+			GameNumber:  gs.GameNumber,
+			PlayerCount: playerCount,
+			Phase:       string(gs.Phase),
+			PlayerNames: playerNames,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleGetSessionResults returns all game results for a session

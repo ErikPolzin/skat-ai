@@ -1,58 +1,79 @@
 package game
 
-// CalculateGameValue calculates the final game value according to Skat rules
-func (gs *GameState) CalculateGameValue() int {
-	// Base value depends on game mode
-	baseValue := 0
+// Result calculates and returns the complete game result including all scoring breakdown
+func (gs *GameState) Result() GameResult {
+	result := GameResult{}
 
+	// Base value depends on game mode
 	switch gs.Mode {
 	case ModeGrand:
-		baseValue = 24
+		result.BaseValue = 24
 	case ModeSuit:
 		// Suit game base values
 		switch gs.TrumpSuit {
 		case Diamonds:
-			baseValue = 9
+			result.BaseValue = 9
 		case Hearts:
-			baseValue = 10
+			result.BaseValue = 10
 		case Spades:
-			baseValue = 11
+			result.BaseValue = 11
 		case Clubs:
-			baseValue = 12
+			result.BaseValue = 12
 		}
 	case ModeNull:
 		// Null games have fixed values
-		return 23 // Basic null
+		result.BaseValue = 23
+		result.Matadors = 0
+		result.Multiplier = 1
+		result.DeclarerWon = gs.DeclarerScore == 0
+		result.IsSchneider = false
+		result.IsSchwarz = false
+		result.Value = 23
+		if !result.DeclarerWon {
+			result.Value = -46 // Null lost is doubled
+		}
+		return result
 	}
 
-	// Calculate matadors (consecutive jacks from top that declarer has/doesn't have)
-	matadorCount := gs.countMatadors()
+	// Use stored matadors value (set when game type declared)
+	matadorCount := gs.Matadors
+	if matadorCount < 0 {
+		matadorCount = -matadorCount // Use absolute value for multiplier
+	}
 
 	// Calculate multiplier: 1 (game) + matadors + schneider + schwarz
-	multiplier := 1 + matadorCount // Always at least 1 for "game"
+	result.Multiplier = 1 + matadorCount
 
-	// Add multipliers for schneider and schwarz
-	declarerWon, schneider, schwarz := gs.GetGameResult()
+	// Determine game outcome
+	result.DeclarerWon, result.IsSchneider, result.IsSchwarz = gs.GetGameResult()
 
-	if schneider {
-		multiplier++ // +1 for schneider
+	if result.IsSchneider {
+		result.Multiplier++
 	}
-	if schwarz {
-		multiplier++ // +1 for schwarz
+	if result.IsSchwarz {
+		result.Multiplier++
 	}
 
-	gameValue := baseValue * multiplier
+	result.Matadors = gs.Matadors
+	gameValue := result.BaseValue * result.Multiplier
 
 	// If declarer lost, game value is doubled and negative
-	if !declarerWon {
-		return -2 * gameValue
+	if !result.DeclarerWon {
+		result.Value = -2 * gameValue
+	} else {
+		result.Value = gameValue
 	}
 
-	return gameValue
+	return result
 }
 
-// countMatadors counts consecutive jacks from Club Jack down that declarer has (with) or doesn't have (without)
-func (gs *GameState) countMatadors() int {
+// CalculateGameValue calculates the final game value (for backward compatibility)
+func (gs *GameState) CalculateGameValue() int {
+	return gs.Result().Value
+}
+
+// countMatadorsWithSign returns matadors with sign (positive=with, negative=without)
+func (gs *GameState) countMatadorsWithSign() int {
 	if gs.Declarer < 0 || gs.Declarer >= GamePosition(len(gs.Players)) {
 		return 0
 	}
@@ -67,8 +88,6 @@ func (gs *GameState) countMatadors() int {
 	// (10-card hand + 2 skat cards), NOT just the 10 playing cards
 	allCards := make(Cards, len(declarer.Hand))
 	copy(allCards, declarer.Hand)
-
-	// Add skat cards to the count
 	allCards = append(allCards, gs.Skat[0], gs.Skat[1])
 
 	// Jack order for matadors: Club, Spade, Heart, Diamond (high to low)
@@ -100,6 +119,7 @@ func (gs *GameState) countMatadors() int {
 				break // Stop at first missing jack
 			}
 		}
+		return matadors // Positive = with
 	} else {
 		// "Without" matadors - count consecutive jacks from top that are missing
 		for _, suit := range jackOrder {
@@ -116,9 +136,8 @@ func (gs *GameState) countMatadors() int {
 				break // Stop at first jack found
 			}
 		}
+		return -matadors // Negative = without
 	}
-
-	return matadors
 }
 
 // CalculatePlayerPoints calculates points for each player

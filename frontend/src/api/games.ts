@@ -41,13 +41,23 @@ export interface GameState {
   trick_winner: number;
   trick_starter: number;
   phase: string;
-  game_value: number;
   declarer_score: number;
   opponent_score: number;
   bid_value: number;
   listener_passed: boolean;
   speaker_passed: boolean;
   dealer_passed: boolean;
+  matadors: number; // Positive=with, negative=without
+}
+
+export interface GameResult {
+  base_value: number;
+  matadors: number;
+  multiplier: number;
+  declarer_won: boolean;
+  is_schneider: boolean;
+  is_schwarz: boolean;
+  value: number;
 }
 
 export interface GameInfo {
@@ -56,6 +66,7 @@ export interface GameInfo {
   hand?: Card[];
   skat?: [Card, Card];
   can_play_next: boolean;
+  result?: GameResult;
 }
 
 export interface GameSession {
@@ -194,7 +205,6 @@ export interface SessionResults {
     declarer_won: boolean;
     game_mode: GameMode;
     trump_suit: TrumpSuit;
-    game_value: number;
     player_results: { [playerId: string]: number };
     player_names: { [playerId: string]: string };
   }>;

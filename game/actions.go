@@ -81,8 +81,6 @@ func (gs *GameState) ResolveTrick() (string, error) {
 			gs.Phase = PhaseComplete // Game ends immediately - declarer loses
 			gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
 			gs.Trick = nil
-			// Update GameValue with the final calculated value
-			gs.GameValue = gs.CalculateGameValue()
 			declarer := gs.GetPlayerByPosition(gs.Declarer)
 			return fmt.Sprintf("%s lost the null game", declarer.Name), nil // Exit early - game is over
 		}
@@ -108,8 +106,6 @@ func (gs *GameState) ResolveTrick() (string, error) {
 		if gs.Mode != ModeNull && gs.Declarer >= 0 {
 			gs.DeclarerScore += gs.Skat[0].Value() + gs.Skat[1].Value()
 		}
-		// Update GameValue with the final calculated value (including schneider/schwarz)
-		gs.GameValue = gs.CalculateGameValue()
 	}
 
 	// Trick was completed, broadcast using state diff
@@ -252,9 +248,12 @@ func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit) (string, error) 
 	gs.Mode = mode
 	gs.TrumpSuit = trumpSuit
 
+	// Calculate and store matadors (will be used throughout the game)
+	// countMatadors returns the count; we negate if without Club Jack
+	gs.Matadors = gs.countMatadorsWithSign()
+
 	// Calculate the actual game value based on cards and game type
 	// Note: This is calculated before playing to validate against bid
-	// The final game value will be recalculated after the game ends
 	gameValue := gs.calculatePotentialGameValue()
 
 	// Validate that the declared game can meet the bid value
@@ -262,14 +261,9 @@ func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit) (string, error) 
 		return "", fmt.Errorf("game value %d is less than bid value %d", gameValue, gs.BidValue)
 	}
 
-	gs.GameValue = gameValue
-
 	// Start playing phase
 	gs.Phase = PhasePlaying
-	gs.CurrentPlayer = Dealer // Player to left of dealer leads
-	if Dealer == 0 {
-		gs.CurrentPlayer = 1
-	}
+	gs.CurrentPlayer = Listener // Player to left of dealer (Listener) leads
 
 	return fmt.Sprintf("%s %s", mode, trumpSuit), nil
 }
@@ -342,6 +336,14 @@ func (gs *GameState) Discard(card1, card2 Card) (string, error) {
 }
 
 func (gs *GameState) NextGame() (string, error) {
+	// Rotate players: Dealer -> Listener, Listener -> Speaker, Speaker -> Dealer
+	rotatedPlayers := [3]*PlayerState{
+		gs.Players[2], // Speaker becomes Dealer
+		gs.Players[0], // Dealer becomes Listener
+		gs.Players[1], // Listener becomes Speaker
+	}
+	gs.Players = rotatedPlayers
+
 	gs.ID = uuid.New().String()
 	gs.Phase = PhaseDealing
 	gs.Declarer = -1

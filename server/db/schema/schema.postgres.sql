@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS games (
     game_mode VARCHAR(50) DEFAULT '',
     trump_suit INT DEFAULT 0,
     bid_value INT DEFAULT 0,
-    game_value INT DEFAULT 0,
+    matadors INT DEFAULT 0,
     listener_passed BOOLEAN DEFAULT FALSE,
     speaker_passed BOOLEAN DEFAULT FALSE,
     dealer_passed BOOLEAN DEFAULT FALSE,

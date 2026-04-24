@@ -388,7 +388,6 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 				"declarer_won":   declarerWon,
 				"game_mode":      string(gs.Mode),
 				"trump_suit":     gs.TrumpSuit.String(),
-				"game_value":     gs.GameValue,
 				"player_results": make(map[string]int),
 				"player_names":   make(map[string]string),
 			}

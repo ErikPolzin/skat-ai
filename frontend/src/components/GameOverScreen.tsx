@@ -1,5 +1,13 @@
 import React from "react";
-import { Button } from "@mui/material";
+import {
+  Button,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableRow,
+} from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
 import "./GameOverScreen.css";
@@ -8,7 +16,18 @@ export function GameOverScreen() {
   const game = useGameContext();
   const navigate = useNavigate();
 
-  if (!game.gameOver) return null;
+  if (!game.gameOver || !game.result) return null;
+
+  const { result } = game;
+  const absMatadors = Math.abs(result.matadors);
+
+  // Map suit symbols to full names
+  const suitNames: { [key: string]: string } = {
+    "♣": "Clubs",
+    "♠": "Spades",
+    "♥": "Hearts",
+    "♦": "Diamonds",
+  };
 
   return (
     <div className="game-over-screen">
@@ -20,12 +39,54 @@ export function GameOverScreen() {
       </span>
       <span className="game-over-score">
         {game.declarer?.name}: {game.playerWon === game.isDeclarer ? "+" : ""}
-        {game.gameValue}
+        {result.value}
       </span>
-      {game.isSchneider && !game.isNull && (
-        <span className="game-over-bonus">
-          {game.isSchwarz ? "SCHWARZ!" : "SCHNEIDER!"}
-        </span>
+      {!game.isNull && result.base_value > 0 && (
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableBody>
+              <TableRow>
+                <TableCell>
+                  Game, {result.matadors > 0 ? "With" : "Without"} {absMatadors}
+                </TableCell>
+                <TableCell align="right">
+                  {1 + absMatadors} (+{1 + absMatadors})
+                </TableCell>
+              </TableRow>
+              {result.is_schneider && (
+                <TableRow>
+                  <TableCell>
+                    {result.is_schwarz ? "Schwarz Made" : "Schneider Made"}
+                  </TableCell>
+                  <TableCell align="right">
+                    {result.is_schwarz ? 2 : 1} (
+                    {result.declarer_won ? "+" : "-"}
+                    {result.is_schwarz ? 2 : 1})
+                  </TableCell>
+                </TableRow>
+              )}
+              <TableRow>
+                <TableCell>
+                  {game.gameMode === "grand"
+                    ? "Grand"
+                    : `${suitNames[game.trumpSuit]} contract`}
+                  {result.declarer_won ? ", Won" : ", Lost"}
+                </TableCell>
+                <TableCell align="right">
+                  {!result.declarer_won && `-2×(`}
+                  {result.multiplier}×{result.base_value}
+                  {!result.declarer_won && `)`}
+                </TableCell>
+              </TableRow>
+              <TableRow className="breakdown-total">
+                <TableCell sx={{ fontWeight: "bold" }}>Total</TableCell>
+                <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                  {result.value}
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
       <div className="game-over-buttons">
         {game.canPlayNext && (

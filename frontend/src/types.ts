@@ -22,7 +22,6 @@ export interface SessionGameResult {
   declarer_won: boolean;
   game_mode: "grand" | "suit" | "null";
   trump_suit: "♣" | "♠" | "♥" | "♦";
-  game_value: number;
   player_results: { [playerId: string]: number };
   player_names: { [playerId: string]: string };
 }

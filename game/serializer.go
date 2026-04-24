@@ -101,11 +101,12 @@ func ParseSkatCards(s string) (SkatCards, error) {
 
 // GameInfo represents game state information for the API
 type GameInfo struct {
-	State       *GameState `json:"state"`
-	PlayerID    string     `json:"player_id,omitempty"`
-	Hand        []Card     `json:"hand,omitempty"`
-	Skat        [2]Card    `json:"skat,omitempty"`
-	CanPlayNext bool       `json:"can_play_next"`
+	State       *GameState  `json:"state"`
+	PlayerID    string      `json:"player_id,omitempty"`
+	Hand        []Card      `json:"hand,omitempty"`
+	Skat        [2]Card     `json:"skat,omitempty"`
+	CanPlayNext bool        `json:"can_play_next"`
+	Result      *GameResult `json:"result,omitempty"` // Game result breakdown (only when game is complete)
 }
 
 func (c *Rank) MarshalJSON() ([]byte, error) {
@@ -159,6 +160,12 @@ func (gs *GameState) SerializeForPlayer(playerID string) *GameInfo {
 		State:       gs,
 		PlayerID:    playerID,
 		CanPlayNext: canPlayNext,
+	}
+
+	// Include game result breakdown when game is complete
+	if gs.Phase == PhaseComplete {
+		result := gs.Result()
+		info.Result = &result
 	}
 
 	player := gs.GetPlayerById(playerID)

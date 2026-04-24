@@ -53,15 +53,25 @@ type GameState struct {
 	TrickStarter  GamePosition    `json:"trick_starter"`  // Who started the current trick
 	CardsPlayed   [][]Card        `json:"-"`              // History of all tricks
 	Phase         GamePhase       `json:"phase"`          // Current phase of the game
-	GameValue     int             `json:"game_value"`     // Value of the current game
 	DeclarerScore int             `json:"declarer_score"` // Current score for declarer
 	OpponentScore int             `json:"opponent_score"` // Current score for opponents
+	Matadors      int             `json:"matadors"`       // Matadors count (positive=with, negative=without)
 
 	// Bidding state
 	BidValue       int  `json:"bid_value"`       // Current bid value
 	ListenerPassed bool `json:"listener_passed"` // Has listener passed?
 	SpeakerPassed  bool `json:"speaker_passed"`  // Has speaker passed?
 	DealerPassed   bool `json:"dealer_passed"`   // Has dealer passed?
+}
+
+type GameResult struct {
+	BaseValue     int  `json:"base_value"`      // Base value (9-12 for suits, 24 for grand, 23 for null)
+	Matadors      int  `json:"matadors"`        // Matadors (positive=with, negative=without)
+	Multiplier    int  `json:"multiplier"`      // Total multiplier (1 + |matadors| + schneider + schwarz)
+	DeclarerWon   bool `json:"declarer_won"`    // Did declarer win
+	IsSchneider   bool `json:"is_schneider"`    // Schneider achieved
+	IsSchwarz     bool `json:"is_schwarz"`      // Schwarz achieved
+	Value         int  `json:"value"`           // Final game value (negative if lost, doubled if lost)
 }
 
 type GameSessionState struct {
@@ -319,7 +329,6 @@ func (gs *GameState) Clone() *GameState {
 		TrumpSuit:     gs.TrumpSuit,
 		TrickWinner:   gs.TrickWinner,
 		Phase:         gs.Phase,
-		GameValue:     gs.GameValue,
 		DeclarerScore: gs.DeclarerScore,
 	}
 

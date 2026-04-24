@@ -38,11 +38,11 @@ export function useGame(
       trump_suit: "♣",
       trick_starter: 0,
       trick_winner: -1,
-      game_value: 0,
       bid_value: 0,
       listener_passed: false,
       speaker_passed: false,
       dealer_passed: false,
+      matadors: 0,
     },
     player_id: undefined,
     hand: [],
@@ -54,6 +54,7 @@ export function useGame(
   const hand = gameInfo.hand ?? [];
   const skatCards = gameInfo.skat ?? undefined;
   const canPlayNextFromState = gameInfo.can_play_next ?? false;
+  const result = gameInfo.result;
 
   // Transform server players (with position as index) to client players (with position field)
   const players = useMemo<(Player | null)[]>(
@@ -244,11 +245,11 @@ export function useGame(
         trump_suit: "♣",
         trick_starter: 0,
         trick_winner: -1,
-        game_value: 0,
         bid_value: 0,
         listener_passed: false,
         speaker_passed: false,
         dealer_passed: false,
+        matadors: 0,
       },
       player_id: undefined,
       hand: [],
@@ -274,12 +275,12 @@ export function useGame(
         state: {
           ...prev.state,
           players: prev.state.players.map((p) =>
-            p && p.id === playerId ? { ...p, is_online: isOnline } : p
+            p && p.id === playerId ? { ...p, is_online: isOnline } : p,
           ) as [ServerPlayer | null, ServerPlayer | null, ServerPlayer | null],
         },
       }));
     },
-    []
+    [],
   );
 
   return {
@@ -310,7 +311,6 @@ export function useGame(
     opponentScore: state.opponent_score,
     declarerPosition: state.declarer,
     bidValue: state.bid_value,
-    gameValue: state.game_value,
     listenerPassed: state.listener_passed,
     speakerPassed: state.speaker_passed,
     dealerPassed: state.dealer_passed,
@@ -329,26 +329,15 @@ export function useGame(
     isDeclarerChoice,
     isMyTurn,
     isInLobby,
-    playerWon:
-      gameOver && playerPosition === state.declarer
-        ? isNull
-          ? state.declarer_score === 0
-          : state.declarer_score >= 61
-        : isNull
-          ? state.declarer_score > 0
-          : state.declarer_score < 61,
-    isSchneider:
-      gameOver &&
-      !isNull &&
-      ((state.declarer_score >= 61 && state.opponent_score < 30) ||
-        (state.declarer_score < 61 && state.declarer_score < 30)),
-    isSchwarz:
-      gameOver &&
-      !isNull &&
-      (state.declarer_score === 120 ||
-        state.opponent_score === 120 ||
-        state.declarer_score === 0 ||
-        state.opponent_score === 0),
+    // Use result data when available
+    playerWon: result
+      ? playerPosition === state.declarer
+        ? result.declarer_won
+        : !result.declarer_won
+      : false,
+    isSchneider: result?.is_schneider ?? false,
+    isSchwarz: result?.is_schwarz ?? false,
+    declarerWon: result?.declarer_won ?? false,
     // Getters
     getRole,
     // Actions
@@ -365,6 +354,8 @@ export function useGame(
     canPlayNext: canPlayNextFromState,
     setSessionResults,
     setGamesPlayed,
+    // Game result (when game is complete)
+    result,
   };
 }
 

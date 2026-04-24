@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS games (
     game_mode TEXT DEFAULT '',
     trump_suit INTEGER DEFAULT 0,
     bid_value INTEGER DEFAULT 0,
-    game_value INTEGER DEFAULT 0,
+    matadors INTEGER DEFAULT 0,
     listener_passed INTEGER DEFAULT 0,
     speaker_passed INTEGER DEFAULT 0,
     dealer_passed INTEGER DEFAULT 0,

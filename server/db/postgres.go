@@ -126,7 +126,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.game_value, g.listener_passed, g.speaker_passed, g.dealer_passed
+			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE g.id = $1`,
@@ -135,7 +135,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.GameValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
+		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
 	}
@@ -168,7 +168,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.game_value, g.listener_passed, g.speaker_passed, g.dealer_passed
+			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE gs.code = $1
@@ -179,7 +179,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.GameValue, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
+		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
 	}
@@ -216,7 +216,7 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 			id, session_id, game_number, phase, skat, trick,
 			trick_starter, trick_winner, current_player,
 			declarer, declarer_score, opponent_score,
-			game_mode, trump_suit, bid_value, game_value,
+			game_mode, trump_suit, bid_value, matadors,
 			listener_passed, speaker_passed, dealer_passed,
 			created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
@@ -225,13 +225,13 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 			session_id = $2, game_number = $3, phase = $4, skat = $5, trick = $6,
 			trick_starter = $7, trick_winner = $8, current_player = $9,
 			declarer = $10, declarer_score = $11, opponent_score = $12,
-			game_mode = $13, trump_suit = $14, bid_value = $15, game_value = $16,
+			game_mode = $13, trump_suit = $14, bid_value = $15, matadors = $16,
 			listener_passed = $17, speaker_passed = $18, dealer_passed = $19,
 			updated_at = NOW()`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
 		gs.Declarer, gs.DeclarerScore, gs.OpponentScore,
-		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.GameValue,
+		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed,
 	)
 	if err != nil {

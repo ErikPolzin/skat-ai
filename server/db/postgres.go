@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"skat/game"
 )
@@ -345,10 +345,15 @@ func (d *PgDatabase) SavePlayerResults(results []game.PlayerResultState) error {
 
 func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
 	query := `
-		SELECT game_id, session_id, player_id, player_position, player_points, is_winner
-		FROM player_results
-		WHERE player_id = $1
-		ORDER BY id DESC
+		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner,
+			   array_agg(DISTINCT prof.name) FILTER (WHERE p.profile_id != pr.player_id) AS other_players
+		FROM player_results pr
+		JOIN games g ON g.id = pr.game_id
+		JOIN players p ON p.game_id = g.id
+		JOIN profiles prof ON prof.id = p.profile_id
+		WHERE pr.player_id = $1
+		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner
+		ORDER BY pr.id DESC
 	`
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
@@ -363,12 +368,20 @@ func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.Player
 	var results []game.PlayerResultState
 	for rows.Next() {
 		var result game.PlayerResultState
+		var otherPlayers pq.StringArray
 		if err := rows.Scan(
 			&result.GameID, &result.SessionID, &result.PlayerID,
 			&result.PlayerPosition, &result.PlayerPoints, &result.IsWinner,
+			&otherPlayers,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan player result: %w", err)
 		}
+
+		// Convert pq.StringArray to []string
+		if len(otherPlayers) > 0 {
+			result.OtherPlayers = []string(otherPlayers)
+		}
+
 		results = append(results, result)
 	}
 	return results, nil

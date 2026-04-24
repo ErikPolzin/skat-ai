@@ -90,6 +90,7 @@ type PlayerResultState struct {
 	PlayerPosition GamePosition `json:"player_position"`
 	PlayerPoints   int          `json:"player_points"`
 	IsWinner       bool         `json:"is_winner"`
+	OtherPlayers   []string     `json:"other_players,omitempty"`
 }
 
 type GamePhase string

@@ -422,10 +422,15 @@ func (d *TursoDatabase) GetSessionResults(sessionID string) ([]game.PlayerResult
 
 func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
 	query := `
-		SELECT game_id, session_id, player_id, player_position, player_points, is_winner
-		FROM player_results
-		WHERE player_id = ?
-		ORDER BY id DESC
+		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner,
+			   GROUP_CONCAT(DISTINCT CASE WHEN p.profile_id != pr.player_id THEN prof.name END) AS other_players
+		FROM player_results pr
+		JOIN games g ON g.id = pr.game_id
+		JOIN players p ON p.game_id = g.id
+		JOIN profiles prof ON prof.id = p.profile_id
+		WHERE pr.player_id = ?
+		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner
+		ORDER BY pr.id DESC
 	`
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
@@ -441,13 +446,21 @@ func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.Pla
 	for rows.Next() {
 		var result game.PlayerResultState
 		var isWinner int
+		var otherPlayersStr *string
 		if err := rows.Scan(
 			&result.GameID, &result.SessionID, &result.PlayerID,
 			&result.PlayerPosition, &result.PlayerPoints, &isWinner,
+			&otherPlayersStr,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan player result: %w", err)
 		}
 		result.IsWinner = isWinner != 0
+
+		// Convert comma-separated string to []string
+		if otherPlayersStr != nil && *otherPlayersStr != "" {
+			result.OtherPlayers = strings.Split(*otherPlayersStr, ",")
+		}
+
 		results = append(results, result)
 	}
 	return results, nil

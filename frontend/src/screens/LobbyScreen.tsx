@@ -15,6 +15,10 @@ import {
   CircularProgress,
   Avatar,
   Badge,
+  Tabs,
+  Tab,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
@@ -27,12 +31,15 @@ import {
 } from "../api/games";
 import { useProfileStore } from "../stores/profileStore";
 import ActiveGames from "../components/ActiveGames";
+import PlayerHistory from "../components/PlayerHistory";
 
 interface LobbyScreenProps {
   username: string;
 }
 
 export default function LobbyScreen({ username }: LobbyScreenProps) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const profilePlayerId = useProfileStore((state) => state.playerId);
   const profileIcon = useProfileStore((state) => state.profileIcon);
@@ -43,6 +50,7 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [currentTab, setCurrentTab] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -153,7 +161,6 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
           elevation={3}
           sx={{
             p: { xs: 2, sm: 3, md: 4 },
-            minWidth: { xs: "auto", sm: "500px" },
             width: "100%",
             borderRadius: { xs: 0, sm: 1 },
             minHeight: { xs: "100vh", sm: "auto" },
@@ -232,115 +239,275 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
             </Alert>
           )}
 
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="subtitle1" gutterBottom>
-              Join or Create Game
-            </Typography>
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <TextField
-                placeholder="Enter game code"
-                value={gameCode}
-                onChange={(e) => setGameCode(e.target.value.toUpperCase())}
-                disabled={isLoading}
-                sx={{
-                  "& input": {
-                    textTransform: "uppercase",
-                    textAlign: "center",
-                    letterSpacing: "2px",
-                  },
-                }}
-                fullWidth
-              />
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleJoinOrCreate}
-                disabled={isLoading}
-                size="large"
-                fullWidth={!gameCode}
-                startIcon={isLoading ? <CircularProgress size={20} /> : null}
+          {isMobile ? (
+            <>
+              <Tabs
+                value={currentTab}
+                onChange={(_, newValue) => setCurrentTab(newValue)}
+                variant="fullWidth"
+                sx={{ mb: 2 }}
               >
-                {isLoading
-                  ? "Loading..."
-                  : gameCode
-                    ? "Join Game"
-                    : "Create Game"}
-              </Button>
-            </Box>
-          </Box>
+                <Tab label="Games" />
+                <Tab label="History" />
+              </Tabs>
 
-          <ActiveGames playerId={profilePlayerId} />
-
-          <Box
-            sx={{
-              minHeight: "200px",
-              display: "flex",
-              flexDirection: "column",
-            }}
-          >
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <Typography variant="subtitle1">Available Games</Typography>
-              <IconButton
-                onClick={fetchGames}
-                color="primary"
-                disabled={isFetching}
-              >
-                {isFetching ? <CircularProgress size={24} /> : <RefreshIcon />}
-              </IconButton>
-            </Box>
-
-            {isFetching ? (
-              <Box
-                sx={{
-                  flexGrow: 1,
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-              >
-                <CircularProgress />
-              </Box>
-            ) : games.length === 0 ? (
-              <Box
-                sx={{
-                  flexGrow: 1,
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-              >
-                <Typography sx={{ py: 2 }} color="textDisabled">
-                  No active games
-                </Typography>
-              </Box>
-            ) : (
-              <List>
-                {games.map((game) => (
-                  <ListItem key={game.id}>
-                    <ListItemText
-                      primary={game.code}
-                      secondary={`${game.player_count}/3 players`}
-                    />
-                    <ListItemSecondaryAction>
-                      <Button
-                        variant="text"
-                        onClick={() => handleQuickJoin(game.code)}
+              {currentTab === 0 && (
+                <>
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Join or Create Game
+                    </Typography>
+                    <Box
+                      sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+                    >
+                      <TextField
+                        placeholder="Enter game code"
+                        value={gameCode}
+                        onChange={(e) =>
+                          setGameCode(e.target.value.toUpperCase())
+                        }
                         disabled={isLoading}
+                        sx={{
+                          "& input": {
+                            textTransform: "uppercase",
+                            textAlign: "center",
+                            letterSpacing: "2px",
+                          },
+                        }}
+                        fullWidth
+                      />
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={handleJoinOrCreate}
+                        disabled={isLoading}
+                        size="large"
+                        fullWidth={!gameCode}
+                        startIcon={
+                          isLoading ? <CircularProgress size={20} /> : null
+                        }
                       >
-                        Join
+                        {isLoading
+                          ? "Loading..."
+                          : gameCode
+                            ? "Join Game"
+                            : "Create Game"}
                       </Button>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                ))}
-              </List>
-            )}
-          </Box>
+                    </Box>
+                  </Box>
+
+                  <ActiveGames playerId={profilePlayerId} />
+
+                  <Box
+                    sx={{
+                      minHeight: "200px",
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <Typography variant="subtitle1">
+                        Available Games
+                      </Typography>
+                      <IconButton
+                        onClick={fetchGames}
+                        color="primary"
+                        disabled={isFetching}
+                      >
+                        {isFetching ? (
+                          <CircularProgress size={24} />
+                        ) : (
+                          <RefreshIcon />
+                        )}
+                      </IconButton>
+                    </Box>
+
+                    {isFetching ? (
+                      <Box
+                        sx={{
+                          flexGrow: 1,
+                          display: "flex",
+                          justifyContent: "center",
+                          alignItems: "center",
+                        }}
+                      >
+                        <CircularProgress />
+                      </Box>
+                    ) : games.length === 0 ? (
+                      <Box
+                        sx={{
+                          flexGrow: 1,
+                          display: "flex",
+                          justifyContent: "center",
+                          alignItems: "center",
+                        }}
+                      >
+                        <Typography sx={{ py: 2 }} color="textDisabled">
+                          No active games
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <List>
+                        {games.map((game) => (
+                          <ListItem key={game.id}>
+                            <ListItemText
+                              primary={game.code}
+                              secondary={`${game.player_count}/3 players`}
+                            />
+                            <ListItemSecondaryAction>
+                              <Button
+                                variant="text"
+                                onClick={() => handleQuickJoin(game.code)}
+                                disabled={isLoading}
+                              >
+                                Join
+                              </Button>
+                            </ListItemSecondaryAction>
+                          </ListItem>
+                        ))}
+                      </List>
+                    )}
+                  </Box>
+                </>
+              )}
+
+              {currentTab === 1 && <PlayerHistory playerId={profilePlayerId} />}
+            </>
+          ) : (
+            <Box sx={{ display: "flex", gap: 3, alignItems: "flex-start" }}>
+              <Box sx={{ flex: 1, minWidth: 400 }}>
+                <Box sx={{ mb: 4 }}>
+                  <Typography variant="subtitle1" gutterBottom>
+                    Join or Create Game
+                  </Typography>
+                  <Box
+                    sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+                  >
+                    <TextField
+                      placeholder="Enter game code"
+                      value={gameCode}
+                      onChange={(e) =>
+                        setGameCode(e.target.value.toUpperCase())
+                      }
+                      disabled={isLoading}
+                      sx={{
+                        "& input": {
+                          textTransform: "uppercase",
+                          textAlign: "center",
+                          letterSpacing: "2px",
+                        },
+                      }}
+                      fullWidth
+                    />
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleJoinOrCreate}
+                      disabled={isLoading}
+                      size="large"
+                      fullWidth={!gameCode}
+                      startIcon={
+                        isLoading ? <CircularProgress size={20} /> : null
+                      }
+                    >
+                      {isLoading
+                        ? "Loading..."
+                        : gameCode
+                          ? "Join Game"
+                          : "Create Game"}
+                    </Button>
+                  </Box>
+                </Box>
+
+                <ActiveGames playerId={profilePlayerId} />
+
+                <Box
+                  sx={{
+                    minHeight: "200px",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Typography variant="subtitle1">Available Games</Typography>
+                    <IconButton
+                      onClick={fetchGames}
+                      color="primary"
+                      disabled={isFetching}
+                    >
+                      {isFetching ? (
+                        <CircularProgress size={24} />
+                      ) : (
+                        <RefreshIcon />
+                      )}
+                    </IconButton>
+                  </Box>
+
+                  {isFetching ? (
+                    <Box
+                      sx={{
+                        flexGrow: 1,
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
+                    >
+                      <CircularProgress />
+                    </Box>
+                  ) : games.length === 0 ? (
+                    <Box
+                      sx={{
+                        flexGrow: 1,
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Typography sx={{ py: 2 }} color="textDisabled">
+                        No active games
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <List>
+                      {games.map((game) => (
+                        <ListItem key={game.id}>
+                          <ListItemText
+                            primary={game.code}
+                            secondary={`${game.player_count}/3 players`}
+                          />
+                          <ListItemSecondaryAction>
+                            <Button
+                              variant="text"
+                              onClick={() => handleQuickJoin(game.code)}
+                              disabled={isLoading}
+                            >
+                              Join
+                            </Button>
+                          </ListItemSecondaryAction>
+                        </ListItem>
+                      ))}
+                    </List>
+                  )}
+                </Box>
+              </Box>
+
+              <Box sx={{ flex: 1, minWidth: 400 }}>
+                <PlayerHistory playerId={profilePlayerId} />
+              </Box>
+            </Box>
+          )}
         </Paper>
       </Box>
     </Box>

@@ -202,6 +202,33 @@ export async function getActiveGames(playerId: string): Promise<ActiveGame[]> {
   return data || [];
 }
 
+export interface PlayerResult {
+  game_id: string;
+  session_id: string;
+  player_id: string;
+  player_position: number;
+  player_points: number;
+  is_winner: boolean;
+  other_players?: string[];
+}
+
+export async function getPlayerHistory(
+  playerId: string,
+  limit: number = 50,
+): Promise<PlayerResult[]> {
+  const response = await fetch(
+    `${getApiUrl()}/api/players/${playerId}/history?limit=${limit}`,
+  );
+
+  if (!response.ok) {
+    console.error("Failed to fetch player history");
+    return [];
+  }
+
+  const data = await response.json();
+  return data || [];
+}
+
 export interface GameHistoryEntry {
   game_id: string;
   game_code: string;

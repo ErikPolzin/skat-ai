@@ -11,8 +11,6 @@ export function useWebSocket() {
   const messageHandlersRef = useRef<Map<string, (message: any) => void>>(
     new Map(),
   );
-  const pendingActionsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const actionIdCounter = useRef(0);
   const subscribersRef = useRef<Set<() => void>>(new Set());
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectCountdownRef = useRef<NodeJS.Timeout | null>(null);
@@ -41,55 +39,18 @@ export function useWebSocket() {
   );
 
   const sendMessage = useCallback(
-    (type: string, data: any, onAck?: () => void, onTimeout?: () => void) => {
+    (type: string, data: any) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        // Generate unique action ID
-        const actionId = `${type}_${Date.now()}_${++actionIdCounter.current}`;
-
-        // Set up timeout for this action (10 seconds)
-        const timeoutId = setTimeout(() => {
-          pendingActionsRef.current.delete(actionId);
-          console.warn(`Action ${actionId} timed out after 10 seconds`);
-          if (onTimeout) {
-            onTimeout();
-          }
-        }, 10000);
-
-        // Store the pending action with its callbacks
-        pendingActionsRef.current.set(actionId, timeoutId);
-
-        // Add acknowledgment handler
-        if (onAck) {
-          const ackKey = `ack_${actionId}`;
-          const cleanup = addMessageHandler(ackKey, () => {
-            // Clear timeout
-            const timeout = pendingActionsRef.current.get(actionId);
-            if (timeout) {
-              clearTimeout(timeout);
-              pendingActionsRef.current.delete(actionId);
-            }
-            // Call acknowledgment callback
-            onAck();
-            // Clean up this handler
-            cleanup();
-          });
-        }
-
-        wsRef.current.send(JSON.stringify({ type, data, action_id: actionId }));
-        return actionId;
+        wsRef.current.send(JSON.stringify({ type, data }));
       } else {
         console.error(
           "Cannot send message, socket is",
           wsRef.current?.readyState,
           ", not open",
         );
-        if (onTimeout) {
-          onTimeout();
-        }
-        return null;
       }
     },
-    [addMessageHandler],
+    [],
   );
 
   const scheduleReconnect = useCallback(() => {
@@ -187,16 +148,6 @@ export function useWebSocket() {
         try {
           const message = JSON.parse(event.data);
           console.log("WebSocket message received:", message);
-
-          // Check if this message acknowledges a pending action
-          // state_update, error, or any message with action_id serves as acknowledgment
-          if (message.action_id) {
-            const ackKey = `ack_${message.action_id}`;
-            const ackHandler = messageHandlersRef.current.get(ackKey);
-            if (ackHandler) {
-              ackHandler(message);
-            }
-          }
 
           // Call all registered handlers
           messageHandlersRef.current.forEach((handler) => {

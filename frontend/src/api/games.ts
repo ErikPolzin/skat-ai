@@ -243,3 +243,80 @@ export async function uploadAvatar(
 
   return response.json();
 }
+
+// Game action API calls
+async function gameAction(
+  gameId: string,
+  action: string,
+  playerId: string,
+  body?: any,
+): Promise<void> {
+  const url = `${getApiUrl()}/api/games/${gameId}/${action}?player_id=${encodeURIComponent(playerId)}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error || `HTTP ${response.status}`);
+  }
+}
+
+export async function dealCards(
+  gameId: string,
+  playerId: string,
+): Promise<void> {
+  return gameAction(gameId, "deal", playerId);
+}
+
+export async function playCard(
+  gameId: string,
+  playerId: string,
+  card: string,
+): Promise<void> {
+  return gameAction(gameId, "play_card", playerId, { card });
+}
+
+export async function bid(
+  gameId: string,
+  playerId: string,
+  accept: boolean,
+): Promise<void> {
+  return gameAction(gameId, "bid", playerId, { accept });
+}
+
+export async function chooseGame(
+  gameId: string,
+  playerId: string,
+  mode: string,
+  trump: string,
+): Promise<void> {
+  return gameAction(gameId, "choose_game", playerId, { mode, trump });
+}
+
+export async function skatDecision(
+  gameId: string,
+  playerId: string,
+  pickup: boolean,
+): Promise<void> {
+  return gameAction(gameId, "skat_decision", playerId, { pickup });
+}
+
+export async function discardCards(
+  gameId: string,
+  playerId: string,
+  cards: string,
+): Promise<void> {
+  return gameAction(gameId, "discard_cards", playerId, { cards });
+}
+
+export async function startNextGame(
+  gameId: string,
+  playerId: string,
+): Promise<void> {
+  return gameAction(gameId, "start_next_game", playerId);
+}

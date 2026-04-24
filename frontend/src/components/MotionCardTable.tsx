@@ -579,7 +579,7 @@ export function MotionCardTable() {
 
         {/* Player Avatar */}
         <div
-          className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
+          className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""} ${game.controls.isLoading ? "loading" : ""} ${isMobile ? "mobile" : ""}`}
         >
           <div className="avatar-circle">
             {game.playerProfileIcon ? (

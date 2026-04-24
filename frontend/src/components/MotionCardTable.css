@@ -208,12 +208,27 @@
   animation: turnPulse 2s infinite;
 }
 
+.loading .avatar-circle {
+  border-color: #3498db;
+  box-shadow: 0 0 20px rgba(52, 152, 219, 0.6);
+  animation: loadingPulse 1.5s infinite;
+}
+
 @keyframes turnPulse {
   0%, 100% {
     box-shadow: 0 0 20px rgba(46, 204, 113, 0.5);
   }
   50% {
     box-shadow: 0 0 30px rgba(46, 204, 113, 0.7);
+  }
+}
+
+@keyframes loadingPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(52, 152, 219, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 35px rgba(52, 152, 219, 0.9);
   }
 }
 

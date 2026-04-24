@@ -1,15 +1,13 @@
 import React, { useMemo } from "react";
-import { CircularProgress } from "@mui/material";
+import { Box, Button, Typography } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
-import "./BiddingControls.css";
 
 // Valid bid values in Skat (matching game/game.go)
 const VALID_BID_VALUES = [
-  0, 18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50,
-  54, 55, 59, 60, 63, 66, 70, 72, 77, 80, 81, 84, 88, 90, 96, 99,
-  100, 108, 110, 117, 120, 121, 126, 130, 132, 135, 140, 143, 144,
-  150, 153, 154, 156, 160, 162, 165, 168, 170, 176, 180, 187, 192,
-  198, 204, 216, 240, 264,
+  0, 18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50, 54, 55, 59,
+  60, 63, 66, 70, 72, 77, 80, 81, 84, 88, 90, 96, 99, 100, 108, 110, 117, 120,
+  121, 126, 130, 132, 135, 140, 143, 144, 150, 153, 154, 156, 160, 162, 165,
+  168, 170, 176, 180, 187, 192, 198, 204, 216, 240, 264,
 ];
 
 function getNextBidValue(currentBid: number): number {
@@ -26,7 +24,10 @@ export function BiddingControls() {
   const isDisabled = !game.controls.isConnected || game.controls.isLoading;
 
   // Calculate next bid value
-  const nextBidValue = useMemo(() => getNextBidValue(game.bidValue), [game.bidValue]);
+  const nextBidValue = useMemo(
+    () => getNextBidValue(game.bidValue),
+    [game.bidValue],
+  );
 
   // Determine if current player is the one who raises (not accepts)
   // In Skat bidding:
@@ -46,7 +47,12 @@ export function BiddingControls() {
       return true;
     }
     return false;
-  }, [game.playerPosition, game.listenerPassed, game.speakerPassed, game.dealerPassed]);
+  }, [
+    game.playerPosition,
+    game.listenerPassed,
+    game.speakerPassed,
+    game.dealerPassed,
+  ]);
 
   // Determine button text based on role
   const acceptButtonText = isRaiser
@@ -62,29 +68,46 @@ export function BiddingControls() {
   }
 
   return (
-    <div className="bidding-controls">
-      <div className="bid-info">
-        <span className="current-bid">Current Bid: {game.bidValue}</span>
-      </div>
+    <Box
+      sx={{
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+        textAlign: "center",
+        zIndex: 50,
+      }}
+    >
+      <Typography variant="h6" sx={{ mb: 2 }}>
+        Current Bid: {game.bidValue}
+      </Typography>
 
-      <div className="bid-buttons">
-        <button
-          className="bid-btn hold"
+      <Box
+        sx={{
+          display: "flex",
+          gap: "12px",
+          justifyContent: "center",
+        }}
+      >
+        <Button
+          variant="contained"
+          color="success"
           onClick={() => game.controls.bid(true)}
           disabled={isDisabled}
-          style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
+          loading={game.controls.isLoading}
         >
-          {game.controls.isLoading ? <CircularProgress size={20} /> : acceptButtonText}
-        </button>
-        <button
-          className="bid-btn pass"
+          {acceptButtonText}
+        </Button>
+        <Button
+          variant="outlined"
+          color="warning"
           onClick={() => game.controls.bid(false)}
           disabled={isDisabled}
-          style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "not-allowed" : "pointer" }}
+          loading={game.controls.isLoading}
         >
-          {game.controls.isLoading ? <CircularProgress size={20} /> : "Pass"}
-        </button>
-      </div>
-    </div>
+          Pass
+        </Button>
+      </Box>
+    </Box>
   );
 }

@@ -14,6 +14,7 @@ import (
 	"skat/server/db"
 	"strconv"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/google/uuid"
@@ -39,6 +40,13 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/games/{code}/join", s.handleJoinGame).Methods("POST")
 	api.HandleFunc("/games/{id}/agents", s.handleAddAgent).Methods("POST")
 	api.HandleFunc("/games/{id}/results", s.handleGetSessionResults).Methods("GET")
+	api.HandleFunc("/games/{id}/deal", s.handleDeal).Methods("POST")
+	api.HandleFunc("/games/{id}/play_card", s.handlePlayCard).Methods("POST")
+	api.HandleFunc("/games/{id}/bid", s.handleBid).Methods("POST")
+	api.HandleFunc("/games/{id}/choose_game", s.handleChooseGame).Methods("POST")
+	api.HandleFunc("/games/{id}/skat_decision", s.handleSkatDecision).Methods("POST")
+	api.HandleFunc("/games/{id}/discard_cards", s.handleDiscardCards).Methods("POST")
+	api.HandleFunc("/games/{id}/start_next_game", s.handleStartNextGame).Methods("POST")
 	api.HandleFunc("/profiles", s.handleCreateProfile).Methods("POST")
 	api.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
 	api.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
@@ -273,7 +281,7 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.db.SaveGame(*gs)
-	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(playerID), "") // No action_id for HTTP requests
+	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(playerID))
 	go s.BroadcastAIActions(gs)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -338,7 +346,7 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.db.SaveGame(*gs)
-	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(agentProfile.ID), "") // No action_id for HTTP requests
+	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(agentProfile.ID))
 	go s.BroadcastAIActions(gs)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -560,4 +568,209 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// Helper to get authenticated player ID from request
+func getAuthenticatedPlayerID(r *http.Request) (string, error) {
+	playerID := r.URL.Query().Get("player_id")
+	if playerID == "" {
+		return "", fmt.Errorf("player_id required")
+	}
+	return playerID, nil
+}
+
+// GameActionFunc is a function that performs a game action
+type GameActionFunc func(gs *game.GameState, playerID string, r *http.Request) (string, error)
+
+// handleGameAction is a common handler for game actions
+func (s *Server) handleGameAction(w http.ResponseWriter, r *http.Request, validateTurn bool, action GameActionFunc) {
+	// Add 2 second delay for local development to test loading states
+	if !s.IsCloudRun() {
+		time.Sleep(2 * time.Second)
+	}
+
+	vars := mux.Vars(r)
+	gameID := vars["id"]
+
+	playerID, err := getAuthenticatedPlayerID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	gs, err := s.db.GetGameByID(gameID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Validate it's the current player's turn (if required)
+	if validateTurn {
+		currentPlayer := gs.GetCurrentPlayer()
+		if currentPlayer.ID != playerID {
+			http.Error(w, "not your turn", http.StatusForbidden)
+			return
+		}
+	}
+
+	currentPosition := gs.CurrentPlayer
+	response, err := action(gs, playerID, r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.db.SaveGame(*gs)
+	s.clients.BroadcastStateChange(gs, response, currentPosition)
+	go s.BroadcastAIActions(gs)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleDeal handles the deal action
+func (s *Server) handleDeal(w http.ResponseWriter, r *http.Request) {
+	s.handleGameAction(w, r, true, func(gs *game.GameState, playerID string, r *http.Request) (string, error) {
+		return gs.Deal()
+	})
+}
+
+// handlePlayCard handles playing a card
+func (s *Server) handlePlayCard(w http.ResponseWriter, r *http.Request) {
+	s.handleGameAction(w, r, true, func(gs *game.GameState, playerID string, r *http.Request) (string, error) {
+		var req struct {
+			Card string `json:"card"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return "", err
+		}
+
+		card, err := game.ParseCard(req.Card)
+		if err != nil {
+			return "", fmt.Errorf("invalid card: %v", err)
+		}
+
+		response, err := gs.PlayCard(card)
+		if err == nil {
+			s.maybeSaveGameResults(gs)
+		}
+		return response, err
+	})
+}
+
+// handleBid handles bidding actions
+func (s *Server) handleBid(w http.ResponseWriter, r *http.Request) {
+	s.handleGameAction(w, r, true, func(gs *game.GameState, playerID string, r *http.Request) (string, error) {
+		var req struct {
+			Accept bool `json:"accept"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return "", err
+		}
+		return gs.Bid(req.Accept)
+	})
+}
+
+// handleChooseGame handles game mode selection
+func (s *Server) handleChooseGame(w http.ResponseWriter, r *http.Request) {
+	s.handleGameAction(w, r, true, func(gs *game.GameState, playerID string, r *http.Request) (string, error) {
+		var req struct {
+			Mode  string `json:"mode"`
+			Trump string `json:"trump"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return "", err
+		}
+
+		mode := game.GameMode(req.Mode)
+		trump, err := game.ParseSuit(req.Trump)
+		if err != nil {
+			return "", fmt.Errorf("invalid trump suit: %v", err)
+		}
+
+		return gs.DeclareGame(mode, trump)
+	})
+}
+
+// handleSkatDecision handles the declarer's skat pickup decision
+func (s *Server) handleSkatDecision(w http.ResponseWriter, r *http.Request) {
+	s.handleGameAction(w, r, true, func(gs *game.GameState, playerID string, r *http.Request) (string, error) {
+		var req struct {
+			Pickup bool `json:"pickup"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return "", err
+		}
+		return gs.SkatDecision(req.Pickup)
+	})
+}
+
+// handleDiscardCards handles card discarding
+func (s *Server) handleDiscardCards(w http.ResponseWriter, r *http.Request) {
+	s.handleGameAction(w, r, true, func(gs *game.GameState, playerID string, r *http.Request) (string, error) {
+		var req struct {
+			Cards string `json:"cards"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return "", err
+		}
+
+		cards, err := game.ParseSkatCards(req.Cards)
+		if err != nil {
+			return "", fmt.Errorf("invalid cards: %v", err)
+		}
+
+		return gs.Discard(cards[0], cards[1])
+	})
+}
+
+// handleStartNextGame handles starting the next game
+func (s *Server) handleStartNextGame(w http.ResponseWriter, r *http.Request) {
+	// Add 2 second delay for local development to test loading states
+	if !s.IsCloudRun() {
+		time.Sleep(2 * time.Second)
+	}
+
+	vars := mux.Vars(r)
+	gameID := vars["id"]
+
+	_, err := getAuthenticatedPlayerID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	gs, err := s.db.GetGameByID(gameID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// For start_next_game, we don't validate current player since any player can trigger it
+	currentPosition := gs.CurrentPlayer
+	response, err := gs.NextGame()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	newGameID := gs.ID
+	s.db.SaveGame(*gs)
+
+	// Send start_next_game message to trigger navigation
+	s.clients.BroadcastToPlayers(gs, &Message{
+		Type: "start_next_game",
+		Data: map[string]any{"game_id": newGameID},
+	})
+
+	// Also broadcast the state change
+	s.clients.BroadcastStateChange(gs, response, currentPosition)
+	go s.BroadcastAIActions(gs)
+
+	// Custom response with new game ID
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "ok",
+		"game_id": newGameID,
+	})
 }

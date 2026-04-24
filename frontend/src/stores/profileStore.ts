@@ -4,11 +4,13 @@ import { persist } from 'zustand/middleware';
 interface ProfileState {
   username: string | null;
   playerId: string | null;
+  profileIcon: string | null;
 }
 
 interface ProfileActions {
   setUsername: (username: string) => void;
   setPlayerId: (playerId: string) => void;
+  setProfileIcon: (profileIcon: string) => void;
   clearProfile: () => void;
 }
 
@@ -19,9 +21,11 @@ export const useProfileStore = create<ProfileStore>()(
     (set) => ({
       username: null,
       playerId: null, // Will be set by backend on first join
+      profileIcon: null,
       setUsername: (username: string) => set({ username }),
       setPlayerId: (playerId: string) => set({ playerId }),
-      clearProfile: () => set({ username: null, playerId: null }),
+      setProfileIcon: (profileIcon: string) => set({ profileIcon }),
+      clearProfile: () => set({ username: null, playerId: null, profileIcon: null }),
     }),
     {
       name: 'skat-profile',
@@ -32,6 +36,8 @@ export const useProfileStore = create<ProfileStore>()(
 // Selectors
 export const selectUsername = (state: ProfileStore) => state.username;
 export const selectPlayerId = (state: ProfileStore) => state.playerId;
+export const selectProfileIcon = (state: ProfileStore) => state.profileIcon;
 export const selectSetUsername = (state: ProfileStore) => state.setUsername;
 export const selectSetPlayerId = (state: ProfileStore) => state.setPlayerId;
+export const selectSetProfileIcon = (state: ProfileStore) => state.setProfileIcon;
 export const selectClearProfile = (state: ProfileStore) => state.clearProfile;

@@ -111,7 +111,7 @@ export async function createGame(): Promise<{ game_id: string; code: string }> {
 export async function createOrRetrieveProfile(
   playerName: string,
   playerId?: string,
-): Promise<{ player_id: string; player_name: string }> {
+): Promise<{ player_id: string; player_name: string; profile_icon: string }> {
   const response = await fetch(`${getApiUrl()}/api/profiles`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -217,6 +217,28 @@ export async function getSessionResults(
 
   if (!response.ok) {
     throw new Error("Failed to fetch session results");
+  }
+
+  return response.json();
+}
+
+export async function uploadAvatar(
+  playerId: string,
+  file: File,
+): Promise<{ profile_icon: string }> {
+  const formData = new FormData();
+  formData.append("avatar", file);
+
+  const response = await fetch(
+    `${getApiUrl()}/api/profiles/${playerId}/avatar`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to upload avatar");
   }
 
   return response.json();

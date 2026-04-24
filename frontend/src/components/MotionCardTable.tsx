@@ -582,7 +582,14 @@ export function MotionCardTable() {
           className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
         >
           <div className="avatar-circle">
-            <span>{game.playerName.charAt(0).toUpperCase()}</span>
+            {game.playerProfileIcon ? (
+              <img
+                src={game.playerProfileIcon}
+                alt={game.playerName}
+              />
+            ) : (
+              <span>{game.playerName.charAt(0).toUpperCase()}</span>
+            )}
           </div>
           <div className="avatar-info">
             <div className="player-name">

@@ -1,17 +1,21 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"skat/game"
 	"skat/logger"
 	"skat/server/db"
 	"strconv"
 	"strings"
 
+	"cloud.google.com/go/storage"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -36,6 +40,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/games/{id}/agents", s.handleAddAgent).Methods("POST")
 	api.HandleFunc("/games/{id}/results", s.handleGetSessionResults).Methods("GET")
 	api.HandleFunc("/profiles", s.handleCreateProfile).Methods("POST")
+	api.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
 	api.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
 
 	// Serve React build files (must be last - catch-all)
@@ -164,8 +169,9 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 			logger.Info("Returning existing profile", "player_id", existingProfile.ID, "player_name", existingProfile.Name)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
-				"player_id":   existingProfile.ID,
-				"player_name": existingProfile.Name,
+				"player_id":    existingProfile.ID,
+				"player_name":  existingProfile.Name,
+				"profile_icon": existingProfile.ProfileIcon,
 			})
 			return
 		}
@@ -184,8 +190,10 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Existing player ID - retrieve or update name
+		var profileIcon string
 		if profile, err := s.db.GetProfile(playerID); err == nil {
 			// Profile exists, optionally update name if different
+			profileIcon = profile.ProfileIcon
 			if profile.Name != playerName && playerName != "" {
 				profile.Name = playerName
 				if err := s.db.SaveProfile(*profile); err != nil {
@@ -206,6 +214,14 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 			}
 			logger.Info("Created profile for existing ID", "player_id", playerID, "player_name", playerName)
 		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"player_id":    playerID,
+			"player_name":  playerName,
+			"profile_icon": profileIcon,
+		})
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -247,8 +263,9 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 	}
 	// Actually add the player to the game
 	response, err := gs.AddPlayer(&game.PlayerState{
-		ID:   playerID,
-		Name: profile.Name,
+		ID:          playerID,
+		Name:        profile.Name,
+		ProfileIcon: profile.ProfileIcon,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -414,6 +431,128 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"session_id": sessionID,
 		"results":    results,
+	})
+}
+
+// handleUploadAvatar handles avatar image upload for a player profile
+func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	playerID := vars["id"]
+
+	// Verify the profile exists
+	profile, err := s.db.GetProfile(playerID)
+	if err != nil {
+		http.Error(w, "Profile not found", http.StatusNotFound)
+		return
+	}
+
+	// Parse multipart form (10 MB max)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("avatar")
+	if err != nil {
+		http.Error(w, "Failed to get file from form", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Validate file type
+	contentType := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		http.Error(w, "File must be an image", http.StatusBadRequest)
+		return
+	}
+
+	// Generate unique filename
+	ext := filepath.Ext(header.Filename)
+	if ext == "" {
+		ext = ".jpg" // Default extension
+	}
+	filename := fmt.Sprintf("%s%s", playerID, ext)
+
+	var avatarURL string
+
+	// Check if GCS bucket is configured
+	gcsBucket := os.Getenv("GCS_BUCKET")
+	if gcsBucket != "" {
+		// Upload to GCS
+		ctx := context.Background()
+		client, err := storage.NewClient(ctx)
+		if err != nil {
+			logger.Warning("Failed to create GCS client", "error", err)
+			http.Error(w, "Failed to upload avatar", http.StatusInternalServerError)
+			return
+		}
+		defer client.Close()
+
+		objectPath := fmt.Sprintf("avatars/%s", filename)
+		bucket := client.Bucket(gcsBucket)
+		obj := bucket.Object(objectPath)
+		writer := obj.NewWriter(ctx)
+		writer.ContentType = contentType
+
+		if _, err := io.Copy(writer, file); err != nil {
+			writer.Close()
+			logger.Warning("Failed to upload to GCS", "error", err)
+			http.Error(w, "Failed to upload avatar", http.StatusInternalServerError)
+			return
+		}
+
+		if err := writer.Close(); err != nil {
+			logger.Warning("Failed to close GCS writer", "error", err)
+			http.Error(w, "Failed to upload avatar", http.StatusInternalServerError)
+			return
+		}
+
+		// Make the object publicly readable
+		if err := obj.ACL().Set(ctx, storage.AllUsers, storage.RoleReader); err != nil {
+			logger.Warning("Failed to set ACL", "error", err)
+		}
+
+		avatarURL = fmt.Sprintf("https://storage.googleapis.com/%s/%s", gcsBucket, objectPath)
+		logger.Info("Avatar uploaded to GCS", "player_id", playerID, "url", avatarURL)
+	} else {
+		// Store locally in frontend/public/res/avatars
+		uploadDir := "./frontend/public/res/avatars"
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			logger.Warning("Failed to create avatars directory", "error", err)
+			http.Error(w, "Failed to save avatar", http.StatusInternalServerError)
+			return
+		}
+
+		localPath := filepath.Join(uploadDir, filename)
+		outFile, err := os.Create(localPath)
+		if err != nil {
+			logger.Warning("Failed to create file", "error", err)
+			http.Error(w, "Failed to save avatar", http.StatusInternalServerError)
+			return
+		}
+		defer outFile.Close()
+
+		if _, err := io.Copy(outFile, file); err != nil {
+			logger.Warning("Failed to write file", "error", err)
+			http.Error(w, "Failed to save avatar", http.StatusInternalServerError)
+			return
+		}
+
+		avatarURL = fmt.Sprintf("/res/avatars/%s", filename)
+		logger.Info("Avatar saved locally", "player_id", playerID, "path", localPath)
+	}
+
+	// Update profile with avatar URL
+	profile.ProfileIcon = avatarURL
+	if err := s.db.SaveProfile(*profile); err != nil {
+		logger.Warning("Failed to update profile", "error", err)
+		http.Error(w, "Failed to save profile", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"profile_icon": avatarURL,
 	})
 }
 

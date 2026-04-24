@@ -122,7 +122,6 @@
   position: absolute;
   display: flex;
   align-items: center;
-  gap: 10px;
   z-index: 200;
 }
 
@@ -131,6 +130,7 @@
   left: 50%;
   transform: translateX(-50%);
   flex-direction: row;
+  gap: 10px;
 }
 
 .opponent-avatar-container.left {
@@ -146,6 +146,7 @@
   left: 50%;
   transform: translateX(-50%);
   flex-direction: row;
+  gap: 10px;
 }
 
 .avatar-info {
@@ -218,10 +219,9 @@
 
 .opponent-name,
 .player-name {
-  font-size: 12px;
+  font-size: 15px;
   color: white;
   font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   transition: opacity 0.3s ease;
 }
 
@@ -289,8 +289,8 @@
   border: 2px solid rgba(255, 255, 255, 0.2);
   transition: all 0.3s ease;
   z-index: 5;
-  width: 90px;
-  height: 140px;
+  width: calc(var(--card-width) + 12px);
+  height: calc(var(--card-height) + 8px);
 }
 
 /* Player pile styling - highlight with gradient */
@@ -507,12 +507,6 @@
     font-size: 22px;
   }
 
-  .score-pile-label {
-    width: 80px;
-    height: 120px;
-    padding: 10px;
-  }
-
   .pile-score {
     font-size: 28px;
   }
@@ -526,12 +520,6 @@
 @media (max-width: 600px) {
   .motion-card-table {
     min-height: 500px;
-  }
-
-  .score-pile-label {
-    width: 70px;
-    height: 100px;
-    padding: 6px;
   }
 
   .pile-stack {
@@ -565,20 +553,9 @@
     height: 130px;
   }
 
-  .opponent-name,
-  .player-name {
-    font-size: 13px;
-  }
-
   .player-role {
     font-size: 12px;
     margin-top: 2px;
-  }
-
-  /* Reduce gap between avatar elements on mobile */
-  .opponent-avatar-container,
-  .player-avatar-container {
-    gap: 3px;
   }
 
   /* Adjust avatar positions for mobile - denser padding */
@@ -594,12 +571,6 @@
     bottom: 2px;
   }
 
-  /* Additional mobile-specific avatar styles */
-  .opponent-avatar-container.mobile,
-  .player-avatar-container.mobile {
-    gap: 2px;
-  }
-
   .mobile .avatar-circle {
     width: 66px;
     height: 66px;
@@ -609,11 +580,6 @@
   .mobile .avatar-circle::before {
     width: 126px;
     height: 126px;
-  }
-
-  .mobile .opponent-name,
-  .mobile .player-name {
-    font-size: 12px;
   }
 
   .mobile .player-role {

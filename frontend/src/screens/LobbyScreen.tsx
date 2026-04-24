@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -13,9 +13,18 @@ import {
   Alert,
   IconButton,
   CircularProgress,
+  Avatar,
+  Badge,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { createGame, joinGame, getGames, type GameSession } from "../api/games";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import {
+  createGame,
+  joinGame,
+  getGames,
+  uploadAvatar,
+  type GameSession,
+} from "../api/games";
 import { useProfileStore } from "../stores/profileStore";
 
 interface LobbyScreenProps {
@@ -25,11 +34,15 @@ interface LobbyScreenProps {
 export default function LobbyScreen({ username }: LobbyScreenProps) {
   const navigate = useNavigate();
   const profilePlayerId = useProfileStore((state) => state.playerId);
+  const profileIcon = useProfileStore((state) => state.profileIcon);
+  const setProfileIcon = useProfileStore((state) => state.setProfileIcon);
   const [gameCode, setGameCode] = useState("");
   const [games, setGames] = useState<GameSession[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchGames();
@@ -82,6 +95,42 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
     setTimeout(() => handleJoinOrCreate(), 0);
   };
 
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file || !profilePlayerId) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      setError("Please select an image file");
+      return;
+    }
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image must be smaller than 5MB");
+      return;
+    }
+
+    try {
+      setIsUploadingAvatar(true);
+      setError(null);
+
+      const result = await uploadAvatar(profilePlayerId, file);
+      setProfileIcon(result.profile_icon);
+    } catch (error) {
+      console.error("Failed to upload avatar:", error);
+      setError((error as Error).message);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -109,14 +158,68 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
             minHeight: { xs: "100vh", sm: "auto" },
           }}
         >
-          <Typography
-            variant="h4"
-            component="h1"
-            gutterBottom
-            sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              mb: 2,
+            }}
           >
-            Welcome, {username}!
-          </Typography>
+            <Badge
+              overlap="circular"
+              anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+              badgeContent={
+                <IconButton
+                  size="small"
+                  onClick={handleAvatarClick}
+                  disabled={isUploadingAvatar || !profilePlayerId}
+                  sx={{
+                    bgcolor: "primary.main",
+                    color: "white",
+                    "&:hover": { bgcolor: "primary.dark" },
+                    width: 32,
+                    height: 32,
+                  }}
+                >
+                  {isUploadingAvatar ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <PhotoCameraIcon sx={{ fontSize: 16 }} />
+                  )}
+                </IconButton>
+              }
+            >
+              <Avatar
+                src={profileIcon || undefined}
+                alt={username}
+                sx={{
+                  width: 60,
+                  height: 60,
+                  fontSize: "2rem",
+                  bgcolor: "secondary.main",
+                }}
+              >
+                {username.charAt(0).toUpperCase()}
+              </Avatar>
+            </Badge>
+            <Box>
+              <Typography
+                variant="h4"
+                component="h1"
+                sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
+              >
+                Welcome, {username}!
+              </Typography>
+            </Box>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleAvatarChange}
+            />
+          </Box>
 
           {error && (
             <Alert

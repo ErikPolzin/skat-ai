@@ -15,6 +15,7 @@ import {
   selectPlayerId,
   selectSetUsername,
   selectSetPlayerId,
+  selectSetProfileIcon,
 } from "./stores/profileStore";
 import { createOrRetrieveProfile } from "./api/games";
 import { WebSocketProvider } from "./context/WebSocketContext";
@@ -47,6 +48,7 @@ function App() {
   const playerId = useProfileStore(selectPlayerId);
   const setUsername = useProfileStore(selectSetUsername);
   const setPlayerId = useProfileStore(selectSetPlayerId);
+  const setProfileIcon = useProfileStore(selectSetProfileIcon);
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +62,9 @@ function App() {
           if (profile.player_name !== username) {
             setUsername(profile.player_name);
           }
+          if (profile.profile_icon) {
+            setProfileIcon(profile.profile_icon);
+          }
           setError(null);
         })
         .catch((err) => {
@@ -70,7 +75,14 @@ function App() {
           setIsInitializing(false);
         });
     }
-  }, [username, playerId, isInitializing, setPlayerId, setUsername]);
+  }, [
+    username,
+    playerId,
+    isInitializing,
+    setPlayerId,
+    setUsername,
+    setProfileIcon,
+  ]);
 
   // Handle username submission
   const handleUsernameSubmit = async (newUsername: string) => {
@@ -85,6 +97,9 @@ function App() {
       );
       setPlayerId(profile.player_id);
       setUsername(profile.player_name);
+      if (profile.profile_icon) {
+        setProfileIcon(profile.profile_icon);
+      }
     } catch (err) {
       console.error("Failed to create profile:", err);
       setError("Failed to connect to server. Please try again.");

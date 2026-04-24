@@ -294,6 +294,7 @@ export function useGame(
     gameNumber: state.game_number,
     playerId,
     playerName: myPlayer?.name || "",
+    playerProfileIcon: myPlayer?.profile_icon || "",
     playerPosition,
     playerHand: hand,
     leftPlayer,

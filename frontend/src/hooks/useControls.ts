@@ -158,6 +158,7 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
     playNextGame,
     isLoading,
     isConnected: websocket.isConnected,
+    reconnectCountdown: websocket.reconnectCountdown,
   };
 }
 

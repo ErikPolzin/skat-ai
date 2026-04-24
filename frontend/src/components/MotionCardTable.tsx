@@ -462,7 +462,9 @@ export function MotionCardTable() {
                 color: "#d4d4d4",
               }}
             >
-              Attempting to reconnect...
+              {game.controls.reconnectCountdown !== null
+                ? `Reconnecting in ${Math.ceil(game.controls.reconnectCountdown)}s...`
+                : "Attempting to reconnect..."}
             </span>
           </div>
         ) : game.isInLobby ? (

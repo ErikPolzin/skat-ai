@@ -38,6 +38,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/games", s.handleCreateGame).Methods("POST")
 	api.HandleFunc("/games/{id}", s.handleGetGame).Methods("GET")
 	api.HandleFunc("/games/{code}/join", s.handleJoinGame).Methods("POST")
+	api.HandleFunc("/games/{id}/leave", s.handleLeaveGame).Methods("POST")
 	api.HandleFunc("/games/{id}/agents", s.handleAddAgent).Methods("POST")
 	api.HandleFunc("/games/{id}/results", s.handleGetSessionResults).Methods("GET")
 	api.HandleFunc("/games/{id}/deal", s.handleDeal).Methods("POST")
@@ -344,6 +345,119 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 	})
 
 	logger.Info("Player joined game via HTTP", "player_id", playerID, "player_name", profile.Name, "game_id", gs.ID)
+}
+
+// handleLeaveGame removes a player from a game
+func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	gameID := vars["id"]
+
+	var req struct {
+		PlayerID string `json:"player_id,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	playerID := req.PlayerID
+	if playerID == "" {
+		http.Error(w, "player ID is empty", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch game
+	gs, err := s.db.GetGameByID(gameID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Find the player
+	position := gs.GetPositionForPlayer(playerID)
+	if position == -1 {
+		http.Error(w, "player not in this game", http.StatusBadRequest)
+		return
+	}
+
+	// Get player name for broadcast messages
+	playerName := gs.Players[position].Name
+
+	// Check if game is in progress (not waiting for players)
+	if gs.Phase != game.PhaseWaitingForPlayers && gs.Phase != game.PhaseComplete {
+		// Game is in progress - end it and award points to remaining players
+		// Player who left forfeits and loses maximum points
+		gs.Phase = game.PhaseComplete
+
+		// Award forfeit points: leaving player gets -120, others get +60 each
+		results := []game.PlayerResultState{}
+		for pos, player := range gs.Players {
+			if player != nil {
+				points := 60 // Remaining players get points
+				isWinner := true
+				if game.GamePosition(pos) == position {
+					points = -120 // Leaving player loses
+					isWinner = false
+				}
+				results = append(results, game.PlayerResultState{
+					GameID:         gs.ID,
+					SessionID:      gs.SessionID,
+					PlayerID:       player.ID,
+					PlayerPosition: game.GamePosition(pos),
+					PlayerPoints:   points,
+					IsWinner:       isWinner,
+				})
+			}
+		}
+
+		// Save the results
+		if err := s.db.SavePlayerResults(results); err != nil {
+			logger.Warning("Failed to save forfeit results", "game_id", gs.ID, "error", err)
+		}
+
+		s.db.SaveGame(*gs)
+
+		// Broadcast forfeit to other players
+		s.clients.BroadcastToPlayers(gs, &Message{
+			Type: "player_forfeit",
+			Data: map[string]any{
+				"player_id":   playerID,
+				"player_name": playerName,
+				"game_id":     gs.ID,
+			},
+		})
+
+		logger.Info("Player forfeited game", "player_id", playerID, "game_id", gs.ID)
+	} else {
+		// Game hasn't started yet - just remove the player
+		gs.Players[position] = nil
+
+		// If no players left, delete the game
+		if gs.PlayerCount() == 0 {
+			if err := s.db.DeleteGame(gs.ID); err != nil {
+				logger.Warning("Failed to delete empty game", "game_id", gs.ID, "error", err)
+			}
+			logger.Info("Player left game, game deleted (no players remaining)", "player_id", playerID, "game_id", gs.ID)
+		} else {
+			// Save the updated game
+			s.db.SaveGame(*gs)
+
+			// Broadcast to other players that someone left
+			s.clients.BroadcastToPlayers(gs, &Message{
+				Type: "player_left",
+				Data: map[string]any{
+					"player_id":   playerID,
+					"player_name": playerName,
+					"game_id":     gs.ID,
+				},
+			})
+
+			logger.Info("Player left game (lobby)", "player_id", playerID, "game_id", gs.ID, "remaining_players", gs.PlayerCount())
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "left"})
 }
 
 // handleAddAgent adds an AI agent to a game

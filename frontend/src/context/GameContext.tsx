@@ -96,6 +96,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
           }
         }
         break;
+      case "player_left":
+        // Player left the game lobby
+        if (message.data.player_name) {
+          addMessage(`${message.data.player_name} left the game`, false);
+        } else {
+          addMessage(`A player left the game`, false);
+        }
+        // The server will send a state_update with the new player list
+        break;
+      case "player_forfeit":
+        // Player forfeited an active game
+        if (message.data.player_name) {
+          addMessage(`${message.data.player_name} has forfeited. Game ended.`, true);
+        } else {
+          addMessage(`A player has forfeited. Game ended.`, true);
+        }
+        // The server will send a state_update with game complete status
+        break;
       case "error":
         addMessage(message.data.message, true);
         break;

@@ -13,14 +13,19 @@ import {
   useMediaQuery,
   useTheme,
   Backdrop,
+  Button,
+  CircularProgress,
 } from "@mui/material";
-import { ExpandMore, ExpandLess } from "@mui/icons-material";
+import { ExpandMore, ExpandLess, ExitToApp } from "@mui/icons-material";
+import { useNavigate } from "react-router-dom";
 import type { SessionGameResult } from "../types";
 import type { Player } from "../api/games";
+import { leaveGame } from "../api/games";
 
 interface SessionResultsProps {
   results: SessionGameResult[];
   playerId?: string;
+  gameId?: string;
   gamesPlayed: number;
   maxGames: number;
   players?: (Player | null)[];
@@ -29,13 +34,29 @@ interface SessionResultsProps {
 export function SessionResults({
   results,
   playerId,
+  gameId,
   gamesPlayed,
   maxGames,
   players,
 }: SessionResultsProps) {
   const theme = useTheme();
+  const navigate = useNavigate();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+
+  const handleLeaveSession = async () => {
+    if (!playerId || !gameId) return;
+
+    try {
+      setIsLeaving(true);
+      await leaveGame(gameId, playerId);
+      navigate("/");
+    } catch (error) {
+      console.error("Failed to leave session:", error);
+      setIsLeaving(false);
+    }
+  };
 
   // Get player IDs from results or from players prop
   let playerIds: string[] = [];
@@ -88,18 +109,35 @@ export function SessionResults({
         <Typography variant="subtitle1" sx={{ color: "white" }}>
           Session Results ({gamesPlayed}/{maxGames})
         </Typography>
-        {isMobile && (
-          <IconButton
-            onClick={(e) => {
-              e.stopPropagation();
-              setDrawerOpen(!drawerOpen);
-            }}
-            size="small"
-            sx={{ color: "rgba(255, 255, 255, 0.7)" }}
-          >
-            {drawerOpen ? <ExpandLess /> : <ExpandMore />}
-          </IconButton>
-        )}
+        <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+          {!isMobile && (
+            <Button
+              variant="outlined"
+              color="error"
+              size="small"
+              onClick={handleLeaveSession}
+              disabled={isLeaving}
+              startIcon={
+                isLeaving ? <CircularProgress size={16} /> : <ExitToApp />
+              }
+              sx={{ textTransform: "none" }}
+            >
+              {isLeaving ? "Leaving..." : "Leave"}
+            </Button>
+          )}
+          {isMobile && (
+            <IconButton
+              onClick={(e) => {
+                e.stopPropagation();
+                setDrawerOpen(!drawerOpen);
+              }}
+              size="small"
+              sx={{ color: "rgba(255, 255, 255, 0.7)" }}
+            >
+              {drawerOpen ? <ExpandLess /> : <ExpandMore />}
+            </IconButton>
+          )}
+        </Box>
       </Box>
 
       {/* Player Cumulative Scores Table */}

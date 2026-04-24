@@ -116,6 +116,7 @@ function GameScreenContent() {
           <SessionResults
             results={game.sessionResults}
             playerId={game.playerId}
+            gameId={game.gameId}
             gamesPlayed={game.gamesPlayed}
             maxGames={10}
             players={game.players}
@@ -128,6 +129,7 @@ function GameScreenContent() {
         <SessionResults
           results={game.sessionResults}
           playerId={game.playerId}
+          gameId={game.gameId}
           gamesPlayed={game.gamesPlayed}
           maxGames={10}
           players={game.players}

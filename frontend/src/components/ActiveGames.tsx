@@ -13,7 +13,8 @@ import {
   Chip,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { getActiveGames, type ActiveGame } from "../api/games";
+import CloseIcon from "@mui/icons-material/Close";
+import { getActiveGames, leaveGame, type ActiveGame } from "../api/games";
 
 interface ActiveGamesProps {
   playerId: string | null;
@@ -23,6 +24,7 @@ export default function ActiveGames({ playerId }: ActiveGamesProps) {
   const navigate = useNavigate();
   const [games, setGames] = useState<ActiveGame[]>([]);
   const [isFetching, setIsFetching] = useState(false);
+  const [leavingGameId, setLeavingGameId] = useState<string | null>(null);
 
   const fetchActiveGames = async () => {
     if (!playerId) return;
@@ -45,6 +47,22 @@ export default function ActiveGames({ playerId }: ActiveGamesProps) {
 
   const handleRejoinGame = (gameId: string) => {
     navigate(`/game/${gameId}`);
+  };
+
+  const handleLeaveGame = async (gameId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent triggering rejoin
+    if (!playerId) return;
+
+    try {
+      setLeavingGameId(gameId);
+      await leaveGame(gameId, playerId);
+      // Refresh the list after leaving
+      await fetchActiveGames();
+    } catch (error) {
+      console.error("Failed to leave game:", error);
+    } finally {
+      setLeavingGameId(null);
+    }
   };
 
   const getPhaseLabel = (phase: string): string => {
@@ -153,13 +171,27 @@ export default function ActiveGames({ playerId }: ActiveGamesProps) {
                 }
               />
               <ListItemSecondaryAction>
-                <Button
-                  variant="contained"
-                  onClick={() => handleRejoinGame(game.id)}
-                  size="small"
-                >
-                  Rejoin
-                </Button>
+                <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                  <Button
+                    variant="contained"
+                    onClick={() => handleRejoinGame(game.id)}
+                    size="small"
+                  >
+                    Rejoin
+                  </Button>
+                  <IconButton
+                    onClick={(e) => handleLeaveGame(game.id, e)}
+                    disabled={leavingGameId === game.id}
+                    color="error"
+                    size="small"
+                  >
+                    {leavingGameId === game.id ? (
+                      <CircularProgress size={20} color="error" />
+                    ) : (
+                      <CloseIcon fontSize="small" />
+                    )}
+                  </IconButton>
+                </Box>
               </ListItemSecondaryAction>
             </ListItem>
           ))}

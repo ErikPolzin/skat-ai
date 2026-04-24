@@ -356,3 +356,22 @@ export async function startNextGame(
 ): Promise<void> {
   return gameAction(gameId, "start_next_game", playerId);
 }
+
+export async function leaveGame(
+  gameId: string,
+  playerId: string,
+): Promise<void> {
+  const url = `${getApiUrl()}/api/games/${gameId}/leave`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ player_id: playerId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error || `HTTP ${response.status}`);
+  }
+}

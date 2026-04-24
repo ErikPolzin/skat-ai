@@ -1,10 +1,27 @@
-import React from "react";
-import { Box, Typography, Button, Paper } from "@mui/material";
+import React, { useState } from "react";
+import { Box, Typography, Button, Paper, CircularProgress } from "@mui/material";
+import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
+import { leaveGame } from "../api/games";
 
 export function GameLobbyWaiting() {
   const game = useGameContext();
+  const navigate = useNavigate();
+  const [isLeaving, setIsLeaving] = useState(false);
   const playersNeeded = 3 - game.playerCount;
+
+  const handleLeaveGame = async () => {
+    if (!game.playerId || !game.gameId) return;
+
+    try {
+      setIsLeaving(true);
+      await leaveGame(game.gameId, game.playerId);
+      navigate("/");
+    } catch (error) {
+      console.error("Failed to leave game:", error);
+      setIsLeaving(false);
+    }
+  };
 
   return (
     <Box
@@ -102,9 +119,20 @@ export function GameLobbyWaiting() {
             Waiting for {playersNeeded} more player
             {playersNeeded > 1 ? "s" : ""}...
           </Typography>
-          <Button variant="contained" onClick={() => game.addAgent()}>
-            Add AI Player
-          </Button>
+          <Box sx={{ display: "flex", gap: 2, justifyContent: "center" }}>
+            <Button variant="contained" onClick={() => game.addAgent()}>
+              Add AI Player
+            </Button>
+            <Button
+              variant="outlined"
+              color="error"
+              onClick={handleLeaveGame}
+              disabled={isLeaving}
+              startIcon={isLeaving ? <CircularProgress size={16} /> : null}
+            >
+              {isLeaving ? "Leaving..." : "Leave Game"}
+            </Button>
+          </Box>
         </>
       )}
     </Box>

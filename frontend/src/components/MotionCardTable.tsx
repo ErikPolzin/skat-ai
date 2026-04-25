@@ -8,7 +8,7 @@ import React, {
 import { AnimatePresence, motion } from "motion/react";
 import { Button, useMediaQuery, useTheme } from "@mui/material";
 import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
-import { Card as CardType } from "../api/games";
+import { Card as CardType, reportTimeout } from "../api/games";
 import "./MotionCardTable.css";
 import { useGameContext } from "../context/GameContext";
 import Card from "./Card";
@@ -18,6 +18,8 @@ import { BiddingControls } from "./BiddingControls";
 import { SkatExchange } from "./SkatExchange";
 import { GameOverScreen } from "./GameOverScreen";
 import { canPlayCard } from "../utils/skatRules";
+import { CircularTimer } from "./CircularTimer";
+import { useDeadlineTimer } from "../hooks/useDeadlineTimer";
 
 // Helper function to convert suit emoji to word
 function getSuitName(suitEmoji?: string): string {
@@ -73,6 +75,18 @@ export function MotionCardTable() {
     width: window.innerWidth,
     height: window.innerHeight,
   });
+
+  // Track deadline timer for countdown display
+  const { secondsRemaining, formattedTime, isExpired } = useDeadlineTimer(game.currentPlayerDeadline || "");
+
+  // Report timeout to server when deadline expires
+  useEffect(() => {
+    if (isExpired && game.currentPlayerDeadline && game.phase !== "complete" && game.playerId) {
+      reportTimeout(game.gameId, game.playerId).catch((err) => {
+        console.error("Failed to report timeout:", err);
+      });
+    }
+  }, [isExpired, game.currentPlayerDeadline, game.gameId, game.playerId, game.phase]);
 
   // Calculate table size based on window size
   // This matches the CSS table-surface dimensions
@@ -491,6 +505,18 @@ export function MotionCardTable() {
             <span className="mode-title">
               {getGameModeDisplay(game.gameMode, game.trumpSuit)}
             </span>
+            {game.currentPlayerDeadline && secondsRemaining !== null && secondsRemaining > 0 && secondsRemaining <= 30 && (
+              <div style={{
+                color: "#f44336",
+                fontSize: "24px",
+                fontWeight: "bold",
+                marginTop: "12px",
+                textShadow: "0 2px 4px rgba(0,0,0,0.5)",
+                animation: secondsRemaining <= 10 ? "pulse 1s infinite" : undefined,
+              }}>
+                {formattedTime}
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -501,15 +527,32 @@ export function MotionCardTable() {
           >
             <div
               className={`avatar-circle ${!game.controls.isConnected || !game.topPlayer.is_online ? "offline" : ""}`}
+              style={{ position: "relative", overflow: "visible" }}
             >
-              {game.topPlayer.profile_icon ? (
-                <img
-                  src={game.topPlayer.profile_icon}
-                  alt={game.topPlayer.name}
-                />
-              ) : (
-                <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
-              )}
+              <CircularTimer
+                deadline={game.currentPlayerDeadline || ""}
+                isCurrentPlayer={game.topPlayer.position === game.currentPlayer}
+                isAI={game.topPlayer.is_agent}
+                size={isMobile ? 70 : 65}
+              />
+              <div style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                borderRadius: "50%",
+                overflow: "hidden"
+              }}>
+                {game.topPlayer.profile_icon ? (
+                  <img
+                    src={game.topPlayer.profile_icon}
+                    alt={game.topPlayer.name}
+                  />
+                ) : (
+                  <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
+                )}
+              </div>
             </div>
             <div className="avatar-info">
               <div
@@ -543,15 +586,32 @@ export function MotionCardTable() {
           >
             <div
               className={`avatar-circle ${!game.controls.isConnected || !game.leftPlayer.is_online ? "offline" : ""}`}
+              style={{ position: "relative", overflow: "visible" }}
             >
-              {game.leftPlayer.profile_icon ? (
-                <img
-                  src={game.leftPlayer.profile_icon}
-                  alt={game.leftPlayer.name}
-                />
-              ) : (
-                <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
-              )}
+              <CircularTimer
+                deadline={game.currentPlayerDeadline || ""}
+                isCurrentPlayer={game.leftPlayer.position === game.currentPlayer}
+                isAI={game.leftPlayer.is_agent}
+                size={isMobile ? 70 : 65}
+              />
+              <div style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                borderRadius: "50%",
+                overflow: "hidden"
+              }}>
+                {game.leftPlayer.profile_icon ? (
+                  <img
+                    src={game.leftPlayer.profile_icon}
+                    alt={game.leftPlayer.name}
+                  />
+                ) : (
+                  <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
+                )}
+              </div>
             </div>
             <div className="avatar-info">
               <div
@@ -582,15 +642,31 @@ export function MotionCardTable() {
         <div
           className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""} ${game.controls.isLoading ? "loading" : ""} ${isMobile ? "mobile" : ""}`}
         >
-          <div className="avatar-circle">
-            {game.playerProfileIcon ? (
-              <img
-                src={game.playerProfileIcon}
-                alt={game.playerName}
-              />
-            ) : (
-              <span>{game.playerName.charAt(0).toUpperCase()}</span>
-            )}
+          <div className="avatar-circle" style={{ position: "relative", overflow: "visible" }}>
+            <CircularTimer
+              deadline={game.currentPlayerDeadline || ""}
+              isCurrentPlayer={game.isMyTurn}
+              isAI={false}
+              size={isMobile ? 70 : 65}
+            />
+            <div style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              borderRadius: "50%",
+              overflow: "hidden"
+            }}>
+              {game.playerProfileIcon ? (
+                <img
+                  src={game.playerProfileIcon}
+                  alt={game.playerName}
+                />
+              ) : (
+                <span>{game.playerName.charAt(0).toUpperCase()}</span>
+              )}
+            </div>
           </div>
           <div className="avatar-info">
             <div className="player-name">
@@ -793,7 +869,7 @@ export function MotionCardTable() {
           })}
 
           {/* Trick Cards */}
-          {game.trick.map((card, index) => (
+          {!game.gameOver && game.trick.map((card, index) => (
             <Card
               key={trickKeys[index]}
               index={index}

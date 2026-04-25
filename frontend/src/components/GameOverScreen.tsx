@@ -37,11 +37,17 @@ export function GameOverScreen() {
       >
         {game.playerWon ? "YOU WON" : "YOU LOST"}
       </span>
-      <span className="game-over-score">
-        {game.declarer?.name}: {game.playerWon === game.isDeclarer ? "+" : ""}
-        {result.value}
-      </span>
-      {!game.isNull && result.base_value > 0 && (
+      {result.is_forfeit ? (
+        <span className="game-over-score" style={{ fontSize: "18px", marginTop: "12px" }}>
+          Game forfeited due to inactivity
+        </span>
+      ) : (
+        <span className="game-over-score">
+          {game.declarer?.name}: {game.playerWon === game.isDeclarer ? "+" : ""}
+          {result.value}
+        </span>
+      )}
+      {!result.is_forfeit && !game.isNull && result.base_value > 0 && (
         <TableContainer component={Paper}>
           <Table size="small">
             <TableBody>

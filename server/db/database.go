@@ -25,6 +25,7 @@ type Database interface {
 	ListAgentProfiles() ([]ProfileEntry, error)
 	CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []string) (int, error)
 	GetActiveGamesByPlayer(playerID string) ([]game.GameState, error)
+	GetAllExpiredGames() ([]game.GameState, error)
 	// Rating methods
 	GetPlayerRating(profileID string) (*PlayerRating, error)
 	SavePlayerRating(rating PlayerRating) error

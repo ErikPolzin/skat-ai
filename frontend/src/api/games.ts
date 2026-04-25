@@ -48,6 +48,7 @@ export interface GameState {
   speaker_passed: boolean;
   dealer_passed: boolean;
   matadors: number; // Positive=with, negative=without
+  current_player_deadline: string; // RFC3339 timestamp when current player times out
 }
 
 export interface GameResult {
@@ -58,6 +59,7 @@ export interface GameResult {
   is_schneider: boolean;
   is_schwarz: boolean;
   value: number;
+  is_forfeit?: boolean;
 }
 
 export interface GameInfo {
@@ -294,6 +296,8 @@ export interface SessionResults {
     trump_suit: TrumpSuit;
     player_results: { [playerId: string]: number };
     player_names: { [playerId: string]: string };
+    player_winners: { [playerId: string]: boolean };
+    forfeited_player: number;
   }>;
 }
 
@@ -406,6 +410,13 @@ export async function startNextGame(
   playerId: string,
 ): Promise<void> {
   return gameAction(gameId, "start_next_game", playerId);
+}
+
+export async function reportTimeout(
+  gameId: string,
+  playerId: string,
+): Promise<void> {
+  return gameAction(gameId, "timeout", playerId);
 }
 
 export async function leaveGame(

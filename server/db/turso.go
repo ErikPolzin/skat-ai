@@ -146,11 +146,13 @@ func (d *TursoDatabase) GetGameSession(sessionID string) (*game.GameSessionState
 func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	var gs game.GameState
 	var skatString, trickString string
+	var deadline sql.NullString
 	err := d.DB.QueryRow(
 		`SELECT g.id, g.session_id, gss.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed
+			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
+			g.current_player_deadline, g.forfeited_player
 		FROM games g
 		JOIN game_sessions gss ON g.session_id = gss.id
 		WHERE g.id = ?`,
@@ -159,7 +161,8 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
+		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
+		&deadline, &gs.ForfeitedPlayer)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
 	}
@@ -175,6 +178,13 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	gs.Trick, err = game.ParseCards(trickString)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse trick: %w", err)
+	}
+
+	// Handle nullable deadline
+	if deadline.Valid {
+		gs.CurrentPlayerDeadline = deadline.String
+	} else {
+		gs.CurrentPlayerDeadline = ""
 	}
 
 	// Load players
@@ -189,11 +199,13 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, error) {
 	var gs game.GameState
 	var skatString, trickString string
+	var deadline sql.NullString
 	err := d.DB.QueryRow(
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed
+			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
+			g.current_player_deadline, g.forfeited_player
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE gs.code = ?
@@ -204,7 +216,8 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed)
+		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
+		&deadline, &gs.ForfeitedPlayer)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
 	}
@@ -220,6 +233,13 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 	gs.Trick, err = game.ParseCards(trickString)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse trick: %w", err)
+	}
+
+	// Handle nullable deadline
+	if deadline.Valid {
+		gs.CurrentPlayerDeadline = deadline.String
+	} else {
+		gs.CurrentPlayerDeadline = ""
 	}
 
 	// Load players
@@ -236,6 +256,14 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 	skatString := skatCards.String()
 	trickString := gs.Trick.String()
 
+	// Handle empty deadline as NULL
+	var deadline interface{}
+	if gs.CurrentPlayerDeadline == "" {
+		deadline = nil
+	} else {
+		deadline = gs.CurrentPlayerDeadline
+	}
+
 	// SQLite/Turso syntax
 	_, err := d.DB.Exec(
 		`INSERT INTO games (
@@ -243,9 +271,10 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			trick_starter, trick_winner, current_player,
 			declarer, declarer_score, opponent_score,
 			game_mode, trump_suit, bid_value, matadors,
-			listener_passed, speaker_passed, dealer_passed,
+			listener_passed, speaker_passed, dealer_passed, overbid,
+			current_player_deadline, forfeited_player,
 			created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT (id) DO UPDATE SET
 			session_id = excluded.session_id, game_number = excluded.game_number,
@@ -257,13 +286,16 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			game_mode = excluded.game_mode, trump_suit = excluded.trump_suit,
 			bid_value = excluded.bid_value, matadors = excluded.matadors,
 			listener_passed = excluded.listener_passed, speaker_passed = excluded.speaker_passed,
-			dealer_passed = excluded.dealer_passed,
+			dealer_passed = excluded.dealer_passed, overbid = excluded.overbid,
+			current_player_deadline = excluded.current_player_deadline,
+			forfeited_player = excluded.forfeited_player,
 			updated_at = CURRENT_TIMESTAMP`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
 		gs.Declarer, gs.DeclarerScore, gs.OpponentScore,
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
-		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed,
+		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,
+		deadline, gs.ForfeitedPlayer,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save game: %w", err)
@@ -560,6 +592,34 @@ func (d *TursoDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameStat
 	`, playerID, game.PhaseComplete)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active games by player: %w", err)
+	}
+	defer rows.Close()
+
+	var games []game.GameState
+	for rows.Next() {
+		var gameID string
+		if err := rows.Scan(&gameID); err != nil {
+			return nil, fmt.Errorf("failed to scan game ID: %w", err)
+		}
+
+		gs, err := d.GetGameByID(gameID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get game %s: %w", gameID, err)
+		}
+		games = append(games, *gs)
+	}
+
+	return games, nil
+}
+
+func (d *TursoDatabase) GetAllExpiredGames() ([]game.GameState, error) {
+	rows, err := d.DB.Query(`
+		SELECT id
+		FROM games
+		WHERE phase != ? AND phase != ? AND current_player_deadline != '' AND current_player_deadline < datetime('now')
+	`, game.PhaseComplete, game.PhaseWaitingForPlayers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query expired games: %w", err)
 	}
 	defer rows.Close()
 

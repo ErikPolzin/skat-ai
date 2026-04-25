@@ -160,15 +160,59 @@ func (s *Server) notifyPlayerOffline(profileID string) {
 	logger.Info("Player went offline", "profile_id", profileID, "games_notified", len(games))
 }
 
-// StartCleanupTask starts a background task that periodically cleans up stale games
+// StartCleanupTask starts a background task that periodically cleans up stale games and checks for timeouts
 func (s *Server) StartCleanupTask(intervalMinutes int, inactiveMinutes int) {
 	ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
 	go func() {
 		for range ticker.C {
 			s.cleanupStaleGames(inactiveMinutes)
+			s.checkInactivityTimeouts()
 		}
 	}()
-	logger.Info("Started cleanup task", "check_interval_minutes", intervalMinutes, "inactive_threshold_minutes", inactiveMinutes)
+	logger.Info("Started cleanup task (includes timeout checking)", "check_interval_minutes", intervalMinutes, "inactive_threshold_minutes", inactiveMinutes)
+}
+
+// checkInactivityTimeouts checks all active games for inactivity and forfeits if needed
+func (s *Server) checkInactivityTimeouts() {
+	games, err := s.db.GetAllExpiredGames()
+	if err != nil {
+		logger.Warning("Failed to get expired games for timeout check", "error", err)
+		return
+	}
+
+	for _, gs := range games {
+		if gs.IsDeadlinePassed() {
+			currentPlayer := gs.GetCurrentPlayer()
+			if currentPlayer == nil {
+				continue
+			}
+
+			logger.Info("Game timed out - player deadline passed",
+				"game_id", gs.ID,
+				"inactive_player", currentPlayer.Name,
+				"player_id", currentPlayer.ID,
+				"deadline", gs.CurrentPlayerDeadline)
+
+			// Forfeit the game
+			results := gs.ForfeitDueToInactivity()
+
+			// Save results to database
+			if err := s.db.SavePlayerResults(results); err != nil {
+				logger.Warning("Failed to save timeout forfeit results", "game_id", gs.ID, "error", err)
+			}
+
+			// Save the updated game state
+			if err := s.db.SaveGame(gs); err != nil {
+				logger.Warning("Failed to save game after timeout", "game_id", gs.ID, "error", err)
+			}
+
+			// Broadcast the updated game state so clients show game over screen
+			timeoutMsg := fmt.Sprintf("%s was inactive for 2 minutes and has forfeited the game", currentPlayer.Name)
+			s.clients.BroadcastStateChange(&gs, timeoutMsg, gs.CurrentPlayer)
+
+			logger.Info("Game forfeited due to timeout", "game_id", gs.ID, "player_id", currentPlayer.ID)
+		}
+	}
 }
 
 // cleanupStaleGames removes games that have been inactive and have no online human players

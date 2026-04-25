@@ -44,6 +44,9 @@ CREATE TABLE IF NOT EXISTS games (
     listener_passed BOOLEAN DEFAULT FALSE,
     speaker_passed BOOLEAN DEFAULT FALSE,
     dealer_passed BOOLEAN DEFAULT FALSE,
+    overbid BOOLEAN DEFAULT FALSE,
+    current_player_deadline TIMESTAMP,
+    forfeited_player INTEGER DEFAULT -1,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE

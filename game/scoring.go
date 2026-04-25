@@ -4,6 +4,9 @@ package game
 func (gs *GameState) Result() GameResult {
 	result := GameResult{}
 
+	// Check if game was forfeited
+	result.IsForfeit = gs.ForfeitedPlayer >= 0
+
 	// Base value depends on game mode
 	switch gs.Mode {
 	case ModeGrand:
@@ -56,6 +59,14 @@ func (gs *GameState) Result() GameResult {
 
 	result.Matadors = gs.Matadors
 	gameValue := result.BaseValue * result.Multiplier
+
+	// If declarer overbid (game value < bid value), they automatically lose
+	// and lose double the BID value (not game value)
+	if gs.Overbid {
+		result.DeclarerWon = false
+		result.Value = -2 * int(gs.BidValue)
+		return result
+	}
 
 	// If declarer lost, game value is doubled and negative
 	if !result.DeclarerWon {

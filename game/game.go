@@ -62,16 +62,22 @@ type GameState struct {
 	ListenerPassed bool `json:"listener_passed"` // Has listener passed?
 	SpeakerPassed  bool `json:"speaker_passed"`  // Has speaker passed?
 	DealerPassed   bool `json:"dealer_passed"`   // Has dealer passed?
+	Overbid        bool `json:"overbid"`         // True if declarer's game value < bid value (automatic loss)
+
+	// Inactivity timeout tracking
+	CurrentPlayerDeadline string       `json:"current_player_deadline"` // RFC3339 timestamp when current player times out
+	ForfeitedPlayer       GamePosition `json:"forfeited_player"`        // Position of player who forfeited (-1 if no forfeit)
 }
 
 type GameResult struct {
-	BaseValue     int  `json:"base_value"`      // Base value (9-12 for suits, 24 for grand, 23 for null)
-	Matadors      int  `json:"matadors"`        // Matadors (positive=with, negative=without)
-	Multiplier    int  `json:"multiplier"`      // Total multiplier (1 + |matadors| + schneider + schwarz)
-	DeclarerWon   bool `json:"declarer_won"`    // Did declarer win
-	IsSchneider   bool `json:"is_schneider"`    // Schneider achieved
-	IsSchwarz     bool `json:"is_schwarz"`      // Schwarz achieved
-	Value         int  `json:"value"`           // Final game value (negative if lost, doubled if lost)
+	BaseValue   int  `json:"base_value"`   // Base value (9-12 for suits, 24 for grand, 23 for null)
+	Matadors    int  `json:"matadors"`     // Matadors (positive=with, negative=without)
+	Multiplier  int  `json:"multiplier"`   // Total multiplier (1 + |matadors| + schneider + schwarz)
+	DeclarerWon bool `json:"declarer_won"` // Did declarer win
+	IsSchneider bool `json:"is_schneider"` // Schneider achieved
+	IsSchwarz   bool `json:"is_schwarz"`   // Schwarz achieved
+	Value       int  `json:"value"`        // Final game value (negative if lost, doubled if lost)
+	IsForfeit   bool `json:"is_forfeit"`   // Game ended due to forfeit
 }
 
 type GameSessionState struct {
@@ -130,17 +136,18 @@ type PlayerState struct {
 // NewGame creates a new Skat game
 func NewGame() *GameState {
 	gs := &GameState{
-		ID:             uuid.New().String(),
-		SessionID:      uuid.New().String(),
-		Code:           NewGameCode(),
-		Players:        [3]*PlayerState{},
-		Phase:          PhaseWaitingForPlayers, // Start waiting for players
-		Declarer:       -1,                     // Not determined yet
-		CurrentPlayer:  0,                      // Dealer starts as the current player
-		BidValue:       0,                      // Bidding starts at 0
-		ListenerPassed: false,
-		SpeakerPassed:  false,
-		DealerPassed:   false,
+		ID:              uuid.New().String(),
+		SessionID:       uuid.New().String(),
+		Code:            NewGameCode(),
+		Players:         [3]*PlayerState{},
+		Phase:           PhaseWaitingForPlayers, // Start waiting for players
+		Declarer:        -1,                     // Not determined yet
+		CurrentPlayer:   0,                      // Dealer starts as the current player
+		BidValue:        0,                      // Bidding starts at 0
+		ListenerPassed:  false,
+		SpeakerPassed:   false,
+		DealerPassed:    false,
+		ForfeitedPlayer: -1, // No forfeit
 	}
 	return gs
 }
@@ -398,6 +405,14 @@ func (gs *GameState) IsSchwarz() bool {
 
 // GetGameResult returns the result of the game including schneider/schwarz
 func (gs *GameState) GetGameResult() (declarerWon bool, schneider bool, schwarz bool) {
+	// Handle forfeit games - winner is determined by who forfeited
+	if gs.ForfeitedPlayer >= 0 {
+		declarerWon = gs.ForfeitedPlayer != gs.Declarer // Declarer wins if they didn't forfeit
+		schneider = false
+		schwarz = false
+		return
+	}
+
 	if gs.Mode == ModeNull {
 		// Null game: declarer wins if they take no tricks
 		declarerWon = gs.DeclarerScore == 0
@@ -485,6 +500,37 @@ func Results(gs *GameState) []PlayerResultState {
 	}
 
 	results := make([]PlayerResultState, 0, 3)
+
+	// If game was forfeited, use forfeit scoring
+	if gs.ForfeitedPlayer >= 0 {
+		for pos := Dealer; pos <= Speaker; pos++ {
+			player := gs.Players[pos]
+			if player == nil {
+				continue
+			}
+
+			points := 60 // Other players get points
+			isWinner := true
+			if pos == gs.ForfeitedPlayer {
+				points = -120 // Forfeited player loses
+				isWinner = false
+			}
+
+			result := PlayerResultState{
+				GameID:         gs.ID,
+				SessionID:      gs.SessionID,
+				PlayerID:       player.ID,
+				IsWinner:       isWinner,
+				PlayerPosition: pos,
+				PlayerPoints:   points,
+			}
+
+			results = append(results, result)
+		}
+		return results
+	}
+
+	// Normal game scoring
 	declarerWon, _, _ := gs.GetGameResult()
 	points := gs.CalculatePlayerPoints()
 

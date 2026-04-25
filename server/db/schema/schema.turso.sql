@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS games (
     listener_passed INTEGER DEFAULT 0,
     speaker_passed INTEGER DEFAULT 0,
     dealer_passed INTEGER DEFAULT 0,
+    overbid INTEGER DEFAULT 0,
+    current_player_deadline DATETIME,
+    forfeited_player INTEGER DEFAULT -1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE

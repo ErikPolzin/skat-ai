@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"skat/logger"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -15,12 +16,10 @@ func (gs *GameState) AddPlayer(player *PlayerState) (string, error) {
 	}
 	position := gs.GetRandomPosition()
 	gs.Players[position] = player
-	logger.Info("Player joined game", "player_name", player.Name, "game_id", gs.ID, "position", position)
 	if gs.PlayerCount() != 3 {
 		return fmt.Sprintf("%s joined the game", player.Name), nil
 	}
 	gs.Phase = PhaseDealing
-	logger.Info("Game ready with 3 players", "game_id", gs.ID)
 	return "Game started", nil
 }
 
@@ -69,6 +68,7 @@ func (gs *GameState) PlayCard(card Card) (string, error) {
 		// Next player
 		gs.CurrentPlayer = (gs.CurrentPlayer + 1) % 3
 	}
+	gs.UpdateCurrentPlayerDeadline()
 	return fmt.Sprintf("%v", card), nil
 }
 
@@ -79,6 +79,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 		// In null games, if declarer takes any trick, game ends immediately
 		if gs.TrickWinner == gs.Declarer {
 			gs.Phase = PhaseComplete // Game ends immediately - declarer loses
+			gs.CurrentPlayerDeadline = "" // Clear deadline when game ends
 			gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
 			gs.Trick = nil
 			declarer := gs.GetPlayerByPosition(gs.Declarer)
@@ -102,6 +103,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 	// Check if game is over
 	if len(gs.Players[0].Hand) == 0 {
 		gs.Phase = PhaseComplete
+		gs.CurrentPlayerDeadline = "" // Clear deadline when game ends
 		// Add skat cards to declarer's score in normal games
 		if gs.Mode != ModeNull && gs.Declarer >= 0 {
 			gs.DeclarerScore += gs.Skat[0].Value() + gs.Skat[1].Value()
@@ -224,6 +226,7 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		}
 	}
 
+	gs.UpdateCurrentPlayerDeadline()
 	return action, nil
 }
 
@@ -262,6 +265,7 @@ func (gs *GameState) Deal() (string, error) {
 	// Move to bidding phase
 	gs.Phase = PhaseBidding
 	gs.CurrentPlayer = 2 // Speaker starts bidding
+	gs.UpdateCurrentPlayerDeadline()
 	return "Dealt cards", nil
 }
 
@@ -280,17 +284,19 @@ func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit) (string, error) 
 
 	// Calculate the actual game value based on cards and game type
 	// Note: This is calculated before playing to validate against bid
-	gameValue := gs.calculatePotentialGameValue()
+	potentialValue := gs.calculatePotentialGameValue()
 
 	// Validate that the declared game can meet the bid value
-	if gameValue < int(gs.BidValue) {
-		return "", fmt.Errorf("game value %d is less than bid value %d", gameValue, gs.BidValue)
+	if potentialValue < int(gs.BidValue) {
+		gs.Overbid = true
+		gs.Phase = PhaseComplete
+		gs.CurrentPlayerDeadline = "" // Clear deadline when game ends
+	} else {
+		// Start playing phase
+		gs.Phase = PhasePlaying
+		gs.CurrentPlayer = Listener // Player to left of dealer (Listener) leads
 	}
-
-	// Start playing phase
-	gs.Phase = PhasePlaying
-	gs.CurrentPlayer = Listener // Player to left of dealer (Listener) leads
-
+	gs.UpdateCurrentPlayerDeadline()
 	return fmt.Sprintf("%s %s", mode, trumpSuit), nil
 }
 
@@ -371,6 +377,7 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.Players = rotatedPlayers
 
 	gs.ID = uuid.New().String()
+	gs.GameNumber++
 	gs.Phase = PhaseDealing
 	gs.Declarer = -1
 	gs.BidValue = 0
@@ -380,9 +387,82 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.DealerPassed = false
 	gs.DeclarerScore = 0
 	gs.OpponentScore = 0
+	gs.Trick = nil
+	gs.ForfeitedPlayer = -1
 	for _, player := range gs.Players {
 		player.Hand = []Card{}
 	}
+	gs.UpdateCurrentPlayerDeadline()
 	logger.Info("Started a new game", "game_id", gs.ID)
 	return "Started new game", nil
+}
+
+// UpdateCurrentPlayerDeadline sets the deadline for the current player (2 minutes from now)
+func (gs *GameState) UpdateCurrentPlayerDeadline() {
+	// Only set deadline during active gameplay phases
+	if gs.Phase == PhaseWaitingForPlayers || gs.Phase == PhaseComplete {
+		gs.CurrentPlayerDeadline = ""
+		return
+	}
+
+	// Don't set deadlines for AI players - they move instantly
+	currentPlayer := gs.GetCurrentPlayer()
+	if currentPlayer != nil && currentPlayer.IsAgent {
+		gs.CurrentPlayerDeadline = ""
+		return
+	}
+
+	deadline := time.Now().UTC().Add(2 * time.Minute)
+	gs.CurrentPlayerDeadline = deadline.Format(time.RFC3339)
+}
+
+// IsDeadlinePassed checks if the current player's deadline has passed
+func (gs *GameState) IsDeadlinePassed() bool {
+	if gs.CurrentPlayerDeadline == "" {
+		return false
+	}
+
+	deadline, err := time.Parse(time.RFC3339, gs.CurrentPlayerDeadline)
+	if err != nil {
+		return false
+	}
+
+	return time.Now().UTC().After(deadline)
+}
+
+// ForfeitDueToInactivity forfeits the game for the current player due to inactivity
+func (gs *GameState) ForfeitDueToInactivity() []PlayerResultState {
+	if gs.Phase == PhaseComplete {
+		return nil
+	}
+
+	// Mark game as complete and record who forfeited
+	gs.Phase = PhaseComplete
+	gs.CurrentPlayerDeadline = "" // Clear the deadline
+	gs.ForfeitedPlayer = gs.CurrentPlayer
+
+	// Award forfeit points: inactive player gets -120, others get +60 each
+	results := []PlayerResultState{}
+	currentPlayerPos := gs.CurrentPlayer
+
+	for pos, player := range gs.Players {
+		if player != nil {
+			points := 60 // Other players get points
+			isWinner := true
+			if GamePosition(pos) == currentPlayerPos {
+				points = -120 // Inactive player loses
+				isWinner = false
+			}
+			results = append(results, PlayerResultState{
+				GameID:         gs.ID,
+				SessionID:      gs.SessionID,
+				PlayerID:       player.ID,
+				PlayerPosition: GamePosition(pos),
+				PlayerPoints:   points,
+				IsWinner:       isWinner,
+			})
+		}
+	}
+
+	return results
 }

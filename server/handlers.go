@@ -48,6 +48,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/games/{id}/skat_decision", s.handleSkatDecision).Methods("POST")
 	api.HandleFunc("/games/{id}/discard_cards", s.handleDiscardCards).Methods("POST")
 	api.HandleFunc("/games/{id}/start_next_game", s.handleStartNextGame).Methods("POST")
+	api.HandleFunc("/games/{id}/timeout", s.handleTimeout).Methods("POST")
 	api.HandleFunc("/profiles", s.handleCreateProfile).Methods("POST")
 	api.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
 	api.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
@@ -626,14 +627,16 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 			declarerWon, _, _ := gs.GetGameResult()
 
 			gameResultsMap[pr.GameID] = map[string]interface{}{
-				"game_id":        pr.GameID,
-				"game_number":    gs.GameNumber,
-				"declarer_name":  declarer.Name,
-				"declarer_won":   declarerWon,
-				"game_mode":      string(gs.Mode),
-				"trump_suit":     gs.TrumpSuit.String(),
-				"player_results": make(map[string]int),
-				"player_names":   make(map[string]string),
+				"game_id":         pr.GameID,
+				"game_number":     gs.GameNumber,
+				"declarer_name":   declarer.Name,
+				"declarer_won":    declarerWon,
+				"game_mode":       string(gs.Mode),
+				"trump_suit":      gs.TrumpSuit.String(),
+				"player_results":  make(map[string]int),
+				"player_names":    make(map[string]string),
+				"player_winners":  make(map[string]bool),
+				"forfeited_player": gs.ForfeitedPlayer,
 			}
 
 			// Add all player names
@@ -644,8 +647,9 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 			}
 		}
 
-		// Add player points
+		// Add player points and winner status
 		gameResultsMap[pr.GameID]["player_results"].(map[string]int)[pr.PlayerID] = pr.PlayerPoints
+		gameResultsMap[pr.GameID]["player_winners"].(map[string]bool)[pr.PlayerID] = pr.IsWinner
 	}
 
 	// Convert map to slice
@@ -992,6 +996,72 @@ func (s *Server) handleStartNextGame(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"game_id": newGameID,
 	})
+}
+
+func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	gameID := vars["id"]
+
+	_, err := getAuthenticatedPlayerID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	gs, err := s.db.GetGameByID(gameID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Check if game is already complete
+	if gs.Phase == game.PhaseComplete {
+		http.Error(w, "Game is already complete", http.StatusBadRequest)
+		return
+	}
+
+	// Check if there's a deadline set
+	if gs.CurrentPlayerDeadline == "" {
+		http.Error(w, "No deadline is set", http.StatusBadRequest)
+		return
+	}
+
+	currentPlayer := gs.GetCurrentPlayer()
+	if currentPlayer == nil {
+		http.Error(w, "No current player", http.StatusBadRequest)
+		return
+	}
+
+	logger.Info("Game timeout reported by client",
+		"game_id", gs.ID,
+		"inactive_player", currentPlayer.Name,
+		"player_id", currentPlayer.ID,
+		"deadline", gs.CurrentPlayerDeadline)
+
+	// Forfeit the game
+	results := gs.ForfeitDueToInactivity()
+	logger.Info("Set game phase to complete", "game_id", gs.ID, "phase", gs.Phase)
+
+	// Save results to database
+	if err := s.db.SavePlayerResults(results); err != nil {
+		logger.Warning("Failed to save timeout forfeit results", "game_id", gs.ID, "error", err)
+	}
+
+	// Save the updated game state
+	if err := s.db.SaveGame(*gs); err != nil {
+		logger.Warning("Failed to save game after timeout", "game_id", gs.ID, "error", err)
+	} else {
+		logger.Info("Saved game with phase complete", "game_id", gs.ID)
+	}
+
+	// Broadcast the updated game state so clients show game over screen
+	timeoutMsg := fmt.Sprintf("%s was inactive for 2 minutes and has forfeited the game", currentPlayer.Name)
+	s.clients.BroadcastStateChange(gs, timeoutMsg, gs.CurrentPlayer)
+
+	logger.Info("Game forfeited due to timeout (client-reported)", "game_id", gs.ID, "player_id", currentPlayer.ID, "phase", gs.Phase)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // handleGetPlayerRating returns the rating for a player

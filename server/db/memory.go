@@ -287,6 +287,19 @@ func (d *MemoryDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameSta
 	return games, nil
 }
 
+func (d *MemoryDatabase) GetAllExpiredGames() ([]game.GameState, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var games []game.GameState
+	for _, gameState := range d.games {
+		if gameState.Phase != game.PhaseComplete && gameState.Phase != game.PhaseWaitingForPlayers && gameState.IsDeadlinePassed() {
+			games = append(games, *gameState)
+		}
+	}
+	return games, nil
+}
+
 // Rating methods
 
 func (d *MemoryDatabase) GetPlayerRating(profileID string) (*PlayerRating, error) {

@@ -61,8 +61,8 @@ func (gct *GameChoiceTrainer) trainSingleEpisode() {
 		panic(fmt.Sprintf("Discard error: %v", err))
 	}
 
-	// Declare the game
-	if _, err := g.DeclareGame(mode, trumpSuit); err != nil {
+	// Declare the game (no announcements in training)
+	if _, err := g.DeclareGame(mode, trumpSuit, false, false); err != nil {
 		// Agent chose invalid game or bid too high - automatic loss
 		// Update the game choice strategy with failure
 		if qStrat, ok := currentAgent.GetGameChoiceStrategy().(*agent.QLearningGameChoiceStrategy); ok {

@@ -128,7 +128,8 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
+			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
+			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
 			g.current_player_deadline, g.forfeited_player
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
@@ -138,7 +139,8 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
+		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
+		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
@@ -180,7 +182,8 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
+			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
+			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
 			g.current_player_deadline, g.forfeited_player
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
@@ -192,7 +195,8 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
+		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
+		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
@@ -246,23 +250,26 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 			trick_starter, trick_winner, current_player,
 			declarer, declarer_score, opponent_score,
 			game_mode, trump_suit, bid_value, matadors,
+			played_hand, announced_schneider, announced_schwarz,
 			listener_passed, speaker_passed, dealer_passed, overbid,
 			current_player_deadline, forfeited_player,
 			created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
 			NOW(), NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			session_id = $2, game_number = $3, phase = $4, skat = $5, trick = $6,
 			trick_starter = $7, trick_winner = $8, current_player = $9,
 			declarer = $10, declarer_score = $11, opponent_score = $12,
 			game_mode = $13, trump_suit = $14, bid_value = $15, matadors = $16,
-			listener_passed = $17, speaker_passed = $18, dealer_passed = $19, overbid = $20,
-			current_player_deadline = $21, forfeited_player = $22,
+			played_hand = $17, announced_schneider = $18, announced_schwarz = $19,
+			listener_passed = $20, speaker_passed = $21, dealer_passed = $22, overbid = $23,
+			current_player_deadline = $24, forfeited_player = $25,
 			updated_at = NOW()`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
 		gs.Declarer, gs.DeclarerScore, gs.OpponentScore,
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
+		gs.PlayedHand, gs.AnnouncedSchneider, gs.AnnouncedSchwarz,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,
 		deadline, gs.ForfeitedPlayer,
 	)

@@ -168,6 +168,57 @@
   color: #e74c3c;
 }
 
+.announcements {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  text-align: left;
+}
+
+.announcements h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: #bbbbbb;
+  font-weight: 600;
+}
+
+.announcement-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  margin: 5px 0;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+  color: #ffffff;
+}
+
+.announcement-option:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.announcement-option.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.announcement-option input[type="checkbox"] {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+}
+
+.announcement-option.disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+
+.announcement-option span {
+  font-size: 14px;
+  user-select: none;
+}
+
 .declare-button {
   padding: 12px 30px;
   background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);

@@ -270,13 +270,26 @@ func (gs *GameState) Deal() (string, error) {
 }
 
 // HandleGameDeclaration processes the declarer's game mode choice
-func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit) (string, error) {
+func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit, announceSchneider bool, announceSchwarz bool) (string, error) {
 	if gs.Phase != PhaseDeclarerChoice {
 		return "", fmt.Errorf("not in declarer choice phase")
 	}
 
+	// Validate announcements
+	if announceSchneider && !gs.PlayedHand {
+		return "", fmt.Errorf("can only announce schneider when playing hand")
+	}
+	if announceSchwarz && !announceSchneider {
+		return "", fmt.Errorf("can only announce schwarz when announcing schneider")
+	}
+	if mode == ModeNull && (announceSchneider || announceSchwarz) {
+		return "", fmt.Errorf("cannot make announcements in null games")
+	}
+
 	gs.Mode = mode
 	gs.TrumpSuit = trumpSuit
+	gs.AnnouncedSchneider = announceSchneider
+	gs.AnnouncedSchwarz = announceSchwarz
 
 	// Calculate and store matadors (will be used throughout the game)
 	// countMatadors returns the count; we negate if without Club Jack
@@ -297,7 +310,14 @@ func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit) (string, error) 
 		gs.CurrentPlayer = Listener // Player to left of dealer (Listener) leads
 	}
 	gs.UpdateCurrentPlayerDeadline()
-	return fmt.Sprintf("%s %s", mode, trumpSuit), nil
+
+	announcement := ""
+	if gs.AnnouncedSchwarz {
+		announcement = " (announced schwarz)"
+	} else if gs.AnnouncedSchneider {
+		announcement = " (announced schneider)"
+	}
+	return fmt.Sprintf("%s %s%s", mode, trumpSuit, announcement), nil
 }
 
 // calculatePotentialGameValue calculates the game value assuming the declarer wins normally
@@ -318,10 +338,12 @@ func (gs *GameState) SkatDecision(pickup bool) (string, error) {
 		// Add skat cards to declarer's hand
 		gs.Players[gs.Declarer].Hand = append(gs.Players[gs.Declarer].Hand, gs.Skat[0], gs.Skat[1])
 		// Stay in PhaseSkatExchange so player can discard
+		gs.PlayedHand = false
 		return "Pick up skat", nil
 	} else {
 		// Play hand - skip to game declaration
 		gs.Phase = PhaseDeclarerChoice
+		gs.PlayedHand = true
 		return "Playing the hand", nil
 	}
 }
@@ -389,6 +411,9 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.OpponentScore = 0
 	gs.Trick = nil
 	gs.ForfeitedPlayer = -1
+	gs.PlayedHand = false
+	gs.AnnouncedSchneider = false
+	gs.AnnouncedSchwarz = false
 	for _, player := range gs.Players {
 		player.Hand = []Card{}
 	}

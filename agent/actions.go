@@ -200,8 +200,13 @@ func generateAgentDeclarationAction(gs *game.GameState, player *game.PlayerState
 	// Use Q-learning to choose the best game mode and trump suit
 	mode, trumpSuit := agentInstance.ChooseGame(gs)
 
+	// AI agents don't announce schneider/schwarz for now (conservative strategy)
+	// TODO: In the future, could add a strategy for when to make announcements
+	announceSchneider := false
+	announceSchwarz := false
+
 	return func() (string, error) {
-		return gs.DeclareGame(mode, trumpSuit)
+		return gs.DeclareGame(mode, trumpSuit, announceSchneider, announceSchwarz)
 	}
 }
 

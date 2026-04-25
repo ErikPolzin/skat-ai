@@ -48,6 +48,9 @@ export interface GameState {
   speaker_passed: boolean;
   dealer_passed: boolean;
   matadors: number; // Positive=with, negative=without
+  played_hand: boolean; // Declarer played without picking up skat
+  announced_schneider: boolean; // Declarer announced schneider
+  announced_schwarz: boolean; // Declarer announced schwarz
   current_player_deadline: string; // RFC3339 timestamp when current player times out
 }
 
@@ -58,6 +61,9 @@ export interface GameResult {
   declarer_won: boolean;
   is_schneider: boolean;
   is_schwarz: boolean;
+  played_hand: boolean;
+  announced_schneider: boolean;
+  announced_schwarz: boolean;
   value: number;
   is_forfeit?: boolean;
 }
@@ -385,8 +391,15 @@ export async function chooseGame(
   playerId: string,
   mode: string,
   trump: string,
+  announceSchneider: boolean = false,
+  announceSchwarz: boolean = false,
 ): Promise<void> {
-  return gameAction(gameId, "choose_game", playerId, { mode, trump });
+  return gameAction(gameId, "choose_game", playerId, {
+    mode,
+    trump,
+    announce_schneider: announceSchneider,
+    announce_schwarz: announceSchwarz,
+  });
 }
 
 export async function skatDecision(

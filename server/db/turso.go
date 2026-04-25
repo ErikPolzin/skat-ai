@@ -151,7 +151,8 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		`SELECT g.id, g.session_id, gss.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
+			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
+			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
 			g.current_player_deadline, g.forfeited_player
 		FROM games g
 		JOIN game_sessions gss ON g.session_id = gss.id
@@ -161,7 +162,8 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
+		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
+		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
@@ -204,7 +206,8 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
-			g.bid_value, g.matadors, g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
+			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
+			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
 			g.current_player_deadline, g.forfeited_player
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
@@ -216,7 +219,8 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
-		&gs.BidValue, &gs.Matadors, &gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
+		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
+		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game not found")
@@ -271,10 +275,11 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			trick_starter, trick_winner, current_player,
 			declarer, declarer_score, opponent_score,
 			game_mode, trump_suit, bid_value, matadors,
+			played_hand, announced_schneider, announced_schwarz,
 			listener_passed, speaker_passed, dealer_passed, overbid,
 			current_player_deadline, forfeited_player,
 			created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT (id) DO UPDATE SET
 			session_id = excluded.session_id, game_number = excluded.game_number,
@@ -285,6 +290,8 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			opponent_score = excluded.opponent_score,
 			game_mode = excluded.game_mode, trump_suit = excluded.trump_suit,
 			bid_value = excluded.bid_value, matadors = excluded.matadors,
+			played_hand = excluded.played_hand, announced_schneider = excluded.announced_schneider,
+			announced_schwarz = excluded.announced_schwarz,
 			listener_passed = excluded.listener_passed, speaker_passed = excluded.speaker_passed,
 			dealer_passed = excluded.dealer_passed, overbid = excluded.overbid,
 			current_player_deadline = excluded.current_player_deadline,
@@ -294,6 +301,7 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
 		gs.Declarer, gs.DeclarerScore, gs.OpponentScore,
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
+		gs.PlayedHand, gs.AnnouncedSchneider, gs.AnnouncedSchwarz,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,
 		deadline, gs.ForfeitedPlayer,
 	)

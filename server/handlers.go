@@ -898,8 +898,10 @@ func (s *Server) handleBid(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleChooseGame(w http.ResponseWriter, r *http.Request) {
 	s.handleGameAction(w, r, true, func(gs *game.GameState, playerID string, r *http.Request) (string, error) {
 		var req struct {
-			Mode  string `json:"mode"`
-			Trump string `json:"trump"`
+			Mode              string `json:"mode"`
+			Trump             string `json:"trump"`
+			AnnounceSchneider bool   `json:"announce_schneider"`
+			AnnounceSchwarz   bool   `json:"announce_schwarz"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			return "", err
@@ -911,7 +913,7 @@ func (s *Server) handleChooseGame(w http.ResponseWriter, r *http.Request) {
 			return "", fmt.Errorf("invalid trump suit: %v", err)
 		}
 
-		return gs.DeclareGame(mode, trump)
+		return gs.DeclareGame(mode, trump, req.AnnounceSchneider, req.AnnounceSchwarz)
 	})
 }
 

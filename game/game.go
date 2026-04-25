@@ -57,6 +57,11 @@ type GameState struct {
 	OpponentScore int             `json:"opponent_score"` // Current score for opponents
 	Matadors      int             `json:"matadors"`       // Matadors count (positive=with, negative=without)
 
+	// Hand and announcements
+	PlayedHand         bool `json:"played_hand"`          // Declarer played without picking up skat
+	AnnouncedSchneider bool `json:"announced_schneider"`  // Declarer announced schneider
+	AnnouncedSchwarz   bool `json:"announced_schwarz"`    // Declarer announced schwarz
+
 	// Bidding state
 	BidValue       int  `json:"bid_value"`       // Current bid value
 	ListenerPassed bool `json:"listener_passed"` // Has listener passed?
@@ -70,14 +75,17 @@ type GameState struct {
 }
 
 type GameResult struct {
-	BaseValue   int  `json:"base_value"`   // Base value (9-12 for suits, 24 for grand, 23 for null)
-	Matadors    int  `json:"matadors"`     // Matadors (positive=with, negative=without)
-	Multiplier  int  `json:"multiplier"`   // Total multiplier (1 + |matadors| + schneider + schwarz)
-	DeclarerWon bool `json:"declarer_won"` // Did declarer win
-	IsSchneider bool `json:"is_schneider"` // Schneider achieved
-	IsSchwarz   bool `json:"is_schwarz"`   // Schwarz achieved
-	Value       int  `json:"value"`        // Final game value (negative if lost, doubled if lost)
-	IsForfeit   bool `json:"is_forfeit"`   // Game ended due to forfeit
+	BaseValue          int  `json:"base_value"`           // Base value (9-12 for suits, 24 for grand, 23 for null)
+	Matadors           int  `json:"matadors"`             // Matadors (positive=with, negative=without)
+	Multiplier         int  `json:"multiplier"`           // Total multiplier (1 + |matadors| + schneider + schwarz + hand + announced)
+	DeclarerWon        bool `json:"declarer_won"`         // Did declarer win
+	IsSchneider        bool `json:"is_schneider"`         // Schneider achieved
+	IsSchwarz          bool `json:"is_schwarz"`           // Schwarz achieved
+	PlayedHand         bool `json:"played_hand"`          // Played without skat
+	AnnouncedSchneider bool `json:"announced_schneider"`  // Announced schneider
+	AnnouncedSchwarz   bool `json:"announced_schwarz"`    // Announced schwarz
+	Value              int  `json:"value"`                // Final game value (negative if lost, doubled if lost)
+	IsForfeit          bool `json:"is_forfeit"`           // Game ended due to forfeit
 }
 
 type GameSessionState struct {

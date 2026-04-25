@@ -136,11 +136,11 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
   );
 
   const declareGame = useCallback(
-    async (mode: string, trump: string) => {
+    async (mode: string, trump: string, announceSchneider: boolean = false, announceSchwarz: boolean = false) => {
       if (game.isDeclarer && game.isDeclarerChoice && !isLoading && playerId) {
         setIsLoading(true);
         try {
-          await api.chooseGame(game.gameId, playerId, mode, trump);
+          await api.chooseGame(game.gameId, playerId, mode, trump, announceSchneider, announceSchwarz);
         } catch (error) {
           console.error("Declare game action failed:", error);
         } finally {

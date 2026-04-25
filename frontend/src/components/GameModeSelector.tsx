@@ -75,9 +75,14 @@ export function GameModeSelector() {
   const game = useGameContext();
   const [selectedMode, setSelectedMode] = useState<string>("suit");
   const [selectedTrump, setSelectedTrump] = useState<string>("♣");
+  const [announceSchneider, setAnnounceSchneider] = useState<boolean>(false);
+  const [announceSchwarz, setAnnounceSchwarz] = useState<boolean>(false);
 
   // Check if everyone passed (minimum bid of 18 was assigned)
   const everyonePassed = game.bidValue === 0;
+
+  // Check if player is playing hand (didn't pick up skat)
+  const isPlayingHand = game.skatCards.length === 0 || !game.hasPickedUpSkat;
 
   // Calculate game value for current selection
   const gameValue = useMemo(() => {
@@ -96,6 +101,8 @@ export function GameModeSelector() {
       game.controls.declareGame(
         selectedMode,
         selectedMode === "suit" ? selectedTrump : "",
+        announceSchneider,
+        announceSchwarz,
       );
     }
   };
@@ -164,6 +171,36 @@ export function GameModeSelector() {
         </button>
       </div>
 
+      {isPlayingHand && selectedMode !== "null" && (
+        <div className="announcements">
+          <h4>Announcements (Hand only):</h4>
+          <label className="announcement-option">
+            <input
+              type="checkbox"
+              checked={announceSchneider}
+              onChange={(e) => {
+                setAnnounceSchneider(e.target.checked);
+                if (!e.target.checked) {
+                  setAnnounceSchwarz(false); // Can't announce schwarz without schneider
+                }
+              }}
+            />
+            <span>Announce Schneider (+1 multiplier)</span>
+          </label>
+          <label
+            className={`announcement-option ${!announceSchneider ? "disabled" : ""}`}
+          >
+            <input
+              type="checkbox"
+              checked={announceSchwarz}
+              onChange={(e) => setAnnounceSchwarz(e.target.checked)}
+              disabled={!announceSchneider}
+            />
+            <span>Announce Schwarz (+1 multiplier)</span>
+          </label>
+        </div>
+      )}
+
       <button
         className="declare-button"
         onClick={handleDeclare}
@@ -183,6 +220,11 @@ export function GameModeSelector() {
               : selectedMode === "null"
                 ? "Null"
                 : `${selectedTrump} Suit`}
+            {announceSchwarz
+              ? " (Schwarz)"
+              : announceSchneider
+                ? " (Schneider)"
+                : ""}
           </>
         )}
       </button>

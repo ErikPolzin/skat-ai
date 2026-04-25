@@ -44,16 +44,35 @@ func (gs *GameState) Result() GameResult {
 		matadorCount = -matadorCount // Use absolute value for multiplier
 	}
 
-	// Calculate multiplier: 1 (game) + matadors + schneider + schwarz
+	// Calculate multiplier: 1 (game) + matadors + hand + schneider + schwarz + announcements
 	result.Multiplier = 1 + matadorCount
 
 	// Determine game outcome
 	result.DeclarerWon, result.IsSchneider, result.IsSchwarz = gs.GetGameResult()
 
+	// Store hand and announcement flags
+	result.PlayedHand = gs.PlayedHand
+	result.AnnouncedSchneider = gs.AnnouncedSchneider
+	result.AnnouncedSchwarz = gs.AnnouncedSchwarz
+
+	// Add hand bonus (playing without picking up skat)
+	if gs.PlayedHand {
+		result.Multiplier++
+	}
+
+	// Add schneider bonuses
 	if result.IsSchneider {
 		result.Multiplier++
 	}
+	if gs.AnnouncedSchneider {
+		result.Multiplier++
+	}
+
+	// Add schwarz bonuses
 	if result.IsSchwarz {
+		result.Multiplier++
+	}
+	if gs.AnnouncedSchwarz {
 		result.Multiplier++
 	}
 

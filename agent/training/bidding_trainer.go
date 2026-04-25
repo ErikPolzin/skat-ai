@@ -85,8 +85,8 @@ func (bt *BiddingTrainer) trainSingleEpisode(winsAtomic *[3]atomic.Int64, totalG
 		panic(fmt.Sprintf("Discard error: %v", err))
 	}
 
-	// Now declare the game
-	if _, err := g.DeclareGame(mode, trump); err != nil {
+	// Now declare the game (no announcements in training)
+	if _, err := g.DeclareGame(mode, trump, false, false); err != nil {
 		// Agent bid too high - treat as automatic loss with heavy penalty
 		declarerWon := false
 		gameValue := g.BidValue

@@ -36,49 +36,55 @@ func LoadFromEnv() *StorageConfig {
 	}
 }
 
-// LoadQTable loads a Q-table using the configured storage backend
-func (c *StorageConfig) LoadQTable(ba *agent.SkatAgent) error {
+// LoadBiddingQTable loads a bidding Q-table using the configured storage backend
+func (c *StorageConfig) LoadBiddingQTable(qStrat *agent.QLearningBiddingStrategy) error {
+	var data *agent.QTableData
+	var err error
+
 	if c.UseGCS {
 		// Load from Google Cloud Storage
 		ctx := context.Background()
-		err := ba.LoadQTableFromGCS(ctx, c.GCSBucket, c.GCSObjectPath, c.UseBinary)
+		data, err = agent.LoadQTableDataFromGCS(ctx, c.GCSBucket, c.GCSObjectPath, c.UseBinary)
 		if err != nil {
 			return fmt.Errorf("failed to load from GCS: %w", err)
 		}
-		return nil
-	}
-
-	// Load from local file
-	if c.UseBinary {
-		if err := ba.LoadQTableBinary(c.BinaryPath); err != nil {
-			return fmt.Errorf("failed to load binary: %w", err)
-		}
 	} else {
-		if err := ba.LoadQTable(c.JSONPath); err != nil {
-			return fmt.Errorf("failed to load JSON: %w", err)
+		// Load from local file
+		path := c.JSONPath
+		if c.UseBinary {
+			path = c.BinaryPath
+		}
+		data, err = agent.LoadQTableData(path, c.UseBinary)
+		if err != nil {
+			return fmt.Errorf("failed to load from file: %w", err)
 		}
 	}
 
+	qStrat.SetQTable(data.QTable)
+	qStrat.SetEpsilon(data.Epsilon)
 	return nil
 }
 
-// SaveQTable saves a Q-table using the configured storage backend
-func (c *StorageConfig) SaveQTable(ba *agent.SkatAgent) error {
+// SaveBiddingQTable saves a bidding Q-table using the configured storage backend
+func (c *StorageConfig) SaveBiddingQTable(qStrat *agent.QLearningBiddingStrategy) error {
+	data := &agent.QTableData{
+		QTable:  qStrat.GetQTable(),
+		Epsilon: qStrat.GetEpsilon(),
+	}
+
 	// Always save locally first
+	path := c.JSONPath
 	if c.UseBinary {
-		if err := ba.SaveQTableBinary(c.BinaryPath); err != nil {
-			return fmt.Errorf("failed to save binary: %w", err)
-		}
-	} else {
-		if err := ba.SaveQTable(c.JSONPath); err != nil {
-			return fmt.Errorf("failed to save JSON: %w", err)
-		}
+		path = c.BinaryPath
+	}
+	if err := agent.SaveQTableData(data, path, c.UseBinary); err != nil {
+		return fmt.Errorf("failed to save to file: %w", err)
 	}
 
 	// Also save to GCS if configured
 	if c.UseGCS {
 		ctx := context.Background()
-		if err := ba.SaveQTableToGCS(ctx, c.GCSBucket, c.GCSObjectPath, c.UseBinary); err != nil {
+		if err := agent.SaveQTableDataToGCS(ctx, data, c.GCSBucket, c.GCSObjectPath, c.UseBinary); err != nil {
 			return fmt.Errorf("failed to upload to GCS: %w", err)
 		}
 	}

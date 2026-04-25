@@ -84,6 +84,9 @@ func main() {
 	// Start cleanup task: check every 5 minutes for games inactive for 15+ minutes
 	srv.StartCleanupTask(5, 15)
 
+	// Start inactivity checker: check every 30 seconds for 5-minute inactivity timeouts
+	srv.StartInactivityChecker()
+
 	logger.Info("Starting Skat server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {
 		logger.Fatal("Server failed", "error", err)

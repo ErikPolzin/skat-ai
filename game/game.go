@@ -208,7 +208,8 @@ func (gs *GameState) effectiveSuit(card Card) Suit {
 }
 
 // cardBeats returns true if card a beats card b
-func (gs *GameState) cardBeats(a, b Card) bool {
+// CardBeats returns true if card a beats card b in the current game context
+func (gs *GameState) CardBeats(a, b Card) bool {
 	// Null games: no trumps, Ace is highest
 	if gs.Mode == ModeNull {
 		return gs.cardBeatsNull(a, b)

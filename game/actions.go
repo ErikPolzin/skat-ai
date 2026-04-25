@@ -57,7 +57,7 @@ func (gs *GameState) PlayCard(card Card) (string, error) {
 		winner := Dealer
 		winCard := gs.Trick[0]
 		for i := Listener; i < 3; i++ {
-			if gs.cardBeats(gs.Trick[i], winCard) {
+			if gs.CardBeats(gs.Trick[i], winCard) {
 				winner = i
 				winCard = gs.Trick[i]
 			}

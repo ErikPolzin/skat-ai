@@ -17,7 +17,7 @@ var (
 )
 
 // getAgentForPlayer creates an agent instance based on the player's agent type
-func getAgentForPlayer(player *game.PlayerState) Agent {
+func getAgentForPlayer(player *game.PlayerState) *SkatAgent {
 	if !player.IsAgent {
 		return nil
 	}
@@ -42,14 +42,17 @@ func getAgentForPlayer(player *game.PlayerState) Agent {
 			// Load from GCS (production)
 			logger.Info("Loading bidding Q-table from GCS", "bucket", gcsBucket, "path", gcsPath)
 			ctx := context.Background()
-			if err := sharedAgent.LoadQTableFromGCS(ctx, gcsBucket, gcsPath, true); err != nil {
-				logger.Error("Could not load bidding Q-table from GCS", "error", err)
-				logger.Warning("Agent will use untrained bidding behavior with heuristics")
-			} else {
-				logger.Info("Loaded bidding Q-table from GCS", "states", sharedAgent.GetQTableSize())
+			if qStrat, ok := sharedAgent.GetBiddingStrategy().(*QLearningBiddingStrategy); ok {
+				data, err := LoadQTableDataFromGCS(ctx, gcsBucket, gcsPath, true)
+				if err != nil {
+					logger.Error("Could not load bidding Q-table from GCS", "error", err)
+					logger.Warning("Agent will use untrained bidding behavior with heuristics")
+				} else {
+					qStrat.SetQTable(data.QTable)
+					qStrat.SetEpsilon(0.0) // Disable exploration in production
+					logger.Info("Loaded bidding Q-table from GCS", "states", qStrat.GetQTableSize())
+				}
 			}
-			// Always disable exploration in production
-			sharedAgent.Epsilon = 0.0
 
 			// Load game choice Q-table from GCS
 			gameChoicePath := os.Getenv("GCS_GAME_CHOICE_PATH")
@@ -57,14 +60,17 @@ func getAgentForPlayer(player *game.PlayerState) Agent {
 				gameChoicePath = "qtables/game_choice_qtable.gob"
 			}
 			logger.Info("Loading game choice Q-table from GCS", "bucket", gcsBucket, "path", gameChoicePath)
-			if err := sharedAgent.LoadGameChoiceQTableFromGCS(ctx, gcsBucket, gameChoicePath); err != nil {
-				logger.Error("Could not load game choice Q-table from GCS", "error", err)
-				logger.Warning("Agent will use heuristic game choice")
-			} else {
-				logger.Info("Loaded game choice Q-table from GCS")
+			if qStrat, ok := sharedAgent.GetGameChoiceStrategy().(*QLearningGameChoiceStrategy); ok {
+				data, err := LoadQTableDataFromGCS(ctx, gcsBucket, gameChoicePath, true)
+				if err != nil {
+					logger.Error("Could not load game choice Q-table from GCS", "error", err)
+					logger.Warning("Agent will use heuristic game choice")
+				} else {
+					qStrat.SetQTable(data.QTable)
+					qStrat.SetEpsilon(0.0) // Disable exploration in production
+					logger.Info("Loaded game choice Q-table from GCS")
+				}
 			}
-			// Always disable exploration in production
-			sharedAgent.GameChoiceEpsilon = 0.0
 		} else {
 			// Load from local file (development)
 			qtablePath := "bidding_qtable.gob"
@@ -72,14 +78,17 @@ func getAgentForPlayer(player *game.PlayerState) Agent {
 				qtablePath = path
 			}
 			logger.Info("Loading bidding Q-table from local file", "path", qtablePath)
-			if err := sharedAgent.LoadQTableBinary(qtablePath); err != nil {
-				logger.Error("Could not load bidding Q-table from local file", "path", qtablePath, "error", err)
-				logger.Warning("Agent will use untrained bidding behavior with heuristics")
-			} else {
-				logger.Info("Loaded bidding Q-table from local file", "path", qtablePath, "states", sharedAgent.GetQTableSize())
+			if qStrat, ok := sharedAgent.GetBiddingStrategy().(*QLearningBiddingStrategy); ok {
+				data, err := LoadQTableData(qtablePath, true)
+				if err != nil {
+					logger.Error("Could not load bidding Q-table from local file", "path", qtablePath, "error", err)
+					logger.Warning("Agent will use untrained bidding behavior with heuristics")
+				} else {
+					qStrat.SetQTable(data.QTable)
+					qStrat.SetEpsilon(0.0) // Disable exploration in production
+					logger.Info("Loaded bidding Q-table from local file", "path", qtablePath, "states", qStrat.GetQTableSize())
+				}
 			}
-			// Always disable exploration in production
-			sharedAgent.Epsilon = 0.0
 
 			// Load game choice Q-table from local file
 			gameChoicePath := "game_choice_qtable.gob"
@@ -87,14 +96,17 @@ func getAgentForPlayer(player *game.PlayerState) Agent {
 				gameChoicePath = path
 			}
 			logger.Info("Loading game choice Q-table from local file", "path", gameChoicePath)
-			if err := sharedAgent.LoadGameChoiceQTableBinary(gameChoicePath); err != nil {
-				logger.Error("Could not load game choice Q-table from local file", "path", gameChoicePath, "error", err)
-				logger.Warning("Agent will use heuristic game choice")
-			} else {
-				logger.Info("Loaded game choice Q-table from local file")
+			if qStrat, ok := sharedAgent.GetGameChoiceStrategy().(*QLearningGameChoiceStrategy); ok {
+				data, err := LoadQTableData(gameChoicePath, true)
+				if err != nil {
+					logger.Error("Could not load game choice Q-table from local file", "path", gameChoicePath, "error", err)
+					logger.Warning("Agent will use heuristic game choice")
+				} else {
+					qStrat.SetQTable(data.QTable)
+					qStrat.SetEpsilon(0.0) // Disable exploration in production
+					logger.Info("Loaded game choice Q-table from local file")
+				}
 			}
-			// Always disable exploration in production
-			sharedAgent.GameChoiceEpsilon = 0.0
 		}
 	})
 
@@ -161,7 +173,7 @@ func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerStat
 		// Use game-aware discard strategy: pre-decide game mode, then discard optimally
 
 		// Get shared agent instance for game mode decision
-		agentInstance := getAgentForPlayer(player).(*SkatAgent)
+		agentInstance := getAgentForPlayer(player)
 
 		// Agent will use Q-learning to choose game mode
 		mode, trumpSuit := agentInstance.ChooseGame(gs)
@@ -182,29 +194,14 @@ func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerStat
 
 // processAgentDeclaration handles an AI agent's declaration
 func generateAgentDeclarationAction(gs *game.GameState, player *game.PlayerState) Action {
-	// AI always picks suit game with trump based on strongest suit
-	// Count cards per suit in agent's hand
-	suitCounts := make(map[game.Suit]int)
-	for _, card := range player.Hand {
-		if card.Rank != game.Jack { // Jacks are trump in all games
-			suitCounts[card.Suit]++
-		}
-	}
-	// Find suit with most cards
-	maxCount := 0
-	var trump game.Suit
-	for suit, count := range suitCounts {
-		if count > maxCount {
-			maxCount = count
-			trump = suit
-		}
-	}
-	// Default to clubs if no clear winner
-	if maxCount == 0 {
-		trump = game.Clubs
-	}
+	// Get shared agent instance for Q-learning game choice
+	agentInstance := getAgentForPlayer(player)
+
+	// Use Q-learning to choose the best game mode and trump suit
+	mode, trumpSuit := agentInstance.ChooseGame(gs)
+
 	return func() (string, error) {
-		return gs.DeclareGame(game.ModeSuit, trump)
+		return gs.DeclareGame(mode, trumpSuit)
 	}
 }
 
@@ -240,11 +237,7 @@ func generateAgentBidAction(gs *game.GameState, player *game.PlayerState) Action
 	stateCopy := gs // Make a copy
 	// Call the agent's Bid method
 	accept := agent.Bid(stateCopy)
-	// Log debug info if we have a SkatAgent
-	if skatAgent, ok := agent.(*SkatAgent); ok {
-		logger.Debug("Agent bid decision", "player", player.Name, "handScore", skatAgent.CurrentHandScore, "bidDecision", accept, "currentBid", gs.BidValue)
-	}
-	logger.Debug("AI choosing bid", "player", player.Name, "accept", accept)
+	logger.Debug("AI choosing bid", "player", player.Name, "accept", accept, "currentBid", gs.BidValue)
 
 	return func() (string, error) {
 		return gs.Bid(accept)

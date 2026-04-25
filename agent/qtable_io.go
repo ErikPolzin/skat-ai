@@ -5,89 +5,68 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 
 	"cloud.google.com/go/storage"
 )
 
-// SaveQTable saves the Q-table to a JSON file
-func (sa *SkatAgent) SaveQTable(filename string) error {
+// QTableData represents serialized Q-table data
+type QTableData struct {
+	QTable  map[int]map[int]float64 `json:"q_table"`
+	Epsilon float64                 `json:"epsilon"`
+}
+
+// SaveQTableData saves Q-table data to a file
+func SaveQTableData(data *QTableData, filename string, binary bool) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
 	defer file.Close()
 
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-
-	// Convert map[int]map[int]float64 to JSON-friendly format
-	data := struct {
-		QTable  map[int]map[int]float64 `json:"q_table"`
-		Epsilon float64                 `json:"epsilon"`
-	}{
-		QTable:  sa.qTable,
-		Epsilon: sa.Epsilon,
-	}
-
-	if err := encoder.Encode(data); err != nil {
-		return fmt.Errorf("failed to encode Q-table: %w", err)
+	if binary {
+		encoder := gob.NewEncoder(file)
+		if err := encoder.Encode(data); err != nil {
+			return fmt.Errorf("failed to gob encode: %w", err)
+		}
+	} else {
+		encoder := json.NewEncoder(file)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(data); err != nil {
+			return fmt.Errorf("failed to json encode: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// LoadQTable loads the Q-table from a JSON file
-func (sa *SkatAgent) LoadQTable(filename string) error {
+// LoadQTableData loads Q-table data from a file
+func LoadQTableData(filename string, binary bool) (*QTableData, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
-	var data struct {
-		QTable  map[int]map[int]float64 `json:"q_table"`
-		Epsilon float64                 `json:"epsilon"`
+	var data QTableData
+
+	if binary {
+		decoder := gob.NewDecoder(file)
+		if err := decoder.Decode(&data); err != nil {
+			return nil, fmt.Errorf("failed to gob decode: %w", err)
+		}
+	} else {
+		decoder := json.NewDecoder(file)
+		if err := decoder.Decode(&data); err != nil {
+			return nil, fmt.Errorf("failed to json decode: %w", err)
+		}
 	}
 
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&data); err != nil {
-		return fmt.Errorf("failed to decode Q-table: %w", err)
-	}
-
-	sa.qTable = data.QTable
-	sa.Epsilon = data.Epsilon
-
-	return nil
+	return &data, nil
 }
 
-// SaveQTableBinary saves the Q-table in binary format using gob encoding
-func (sa *SkatAgent) SaveQTableBinary(filename string) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
-	}
-	defer file.Close()
-
-	return sa.encodeQTableGob(file)
-}
-
-// LoadQTableBinary loads the Q-table from a binary gob file
-func (sa *SkatAgent) LoadQTableBinary(filename string) error {
-	file, err := os.Open(filename)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	return sa.decodeQTableGob(file)
-}
-
-// SaveQTableToGCS saves the Q-table to Google Cloud Storage
-// bucketName: e.g. "my-skat-models"
-// objectName: e.g. "qtables/bidding_v1.gob"
-func (sa *SkatAgent) SaveQTableToGCS(ctx context.Context, bucketName, objectName string, binary bool) error {
+// SaveQTableDataToGCS saves Q-table data to Google Cloud Storage
+func SaveQTableDataToGCS(ctx context.Context, data *QTableData, bucketName, objectName string, binary bool) error {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create GCS client: %w", err)
@@ -100,20 +79,10 @@ func (sa *SkatAgent) SaveQTableToGCS(ctx context.Context, bucketName, objectName
 
 	var encodeErr error
 	if binary {
-		encodeErr = sa.encodeQTableGob(writer)
+		encoder := gob.NewEncoder(writer)
+		encodeErr = encoder.Encode(data)
 	} else {
 		encoder := json.NewEncoder(writer)
-		data := struct {
-			QTable  map[int]map[int]float64 `json:"q_table"`
-			Epsilon float64                 `json:"epsilon"`
-			Alpha   float64                 `json:"alpha"`
-			Gamma   float64                 `json:"gamma"`
-		}{
-			QTable:  sa.qTable,
-			Epsilon: sa.Epsilon,
-			Alpha:   sa.alpha,
-			Gamma:   sa.gamma,
-		}
 		encodeErr = encoder.Encode(data)
 	}
 
@@ -129,11 +98,11 @@ func (sa *SkatAgent) SaveQTableToGCS(ctx context.Context, bucketName, objectName
 	return nil
 }
 
-// LoadQTableFromGCS loads the Q-table from Google Cloud Storage
-func (sa *SkatAgent) LoadQTableFromGCS(ctx context.Context, bucketName, objectName string, binary bool) error {
+// LoadQTableDataFromGCS loads Q-table data from Google Cloud Storage
+func LoadQTableDataFromGCS(ctx context.Context, bucketName, objectName string, binary bool) (*QTableData, error) {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create GCS client: %w", err)
+		return nil, fmt.Errorf("failed to create GCS client: %w", err)
 	}
 	defer client.Close()
 
@@ -141,84 +110,30 @@ func (sa *SkatAgent) LoadQTableFromGCS(ctx context.Context, bucketName, objectNa
 	obj := bucket.Object(objectName)
 	reader, err := obj.NewReader(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create GCS reader: %w", err)
+		return nil, fmt.Errorf("failed to create GCS reader: %w", err)
 	}
 	defer reader.Close()
 
+	var data QTableData
+
 	if binary {
-		return sa.decodeQTableGob(reader)
+		decoder := gob.NewDecoder(reader)
+		if err := decoder.Decode(&data); err != nil {
+			return nil, fmt.Errorf("failed to gob decode: %w", err)
+		}
+	} else {
+		decoder := json.NewDecoder(reader)
+		if err := decoder.Decode(&data); err != nil {
+			return nil, fmt.Errorf("failed to json decode: %w", err)
+		}
 	}
 
-	var data struct {
-		QTable  map[int]map[int]float64 `json:"q_table"`
-		Epsilon float64                 `json:"epsilon"`
-		Alpha   float64                 `json:"alpha"`
-		Gamma   float64                 `json:"gamma"`
-	}
-
-	decoder := json.NewDecoder(reader)
-	if err := decoder.Decode(&data); err != nil {
-		return fmt.Errorf("failed to decode Q-table: %w", err)
-	}
-
-	sa.qTable = data.QTable
-	sa.Epsilon = data.Epsilon
-	if data.Alpha > 0 {
-		sa.alpha = data.Alpha
-	}
-	if data.Gamma > 0 {
-		sa.gamma = data.Gamma
-	}
-
-	return nil
+	return &data, nil
 }
 
-// encodeQTableGob encodes the Q-table using gob format to the writer
-func (sa *SkatAgent) encodeQTableGob(w io.Writer) error {
-	data := struct {
-		QTable  map[int]map[int]float64
-		Epsilon float64
-		Alpha   float64
-		Gamma   float64
-	}{
-		QTable:  sa.qTable,
-		Epsilon: sa.Epsilon,
-		Alpha:   sa.alpha,
-		Gamma:   sa.gamma,
-	}
-
-	encoder := gob.NewEncoder(w)
-	if err := encoder.Encode(data); err != nil {
-		return fmt.Errorf("failed to gob encode: %w", err)
-	}
-	return nil
-}
-
-// decodeQTableGob decodes the Q-table from gob format
-func (sa *SkatAgent) decodeQTableGob(r io.Reader) error {
-	var data struct {
-		QTable  map[int]map[int]float64
-		Epsilon float64
-		Alpha   float64
-		Gamma   float64
-	}
-
-	decoder := gob.NewDecoder(r)
-	if err := decoder.Decode(&data); err != nil {
-		return fmt.Errorf("failed to gob decode: %w", err)
-	}
-
-	sa.qTable = data.QTable
-	sa.Epsilon = data.Epsilon
-	sa.alpha = data.Alpha
-	sa.gamma = data.Gamma
-
-	return nil
-}
-
-// GetQTableStats returns statistics about the Q-table
-func (sa *SkatAgent) GetQTableStats() map[string]interface{} {
-	totalStates := len(sa.qTable)
+// GetQTableStats returns statistics about a Q-table
+func GetQTableStats(qTable map[int]map[int]float64, epsilon float64) map[string]interface{} {
+	totalStates := len(qTable)
 	totalStateActions := 0
 
 	minQ := 999999.0
@@ -226,7 +141,7 @@ func (sa *SkatAgent) GetQTableStats() map[string]interface{} {
 	sumQ := 0.0
 	count := 0
 
-	for _, actions := range sa.qTable {
+	for _, actions := range qTable {
 		totalStateActions += len(actions)
 		for _, q := range actions {
 			if q < minQ {
@@ -248,131 +163,9 @@ func (sa *SkatAgent) GetQTableStats() map[string]interface{} {
 	return map[string]interface{}{
 		"total_states":        totalStates,
 		"total_state_actions": totalStateActions,
-		"min_q":              minQ,
-		"max_q":              maxQ,
-		"avg_q":              avgQ,
-		"epsilon":            sa.Epsilon,
+		"min_q":               minQ,
+		"max_q":               maxQ,
+		"avg_q":               avgQ,
+		"epsilon":             epsilon,
 	}
-}
-
-// SaveGameChoiceQTableBinary saves the game choice Q-table in binary format
-func (sa *SkatAgent) SaveGameChoiceQTableBinary(filename string) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
-	}
-	defer file.Close()
-
-	data := struct {
-		QTable  map[int]map[int]float64
-		Epsilon float64
-		Alpha   float64
-	}{
-		QTable:  sa.gameChoiceQTable,
-		Epsilon: sa.GameChoiceEpsilon,
-		Alpha:   sa.gameChoiceAlpha,
-	}
-
-	encoder := gob.NewEncoder(file)
-	if err := encoder.Encode(data); err != nil {
-		return fmt.Errorf("failed to gob encode: %w", err)
-	}
-	return nil
-}
-
-// LoadGameChoiceQTableBinary loads the game choice Q-table from a binary gob file
-func (sa *SkatAgent) LoadGameChoiceQTableBinary(filename string) error {
-	file, err := os.Open(filename)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	var data struct {
-		QTable  map[int]map[int]float64
-		Epsilon float64
-		Alpha   float64
-	}
-
-	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(&data); err != nil {
-		return fmt.Errorf("failed to gob decode: %w", err)
-	}
-
-	sa.gameChoiceQTable = data.QTable
-	sa.GameChoiceEpsilon = data.Epsilon
-	sa.gameChoiceAlpha = data.Alpha
-
-	return nil
-}
-
-// SaveGameChoiceQTableToGCS saves the game choice Q-table to Google Cloud Storage
-func (sa *SkatAgent) SaveGameChoiceQTableToGCS(ctx context.Context, bucketName, objectName string) error {
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create GCS client: %w", err)
-	}
-	defer client.Close()
-
-	bucket := client.Bucket(bucketName)
-	obj := bucket.Object(objectName)
-	writer := obj.NewWriter(ctx)
-
-	data := struct {
-		QTable  map[int]map[int]float64
-		Epsilon float64
-		Alpha   float64
-	}{
-		QTable:  sa.gameChoiceQTable,
-		Epsilon: sa.GameChoiceEpsilon,
-		Alpha:   sa.gameChoiceAlpha,
-	}
-
-	encoder := gob.NewEncoder(writer)
-	if err := encoder.Encode(data); err != nil {
-		writer.Close()
-		return fmt.Errorf("failed to encode game choice Q-table: %w", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("failed to close GCS writer: %w", err)
-	}
-
-	return nil
-}
-
-// LoadGameChoiceQTableFromGCS loads the game choice Q-table from Google Cloud Storage
-func (sa *SkatAgent) LoadGameChoiceQTableFromGCS(ctx context.Context, bucketName, objectName string) error {
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create GCS client: %w", err)
-	}
-	defer client.Close()
-
-	bucket := client.Bucket(bucketName)
-	obj := bucket.Object(objectName)
-	reader, err := obj.NewReader(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create GCS reader: %w", err)
-	}
-	defer reader.Close()
-
-	var data struct {
-		QTable  map[int]map[int]float64
-		Epsilon float64
-		Alpha   float64
-	}
-
-	decoder := gob.NewDecoder(reader)
-	if err := decoder.Decode(&data); err != nil {
-		return fmt.Errorf("failed to gob decode: %w", err)
-	}
-
-	sa.gameChoiceQTable = data.QTable
-	sa.GameChoiceEpsilon = data.Epsilon
-	if data.Alpha > 0 {
-		sa.gameChoiceAlpha = data.Alpha
-	}
-
-	return nil
 }

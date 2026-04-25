@@ -14,21 +14,21 @@ import (
 )
 
 func main() {
-	qtablePath := flag.String("qtable", "bidding_qtable.gob", "Path to bidding Q-table file")
+	qtablePath := flag.String("qtable", "game_choice_qtable.gob", "Path to game choice Q-table file")
 	games := flag.Int("games", 500, "Number of evaluation games")
 	flag.Parse()
 
-	fmt.Println("Bidding Strategy Evaluation")
-	fmt.Println("============================")
-	fmt.Println("Tests Q-learning bidding vs Random bidding")
-	fmt.Println("All agents use heuristic game choice and card play")
+	fmt.Println("Game Choice (Declaration) Strategy Evaluation")
+	fmt.Println("==============================================")
+	fmt.Println("Tests Q-learning game choice vs Heuristic game choice")
+	fmt.Println("All agents use heuristic bidding and card play")
 	fmt.Println()
 
-	// Load pre-trained bidding Q-table
+	// Load pre-trained game choice Q-table
 	fmt.Printf("Loading Q-table from %s...\n", *qtablePath)
 	if _, err := os.Stat(*qtablePath); os.IsNotExist(err) {
 		fmt.Printf("Error: Q-table file not found: %s\n", *qtablePath)
-		fmt.Println("Please train the agent first using: go run cmd/train_bidding/main.go")
+		fmt.Println("Please train the agent first using: go run cmd/train_game_choice/main.go")
 		os.Exit(1)
 	}
 
@@ -38,13 +38,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create test agent: Q-learning bidding + Heuristic everything else
+	// Create test agent: Heuristic bidding + Q-learning game choice + Heuristic play
 	testAgent := agent.NewHeuristicAgent("Test")
-	if qStrat, ok := testAgent.GetBiddingStrategy().(*agent.QLearningBiddingStrategy); ok {
+	if qStrat, ok := testAgent.GetGameChoiceStrategy().(*agent.QLearningGameChoiceStrategy); ok {
 		qStrat.SetQTable(data.QTable)
 		qStrat.SetEpsilon(0.0) // No exploration during eval
 	}
-	fmt.Println("✓ Test agent: Q-learning bidding + Heuristic game choice/play")
+	fmt.Println("✓ Test agent: Heuristic bidding + Q-learning game choice + Heuristic play")
 
 	// Baseline agent: All heuristic
 	baselineAgent := agent.NewHeuristicAgent("Baseline")
@@ -58,8 +58,10 @@ func main() {
 
 	var testWinsAtomic atomic.Int64
 	var testGamesAtomic atomic.Int64
+	var testPointsAtomic atomic.Int64
 	var baselineWinsAtomic atomic.Int64
 	var baselineGamesAtomic atomic.Int64
+	var baselinePointsAtomic atomic.Int64
 	var gamesCompletedAtomic atomic.Int64
 
 	// Progress reporting
@@ -126,11 +128,13 @@ func main() {
 
 				if declarer == game.GamePosition(testPos) {
 					testGamesAtomic.Add(1)
+					testPointsAtomic.Add(int64(points[testPos]))
 					if won {
 						testWinsAtomic.Add(1)
 					}
 				} else if declarer >= 0 {
 					baselineGamesAtomic.Add(1)
+					baselinePointsAtomic.Add(int64(points[declarer]))
 					if won {
 						baselineWinsAtomic.Add(1)
 					}
@@ -146,25 +150,33 @@ func main() {
 
 	testGames := testGamesAtomic.Load()
 	testWins := testWinsAtomic.Load()
+	testPoints := testPointsAtomic.Load()
 	baselineGames := baselineGamesAtomic.Load()
 	baselineWins := baselineWinsAtomic.Load()
+	baselinePoints := baselinePointsAtomic.Load()
 
 	fmt.Println("\n" + strings.Repeat("=", 50))
 	fmt.Println("FINAL RESULTS")
 	fmt.Println(strings.Repeat("=", 50))
 
 	if testGames > 0 {
-		fmt.Printf("\nTest (Q-learning bidding):  %.1f%% win rate (%d/%d games as declarer)\n",
+		fmt.Printf("\nTest (Q-learning game choice):\n")
+		fmt.Printf("  Win rate: %.1f%% (%d/%d games as declarer)\n",
 			float64(testWins)/float64(testGames)*100, testWins, testGames)
+		fmt.Printf("  Avg points as declarer: %.1f\n", float64(testPoints)/float64(testGames))
 	}
 
 	if baselineGames > 0 {
-		fmt.Printf("Baseline (Heuristic):       %.1f%% win rate (%d/%d games as declarer)\n",
+		fmt.Printf("\nBaseline (Heuristic):\n")
+		fmt.Printf("  Win rate: %.1f%% (%d/%d games as declarer)\n",
 			float64(baselineWins)/float64(baselineGames)*100, baselineWins, baselineGames)
+		fmt.Printf("  Avg points as declarer: %.1f\n", float64(baselinePoints)/float64(baselineGames))
 	}
 
 	if testGames > 0 && baselineGames > 0 {
 		improvement := (float64(testWins)/float64(testGames) - float64(baselineWins)/float64(baselineGames)) * 100
-		fmt.Printf("\nBidding improvement: %+.1f percentage points\n", improvement)
+		pointDiff := float64(testPoints)/float64(testGames) - float64(baselinePoints)/float64(baselineGames)
+		fmt.Printf("\nGame choice improvement: %+.1f percentage points\n", improvement)
+		fmt.Printf("Point difference: %+.1f points per game\n", pointDiff)
 	}
 }

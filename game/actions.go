@@ -113,6 +113,9 @@ func (gs *GameState) ResolveTrick() (string, error) {
 }
 
 // HandleBid processes a bidding action
+// Bidding in Skat has two phases:
+// Phase 1: Speaker (middlehand) bids, Listener (forehand) responds
+// Phase 2: Winner of Phase 1 bids, Dealer (rearhand) responds
 func (gs *GameState) Bid(accept bool) (string, error) {
 	if gs.Phase != PhaseBidding {
 		return "", fmt.Errorf("not in bidding phase")
@@ -124,39 +127,61 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		// Player passes
 		switch gs.CurrentPlayer {
 		case Speaker:
+			// Speaker passes in Phase 1 - Listener wins Phase 1, now faces Dealer in Phase 2
 			gs.SpeakerPassed = true
+			// Start Phase 2: Listener vs Dealer
 			gs.CurrentPlayer = Listener
 		case Listener:
+			// Listener passes
 			gs.ListenerPassed = true
-			gs.CurrentPlayer = Dealer
+			if !gs.SpeakerPassed {
+				// Phase 1: Listener passed, Speaker wins Phase 1, now faces Dealer in Phase 2
+				gs.CurrentPlayer = Speaker
+			} else {
+				// Both Speaker and Listener passed - bidding ends
+				// Dealer wins by default (or Listener gets forehand privilege if dealer also passed)
+				gs.CurrentPlayer = -1 // Bidding over
+			}
 		case Dealer:
+			// Dealer passes in Phase 2
 			gs.DealerPassed = true
+			// The Phase 1 winner wins overall
+			gs.CurrentPlayer = -1 // Bidding over
 		}
 	} else {
+		// Player accepts or raises
 		switch gs.CurrentPlayer {
 		case Speaker:
 			if !gs.ListenerPassed {
-				gs.CurrentPlayer = Listener
-				// Speaker raises the bid when bidding speaker-listener
+				// Phase 1: Speaker is bidding against Listener
+				// Speaker names a value (either first bid or raise after Listener held)
 				gs.BidValue = gs.getNextBidValue()
+				// Turn passes to Listener to respond
+				gs.CurrentPlayer = Listener
 			} else {
+				// Phase 2: Speaker is bidding against Dealer (Listener passed)
+				// Speaker names a value (either starting Phase 2 or raising after Dealer held)
+				gs.BidValue = gs.getNextBidValue()
 				gs.CurrentPlayer = Dealer
 			}
 		case Listener:
 			if !gs.SpeakerPassed {
+				// Phase 1: Listener responds to Speaker by holding
+				// Listener holds, turn back to Speaker who must raise
 				gs.CurrentPlayer = Speaker
 			} else {
-				gs.CurrentPlayer = Dealer
-				// Listener raises the bid when bidding listener-dealer
+				// Phase 2: Listener is bidding against Dealer (Speaker passed)
+				// Listener names a value (either starting Phase 2 or raising after Dealer held)
 				gs.BidValue = gs.getNextBidValue()
+				gs.CurrentPlayer = Dealer
 			}
 		case Dealer:
+			// Phase 2: Dealer responds to the Phase 1 winner by holding
+			// Dealer holds, turn back to bidder who must raise on their next turn
 			if !gs.ListenerPassed {
 				gs.CurrentPlayer = Listener
 			} else {
 				gs.CurrentPlayer = Speaker
-				// Dealer raises the bid when bidding dealer-speaker
-				gs.BidValue = gs.getNextBidValue()
 			}
 		}
 	}
@@ -173,7 +198,7 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		passCount++
 	}
 
-	if passCount >= 2 {
+	if passCount >= 2 || gs.CurrentPlayer == -1 {
 		// Bidding is over, determine declarer
 		if !gs.ListenerPassed {
 			gs.Declarer = Listener
@@ -182,8 +207,9 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		} else if !gs.DealerPassed {
 			gs.Declarer = Dealer
 		} else {
-			// All passed - dealer becomes declarer by default with minimum bid
-			gs.Declarer = Dealer
+			// All three passed - Listener must play by forehand privilege
+			gs.Declarer = Listener
+			gs.BidValue = 18 // Minimum bid
 		}
 		// Move to skat exchange phase
 		gs.Phase = PhaseSkatExchange

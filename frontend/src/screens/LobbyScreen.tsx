@@ -25,6 +25,7 @@ import {
   selectUsername,
   useProfileStore,
 } from "../stores/profileStore";
+import { useSnackbarStore } from "../stores/snackbarStore";
 import ActiveGames from "../components/ActiveGames";
 import PlayerHistory from "../components/PlayerHistory";
 import Leaderboard from "../components/Leaderboard";
@@ -39,6 +40,7 @@ const Header = () => {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [playerRating, setPlayerRating] = useState<PlayerRating | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
 
   useEffect(() => {
     if (profileId) {
@@ -54,6 +56,7 @@ const Header = () => {
       setPlayerRating(rating);
     } catch (error) {
       console.error("Failed to fetch player rating:", error);
+      showSnackbar("Failed to fetch player rating", "error");
     }
   };
 
@@ -68,18 +71,22 @@ const Header = () => {
     if (!file || !profileId) return;
     // Validate file type
     if (!file.type.startsWith("image/")) {
+      showSnackbar("Please select an image file", "error");
       return;
     }
     // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
+      showSnackbar("Image size must be less than 5MB", "error");
       return;
     }
     try {
       setIsUploadingAvatar(true);
       const result = await uploadAvatar(profileId, file);
       setProfileIcon(result.profile_icon);
+      showSnackbar("Avatar updated successfully", "success");
     } catch (error) {
       console.error("Failed to upload avatar:", error);
+      showSnackbar("Failed to upload avatar", "error");
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -163,6 +170,7 @@ const GamesTab = () => {
   const username = useProfileStore(selectUsername);
   const profileId = useProfileStore(selectPlayerId);
   const navigate = useNavigate();
+  const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
 
   const handleJoinOrCreate = async () => {
     let currentGameCode = gameCode.trim();
@@ -186,6 +194,10 @@ const GamesTab = () => {
       navigate(`/game/${data.game_id}`);
     } catch (error) {
       console.error("Error in handleJoinOrCreate:", error);
+      showSnackbar(
+        `Failed to ${currentGameCode ? "join" : "create"} game`,
+        "error",
+      );
     } finally {
       setIsLoading(false);
     }

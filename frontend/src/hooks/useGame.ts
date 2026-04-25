@@ -213,6 +213,19 @@ export function useGame(
     }));
   }, []);
 
+  const undoOptimisticPlayCard = useCallback((card: Card) => {
+    setGameInfo((prev) => ({
+      ...prev,
+      hand: [...(prev.hand || []), card],
+      state: {
+        ...prev.state,
+        trick: (prev.state.trick || []).filter(
+          (c) => !(c.rank === card.rank && c.suit === card.suit),
+        ),
+      },
+    }));
+  }, []);
+
   const addMessage = useCallback(
     (text: string, isError = false, playerPosition?: number) => {
       messageIdCounter.current += 1;
@@ -344,6 +357,7 @@ export function useGame(
     // Actions
     removeCardFromHand,
     optimisticallyPlayCard,
+    undoOptimisticPlayCard,
     setGameInfo,
     addMessage,
     reset,

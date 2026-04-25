@@ -18,6 +18,7 @@ import {
 import { GameSession, getGames, joinGame } from "../api/games";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { useNavigate } from "react-router-dom";
+import { useSnackbarStore } from "../stores/snackbarStore";
 
 const AvailableGames = () => {
   const profileId = useProfileStore(selectPlayerId);
@@ -26,6 +27,7 @@ const AvailableGames = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [games, setGames] = useState<GameSession[]>([]);
   const navigate = useNavigate();
+  const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
 
   useEffect(() => {
     if (profileId) {
@@ -40,6 +42,7 @@ const AvailableGames = () => {
       setGames(data);
     } catch (error) {
       console.error("Failed to fetch games:", error);
+      showSnackbar("Failed to fetch available games", "error");
     } finally {
       setIsFetching(false);
     }
@@ -54,6 +57,7 @@ const AvailableGames = () => {
       navigate(`/game/${data.game_id}`);
     } catch (error) {
       console.error("Error in handleJoinOrCreate:", error);
+      showSnackbar("Failed to join game", "error");
     } finally {
       setIsLoading(false);
     }

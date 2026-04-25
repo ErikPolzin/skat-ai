@@ -17,6 +17,7 @@ import { GameLobbyWaiting } from "./GameLobbyWaiting";
 import { BiddingControls } from "./BiddingControls";
 import { SkatExchange } from "./SkatExchange";
 import { GameOverScreen } from "./GameOverScreen";
+import { canPlayCard } from "../utils/skatRules";
 
 // Helper function to convert suit emoji to word
 function getSuitName(suitEmoji?: string): string {
@@ -658,10 +659,23 @@ export function MotionCardTable() {
               index,
               sortedPlayerHand.length,
             );
+
+            // Check if card can be played according to Skat rules
+            const isValidMove =
+              game.phase === "playing"
+                ? canPlayCard(
+                    card,
+                    sortedPlayerHand,
+                    game.trick,
+                    game.gameMode,
+                    game.trumpSuit,
+                  )
+                : true; // During skat exchange, all cards are valid for selection
+
             const canClickCard =
               game.controls.isConnected &&
               !game.controls.isLoading &&
-              ((game.phase === "playing" && game.isMyTurn) ||
+              ((game.phase === "playing" && game.isMyTurn && isValidMove) ||
                 (game.isSkatExchange && game.hasPickedUpSkat));
 
             const declarerOffset = game.isDeclarerChoice ? 40 : 0;
@@ -682,6 +696,7 @@ export function MotionCardTable() {
                 suit={card.suit}
                 key={playerKeys[index]}
                 selected={selected}
+                disabled={game.phase === "playing" && game.isMyTurn && !isValidMove}
                 animate={animatePosition}
                 initial={initialPosition}
                 skipInitialAnimation={!shouldAnimateFromDeck}
@@ -698,7 +713,8 @@ export function MotionCardTable() {
                     !game.controls.isConnected || game.controls.isLoading
                       ? "not-allowed"
                       : game.isBiddingPhase ||
-                          (game.isSkatExchange && !game.hasPickedUpSkat)
+                          (game.isSkatExchange && !game.hasPickedUpSkat) ||
+                          (game.phase === "playing" && !isValidMove)
                         ? "not-allowed"
                         : "pointer",
                   opacity: !game.controls.isConnected ? 0.6 : 1,

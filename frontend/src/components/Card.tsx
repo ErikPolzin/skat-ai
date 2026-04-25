@@ -9,6 +9,7 @@ export default function Card({
   animate,
   className,
   skipInitialAnimation = false,
+  disabled = false,
   initial: initialProp,
   transition: transitionProp,
   style: styleProp,
@@ -21,6 +22,7 @@ export default function Card({
   animate: TargetAndTransition;
   className?: string;
   skipInitialAnimation?: boolean;
+  disabled?: boolean;
 } & Omit<HTMLMotionProps<"div">, "className">) {
   const faceDown = !(rank && suit);
   const [hasDealt, setHasDealt] = React.useState(skipInitialAnimation);
@@ -105,6 +107,7 @@ export default function Card({
             position: "absolute",
             backfaceVisibility: "hidden",
             transform: "rotateY(180deg)",
+            filter: disabled ? "brightness(0.5) saturate(0.7)" : "none",
           }}
         />
       </div>

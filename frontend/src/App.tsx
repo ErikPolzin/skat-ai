@@ -8,6 +8,8 @@ import {
   Typography,
   Button,
   CircularProgress,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import {
   useProfileStore,
@@ -22,6 +24,7 @@ import { WebSocketProvider } from "./context/WebSocketContext";
 import UsernameScreen from "./screens/UsernameScreen";
 import LobbyScreen from "./screens/LobbyScreen";
 import GameScreen from "./screens/GameScreen";
+import { useSnackbarStore } from "./stores/snackbarStore";
 
 // Create MUI theme with dark mode
 const theme = createTheme({
@@ -51,6 +54,7 @@ function App() {
   const setProfileIcon = useProfileStore(selectSetProfileIcon);
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { open, message, severity, hideSnackbar } = useSnackbarStore();
 
   // Initialize profile when username is set but no player ID exists
   useEffect(() => {
@@ -200,6 +204,16 @@ function App() {
           </Routes>
         </BrowserRouter>
       </WebSocketProvider>
+      <Snackbar
+        open={open}
+        autoHideDuration={6000}
+        onClose={hideSnackbar}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert onClose={hideSnackbar} severity={severity} sx={{ width: "100%" }}>
+          {message}
+        </Alert>
+      </Snackbar>
     </ThemeProvider>
   );
 }

@@ -3,6 +3,7 @@ import type { Card as CardType } from "../types";
 import { Game } from "./useGame";
 import { SkatWebSocket } from "./useWebSocket";
 import { useProfileStore } from "../stores/profileStore";
+import { useSnackbarStore } from "../stores/snackbarStore";
 import * as api from "../api/games";
 
 // Convert card to string format: "rank.suit"
@@ -13,6 +14,7 @@ const cardToString = (card: CardType): string => {
 export function useControls(game: Game, websocket: SkatWebSocket) {
   const [isLoading, setIsLoading] = useState(false);
   const playerId = useProfileStore((state) => state.playerId);
+  const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
 
   const playCard = useCallback(
     async (card: CardType) => {
@@ -25,12 +27,15 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
           await api.playCard(game.gameId, playerId, cardToString(card));
         } catch (error) {
           console.error("Play card action failed:", error);
+          // Undo the optimistic update
+          game.undoOptimisticPlayCard(card);
+          showSnackbar("Failed to play card", "error");
         } finally {
           setIsLoading(false);
         }
       }
     },
-    [game, isLoading, playerId]
+    [game, isLoading, playerId, showSnackbar]
   );
 
   const pickUpSkat = useCallback(

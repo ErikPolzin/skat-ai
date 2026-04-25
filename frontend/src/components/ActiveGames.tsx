@@ -16,6 +16,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import CloseIcon from "@mui/icons-material/Close";
 import { getActiveGames, leaveGame, type ActiveGame } from "../api/games";
 import { selectPlayerId, useProfileStore } from "../stores/profileStore";
+import { useSnackbarStore } from "../stores/snackbarStore";
 
 export default function ActiveGames() {
   const navigate = useNavigate();
@@ -23,6 +24,7 @@ export default function ActiveGames() {
   const [isFetching, setIsFetching] = useState(false);
   const [leavingGameId, setLeavingGameId] = useState<string | null>(null);
   const profileId = useProfileStore(selectPlayerId);
+  const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
 
   const fetchActiveGames = async () => {
     if (!profileId) return;
@@ -33,6 +35,7 @@ export default function ActiveGames() {
       setGames(data);
     } catch (error) {
       console.error("Failed to fetch active games:", error);
+      showSnackbar("Failed to fetch active games", "error");
     } finally {
       setIsFetching(false);
     }
@@ -56,8 +59,10 @@ export default function ActiveGames() {
       await leaveGame(gameId, profileId);
       // Refresh the list after leaving
       await fetchActiveGames();
+      showSnackbar("Successfully left game", "success");
     } catch (error) {
       console.error("Failed to leave game:", error);
+      showSnackbar("Failed to leave game", "error");
     } finally {
       setLeavingGameId(null);
     }

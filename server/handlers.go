@@ -52,6 +52,8 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
 	api.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
 	api.HandleFunc("/players/{id}/active_games", s.handleGetActiveGames).Methods("GET")
+	api.HandleFunc("/players/{id}/rating", s.handleGetPlayerRating).Methods("GET")
+	api.HandleFunc("/leaderboard", s.handleGetLeaderboard).Methods("GET")
 
 	// Serve React build files (must be last - catch-all)
 	spa := http.FileServer(http.Dir("./frontend/build"))
@@ -544,6 +546,7 @@ func (s *Server) handleGetPlayerHistory(w http.ResponseWriter, r *http.Request) 
 		results = []game.PlayerResultState{}
 	}
 
+	// Rating changes are now included in player results
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
 }
@@ -989,4 +992,109 @@ func (s *Server) handleStartNextGame(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"game_id": newGameID,
 	})
+}
+
+// handleGetPlayerRating returns the rating for a player
+func (s *Server) handleGetPlayerRating(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	playerID := vars["id"]
+
+	rating, err := s.db.GetPlayerRating(playerID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get player's rank
+	leaderboard, err := s.db.GetLeaderboard(0) // Get all to calculate rank
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rank := 0
+	for i, r := range leaderboard {
+		if r.ProfileID == playerID {
+			rank = i + 1
+			break
+		}
+	}
+
+	// Get profile for name
+	profile, err := s.db.GetProfile(playerID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]any{
+		"profile_id":   rating.ProfileID,
+		"name":         profile.Name,
+		"rating":       rating.Rating,
+		"games_played": rating.GamesPlayed,
+		"wins":         rating.Wins,
+		"losses":       rating.Losses,
+		"peak_rating":  rating.PeakRating,
+		"rank":         rank,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleGetLeaderboard returns the leaderboard
+func (s *Server) handleGetLeaderboard(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	ratings, err := s.db.GetLeaderboard(limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Enrich with profile information
+	type LeaderboardEntry struct {
+		Rank        int     `json:"rank"`
+		ProfileID   string  `json:"profile_id"`
+		Name        string  `json:"name"`
+		ProfileIcon string  `json:"profile_icon"`
+		Rating      int     `json:"rating"`
+		GamesPlayed int     `json:"games_played"`
+		Wins        int     `json:"wins"`
+		Losses      int     `json:"losses"`
+		WinRate     float64 `json:"win_rate"`
+	}
+
+	var leaderboard []LeaderboardEntry
+	for i, rating := range ratings {
+		profile, err := s.db.GetProfile(rating.ProfileID)
+		if err != nil {
+			continue // Skip if profile not found
+		}
+
+		winRate := 0.0
+		if rating.GamesPlayed > 0 {
+			winRate = float64(rating.Wins) / float64(rating.GamesPlayed) * 100
+		}
+
+		leaderboard = append(leaderboard, LeaderboardEntry{
+			Rank:        i + 1,
+			ProfileID:   rating.ProfileID,
+			Name:        profile.Name,
+			ProfileIcon: profile.ProfileIcon,
+			Rating:      rating.Rating,
+			GamesPlayed: rating.GamesPlayed,
+			Wins:        rating.Wins,
+			Losses:      rating.Losses,
+			WinRate:     winRate,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(leaderboard)
 }

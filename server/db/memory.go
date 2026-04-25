@@ -12,6 +12,7 @@ type MemoryDatabase struct {
 	profiles      map[string]*ProfileEntry
 	games         map[string]*game.GameState
 	playerResults map[string][]game.PlayerResultState
+	ratings       map[string]*PlayerRating
 	mu            sync.RWMutex
 }
 
@@ -21,6 +22,7 @@ func NewMemoryDatabase() *MemoryDatabase {
 		profiles:      make(map[string]*ProfileEntry),
 		games:         make(map[string]*game.GameState),
 		playerResults: make(map[string][]game.PlayerResultState),
+		ratings:       make(map[string]*PlayerRating),
 	}
 }
 
@@ -283,4 +285,59 @@ func (d *MemoryDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameSta
 		}
 	}
 	return games, nil
+}
+
+// Rating methods
+
+func (d *MemoryDatabase) GetPlayerRating(profileID string) (*PlayerRating, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rating, ok := d.ratings[profileID]
+	if !ok {
+		// Return default rating for new player
+		return &PlayerRating{
+			ProfileID:   profileID,
+			Rating:      1500,
+			GamesPlayed: 0,
+			Wins:        0,
+			Losses:      0,
+			PeakRating:  1500,
+		}, nil
+	}
+	return rating, nil
+}
+
+func (d *MemoryDatabase) SavePlayerRating(rating PlayerRating) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.ratings[rating.ProfileID] = &rating
+	return nil
+}
+
+func (d *MemoryDatabase) GetLeaderboard(limit int) ([]PlayerRating, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var ratings []PlayerRating
+	for _, rating := range d.ratings {
+		ratings = append(ratings, *rating)
+	}
+
+	// Sort by rating descending
+	for i := 0; i < len(ratings)-1; i++ {
+		for j := i + 1; j < len(ratings); j++ {
+			if ratings[j].Rating > ratings[i].Rating {
+				ratings[i], ratings[j] = ratings[j], ratings[i]
+			}
+		}
+	}
+
+	// Apply limit if specified
+	if limit > 0 && len(ratings) > limit {
+		ratings = ratings[:limit]
+	}
+
+	return ratings, nil
 }

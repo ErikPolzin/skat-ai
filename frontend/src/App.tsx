@@ -194,7 +194,7 @@ function App() {
       <WebSocketProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<LobbyScreen username={username} />} />
+            <Route path="/" element={<LobbyScreen />} />
             <Route path="/game/:gameId" element={<GameScreen />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

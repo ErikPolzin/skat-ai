@@ -4,6 +4,7 @@ import (
 	"skat/agent"
 	"skat/game"
 	"skat/logger"
+	"skat/rating"
 	"time"
 )
 
@@ -61,6 +62,14 @@ func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fr
 func (s *Server) maybeSaveGameResults(gs *game.GameState) {
 	if gs.Phase == game.PhaseComplete {
 		results := game.Results(gs)
+
+		// Update player ratings and populate rating fields in results
+		results, err := rating.UpdateRatings(gs, s.db, results)
+		if err != nil {
+			logger.Warning("Failed to update player ratings", "error", err)
+		}
+
+		// Save results with rating information
 		if err := s.db.SavePlayerResults(results); err != nil {
 			logger.Warning("Failed to save player results", "error", err)
 		}

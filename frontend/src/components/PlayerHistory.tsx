@@ -6,23 +6,23 @@ import {
   ListItem,
   ListItemText,
   CircularProgress,
+  IconButton,
 } from "@mui/material";
 import { getPlayerHistory, type PlayerResult } from "../api/games";
+import { selectPlayerId, useProfileStore } from "../stores/profileStore";
+import RefreshIcon from "@mui/icons-material/Refresh";
 
-interface PlayerHistoryProps {
-  playerId: string | null;
-}
-
-export default function PlayerHistory({ playerId }: PlayerHistoryProps) {
+export default function PlayerHistory() {
   const [history, setHistory] = useState<PlayerResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const profileId = useProfileStore(selectPlayerId);
 
   const fetchHistory = async () => {
-    if (!playerId) return;
+    if (!profileId) return;
 
     try {
       setIsLoading(true);
-      const data = await getPlayerHistory(playerId);
+      const data = await getPlayerHistory(profileId);
       setHistory(data);
     } catch (error) {
       console.error("Failed to fetch player history:", error);
@@ -34,26 +34,29 @@ export default function PlayerHistory({ playerId }: PlayerHistoryProps) {
   useEffect(() => {
     fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerId]);
+  }, [profileId]);
 
   return (
-    <Box sx={{ minHeight: "200px", display: "flex", flexDirection: "column" }}>
-      <Typography variant="subtitle1" gutterBottom>
-        Recent Games (Last 50)
-      </Typography>
-
-      {isLoading ? (
-        <Box
-          sx={{
-            flexGrow: 1,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <CircularProgress />
-        </Box>
-      ) : history.length === 0 ? (
+    <Box
+      sx={{
+        minHeight: "200px",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Typography variant="subtitle1">Game History</Typography>
+        <IconButton onClick={fetchHistory} color="primary" disabled={isLoading}>
+          {isLoading ? <CircularProgress size={24} /> : <RefreshIcon />}
+        </IconButton>
+      </Box>
+      {history.length === 0 ? (
         <Box
           sx={{
             flexGrow: 1,
@@ -106,6 +109,20 @@ export default function PlayerHistory({ playerId }: PlayerHistoryProps) {
                       {result.player_points > 0 && "+"}
                       {result.player_points} pts
                     </Typography>
+                    {result.rating_change !== undefined &&
+                      result.rating_change !== 0 && (
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: "medium",
+                            color:
+                              result.rating_change > 0 ? "#2196f3" : "#ff5722",
+                          }}
+                        >
+                          {result.rating_change > 0 && "+"}
+                          {result.rating_change} ELO
+                        </Typography>
+                      )}
                   </Box>
                 }
                 secondary={

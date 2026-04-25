@@ -210,6 +210,30 @@ export interface PlayerResult {
   player_points: number;
   is_winner: boolean;
   other_players?: string[];
+  rating_change?: number;
+}
+
+export interface PlayerRating {
+  profile_id: string;
+  name: string;
+  rating: number;
+  games_played: number;
+  wins: number;
+  losses: number;
+  peak_rating: number;
+  rank?: number;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  profile_id: string;
+  name: string;
+  profile_icon: string;
+  rating: number;
+  games_played: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
 }
 
 export async function getPlayerHistory(
@@ -401,4 +425,30 @@ export async function leaveGame(
     const error = await response.text();
     throw new Error(error || `HTTP ${response.status}`);
   }
+}
+
+// Rating and Leaderboard API calls
+
+export async function getPlayerRating(playerId: string): Promise<PlayerRating> {
+  const response = await fetch(`${getApiUrl()}/api/players/${playerId}/rating`);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch player rating");
+  }
+
+  return response.json();
+}
+
+export async function getLeaderboard(
+  limit: number = 100,
+): Promise<LeaderboardEntry[]> {
+  const response = await fetch(`${getApiUrl()}/api/leaderboard?limit=${limit}`);
+
+  if (!response.ok) {
+    console.error("Failed to fetch leaderboard");
+    return [];
+  }
+
+  const data = await response.json();
+  return data || [];
 }

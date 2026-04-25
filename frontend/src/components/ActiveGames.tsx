@@ -15,23 +15,21 @@ import {
 import RefreshIcon from "@mui/icons-material/Refresh";
 import CloseIcon from "@mui/icons-material/Close";
 import { getActiveGames, leaveGame, type ActiveGame } from "../api/games";
+import { selectPlayerId, useProfileStore } from "../stores/profileStore";
 
-interface ActiveGamesProps {
-  playerId: string | null;
-}
-
-export default function ActiveGames({ playerId }: ActiveGamesProps) {
+export default function ActiveGames() {
   const navigate = useNavigate();
   const [games, setGames] = useState<ActiveGame[]>([]);
   const [isFetching, setIsFetching] = useState(false);
   const [leavingGameId, setLeavingGameId] = useState<string | null>(null);
+  const profileId = useProfileStore(selectPlayerId);
 
   const fetchActiveGames = async () => {
-    if (!playerId) return;
+    if (!profileId) return;
 
     try {
       setIsFetching(true);
-      const data = await getActiveGames(playerId);
+      const data = await getActiveGames(profileId);
       setGames(data);
     } catch (error) {
       console.error("Failed to fetch active games:", error);
@@ -43,7 +41,7 @@ export default function ActiveGames({ playerId }: ActiveGamesProps) {
   useEffect(() => {
     fetchActiveGames();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerId]);
+  }, [profileId]);
 
   const handleRejoinGame = (gameId: string) => {
     navigate(`/game/${gameId}`);
@@ -51,11 +49,11 @@ export default function ActiveGames({ playerId }: ActiveGamesProps) {
 
   const handleLeaveGame = async (gameId: string, event: React.MouseEvent) => {
     event.stopPropagation(); // Prevent triggering rejoin
-    if (!playerId) return;
+    if (!profileId) return;
 
     try {
       setLeavingGameId(gameId);
-      await leaveGame(gameId, playerId);
+      await leaveGame(gameId, profileId);
       // Refresh the list after leaving
       await fetchActiveGames();
     } catch (error) {
@@ -88,12 +86,12 @@ export default function ActiveGames({ playerId }: ActiveGamesProps) {
     return "primary";
   };
 
-  if (!playerId || (!isFetching && games.length === 0)) {
+  if (!profileId || (!isFetching && games.length === 0)) {
     return null;
   }
 
   return (
-    <Box sx={{ minHeight: "200px", display: "flex", flexDirection: "column" }}>
+    <Box sx={{ display: "flex", flexDirection: "column", mt: 1 }}>
       <Box
         sx={{
           display: "flex",
@@ -112,91 +110,78 @@ export default function ActiveGames({ playerId }: ActiveGamesProps) {
         </IconButton>
       </Box>
 
-      {isFetching ? (
-        <Box
-          sx={{
-            flexGrow: 1,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <CircularProgress />
-        </Box>
-      ) : (
-        <List>
-          {games.map((game) => (
-            <ListItem
-              key={game.id}
-              sx={{
-                border: 1,
-                borderColor: "divider",
-                borderRadius: 1,
-                mb: 1,
-              }}
-            >
-              <ListItemText
-                primary={
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 1,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
-                      {game.code}
-                    </Typography>
-                    <Chip
-                      label={getPhaseLabel(game.phase)}
-                      size="small"
-                      color={getPhaseColor(game.phase)}
-                    />
-                    {game.game_number > 1 && (
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ ml: "auto" }}
-                      >
-                        Game #{game.game_number}
-                      </Typography>
-                    )}
-                  </Box>
-                }
-                secondary={
-                  <Typography variant="body2" color="text.secondary">
-                    {game.player_names.join(", ")}
+      <List>
+        {games.map((game) => (
+          <ListItem
+            key={game.id}
+            sx={{
+              border: 1,
+              borderColor: "divider",
+              borderRadius: 1,
+              mb: 1,
+            }}
+          >
+            <ListItemText
+              primary={
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
+                    {game.code}
                   </Typography>
-                }
-              />
-              <ListItemSecondaryAction>
-                <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                  <Button
-                    variant="contained"
-                    onClick={() => handleRejoinGame(game.id)}
+                  <Chip
+                    label={getPhaseLabel(game.phase)}
                     size="small"
-                  >
-                    Rejoin
-                  </Button>
-                  <IconButton
-                    onClick={(e) => handleLeaveGame(game.id, e)}
-                    disabled={leavingGameId === game.id}
-                    color="error"
-                    size="small"
-                  >
-                    {leavingGameId === game.id ? (
-                      <CircularProgress size={20} color="error" />
-                    ) : (
-                      <CloseIcon fontSize="small" />
-                    )}
-                  </IconButton>
+                    color={getPhaseColor(game.phase)}
+                  />
+                  {game.game_number > 1 && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ ml: "auto" }}
+                    >
+                      Game #{game.game_number}
+                    </Typography>
+                  )}
                 </Box>
-              </ListItemSecondaryAction>
-            </ListItem>
-          ))}
-        </List>
-      )}
+              }
+              secondary={
+                <Typography variant="body2" color="text.secondary">
+                  {game.player_names.join(", ")}
+                </Typography>
+              }
+            />
+            <ListItemSecondaryAction>
+              <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                <Button
+                  variant="contained"
+                  onClick={() => handleRejoinGame(game.id)}
+                  size="small"
+                >
+                  Rejoin
+                </Button>
+                <IconButton
+                  onClick={(e) => handleLeaveGame(game.id, e)}
+                  disabled={leavingGameId === game.id}
+                  color="error"
+                  size="small"
+                >
+                  {leavingGameId === game.id ? (
+                    <CircularProgress size={20} color="error" />
+                  ) : (
+                    <CloseIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </Box>
+            </ListItemSecondaryAction>
+          </ListItem>
+        ))}
+      </List>
     </Box>
   );
 }

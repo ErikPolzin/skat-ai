@@ -2,6 +2,7 @@ package db
 
 import (
 	"skat/game"
+	"time"
 )
 
 type ProfileEntry struct {
@@ -45,4 +46,14 @@ func FromPlayerState(ps *game.PlayerState, gameID string, position game.GamePosi
 		Hand:        ps.Hand,
 		Position:    position,
 	}
+}
+
+type PlayerRating struct {
+	ProfileID   string
+	Rating      int
+	GamesPlayed int
+	Wins        int
+	Losses      int
+	PeakRating  int
+	LastUpdated time.Time
 }

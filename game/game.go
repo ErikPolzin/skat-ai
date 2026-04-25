@@ -90,6 +90,9 @@ type PlayerResultState struct {
 	PlayerPosition GamePosition `json:"player_position"`
 	PlayerPoints   int          `json:"player_points"`
 	IsWinner       bool         `json:"is_winner"`
+	RatingBefore   int          `json:"rating_before"`
+	RatingAfter    int          `json:"rating_after"`
+	RatingChange   int          `json:"rating_change"`
 	OtherPlayers   []string     `json:"other_players,omitempty"`
 }
 

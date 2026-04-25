@@ -6,11 +6,6 @@ import {
   TextField,
   Button,
   Paper,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
-  Alert,
   IconButton,
   CircularProgress,
   Avatar,
@@ -19,89 +14,47 @@ import {
   Tab,
   useMediaQuery,
   useTheme,
+  Grid,
+  Container,
 } from "@mui/material";
-import RefreshIcon from "@mui/icons-material/Refresh";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import { createGame, joinGame, uploadAvatar } from "../api/games";
 import {
-  createGame,
-  joinGame,
-  getGames,
-  uploadAvatar,
-  type GameSession,
-} from "../api/games";
-import { useProfileStore } from "../stores/profileStore";
+  selectPlayerId,
+  selectProfileIcon,
+  selectUsername,
+  useProfileStore,
+} from "../stores/profileStore";
 import ActiveGames from "../components/ActiveGames";
 import PlayerHistory from "../components/PlayerHistory";
+import Leaderboard from "../components/Leaderboard";
+import { getPlayerRating, type PlayerRating } from "../api/games";
+import AvailableGames from "../components/AvailableGames";
 
-interface LobbyScreenProps {
-  username: string;
-}
-
-export default function LobbyScreen({ username }: LobbyScreenProps) {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const navigate = useNavigate();
-  const profilePlayerId = useProfileStore((state) => state.playerId);
-  const profileIcon = useProfileStore((state) => state.profileIcon);
+const Header = () => {
+  const profileId = useProfileStore(selectPlayerId);
+  const profileIcon = useProfileStore(selectProfileIcon);
+  const username = useProfileStore(selectUsername);
   const setProfileIcon = useProfileStore((state) => state.setProfileIcon);
-  const [gameCode, setGameCode] = useState("");
-  const [games, setGames] = useState<GameSession[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [currentTab, setCurrentTab] = useState(0);
+  const [playerRating, setPlayerRating] = useState<PlayerRating | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchGames();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fetchGames = async () => {
-    try {
-      setIsFetching(true);
-      const data = await getGames(profilePlayerId || undefined);
-      setGames(data);
-    } catch (error) {
-      console.error("Failed to fetch games:", error);
-    } finally {
-      setIsFetching(false);
+    if (profileId) {
+      fetchPlayerRating();
     }
-  };
+  }, [profileId]);
 
-  const handleJoinOrCreate = async () => {
-    let currentGameCode = gameCode.trim();
+  const fetchPlayerRating = async () => {
+    if (!profileId) return;
+
     try {
-      setError(null);
-      setIsLoading(true);
-
-      if (!currentGameCode) {
-        // Create a new game and get the code
-        const createData = await createGame(profilePlayerId || undefined);
-        currentGameCode = createData.code;
-      }
-
-      // Join the game (either the newly created one or an existing one)
-      const data = await joinGame(
-        currentGameCode,
-        username,
-        profilePlayerId || undefined,
-      );
-
-      // Navigate to the game
-      navigate(`/game/${data.game_id}`);
+      const rating = await getPlayerRating(profileId);
+      setPlayerRating(rating);
     } catch (error) {
-      console.error("Error in handleJoinOrCreate:", error);
-      setError((error as Error).message);
-    } finally {
-      setIsLoading(false);
+      console.error("Failed to fetch player rating:", error);
     }
-  };
-
-  const handleQuickJoin = (code: string) => {
-    setGameCode(code);
-    setTimeout(() => handleJoinOrCreate(), 0);
   };
 
   const handleAvatarClick = () => {
@@ -112,404 +65,237 @@ export default function LobbyScreen({ username }: LobbyScreenProps) {
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0];
-    if (!file || !profilePlayerId) return;
-
+    if (!file || !profileId) return;
     // Validate file type
     if (!file.type.startsWith("image/")) {
-      setError("Please select an image file");
       return;
     }
-
     // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
-      setError("Image must be smaller than 5MB");
       return;
     }
-
     try {
       setIsUploadingAvatar(true);
-      setError(null);
-
-      const result = await uploadAvatar(profilePlayerId, file);
+      const result = await uploadAvatar(profileId, file);
       setProfileIcon(result.profile_icon);
     } catch (error) {
       console.error("Failed to upload avatar:", error);
-      setError((error as Error).message);
     } finally {
       setIsUploadingAvatar(false);
     }
   };
-
   return (
     <Box
       sx={{
         display: "flex",
-        alignItems: { xs: "stretch", sm: "center" },
-        justifyContent: { xs: "stretch", sm: "center" },
-        minHeight: "100vh",
+        alignItems: "center",
+        gap: 2,
+        px: 2,
+        pt: 1,
+        mb: { xs: 0, lg: 2 },
+      }}
+    >
+      <Badge
+        overlap="circular"
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        badgeContent={
+          <IconButton
+            size="small"
+            onClick={handleAvatarClick}
+            disabled={isUploadingAvatar || !profileId}
+            sx={{
+              bgcolor: "primary.main",
+              color: "white",
+              "&:hover": { bgcolor: "primary.dark" },
+              width: 32,
+              height: 32,
+            }}
+          >
+            {isUploadingAvatar ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : (
+              <PhotoCameraIcon sx={{ fontSize: 16 }} />
+            )}
+          </IconButton>
+        }
+      >
+        <Avatar
+          src={profileIcon || undefined}
+          alt={username ?? "No username"}
+          sx={{
+            width: 60,
+            height: 60,
+            fontSize: "2rem",
+            bgcolor: "secondary.main",
+          }}
+        >
+          {(username || "-").charAt(0).toUpperCase()}
+        </Avatar>
+      </Badge>
+      <Box>
+        <Typography
+          variant="h4"
+          component="h1"
+          sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
+        >
+          Welcome, {username}!
+        </Typography>
+        {playerRating && (
+          <Typography variant="body2" color="text.secondary">
+            Rating: {playerRating.rating} • Rank: #{playerRating.rank || "N/A"}
+          </Typography>
+        )}
+      </Box>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handleAvatarChange}
+      />
+    </Box>
+  );
+};
+
+const GamesTab = () => {
+  const [gameCode, setGameCode] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const username = useProfileStore(selectUsername);
+  const profileId = useProfileStore(selectPlayerId);
+  const navigate = useNavigate();
+
+  const handleJoinOrCreate = async () => {
+    let currentGameCode = gameCode.trim();
+    try {
+      setIsLoading(true);
+
+      if (!currentGameCode) {
+        // Create a new game and get the code
+        const createData = await createGame(profileId || undefined);
+        currentGameCode = createData.code;
+      }
+
+      // Join the game (either the newly created one or an existing one)
+      const data = await joinGame(
+        currentGameCode,
+        username ?? "",
+        profileId || undefined,
+      );
+
+      // Navigate to the game
+      navigate(`/game/${data.game_id}`);
+    } catch (error) {
+      console.error("Error in handleJoinOrCreate:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Box>
+      <Typography variant="subtitle1" gutterBottom>
+        Join or Create Game
+      </Typography>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+        }}
+      >
+        <TextField
+          placeholder="Enter game code"
+          value={gameCode}
+          onChange={(e) => setGameCode(e.target.value.toUpperCase())}
+          disabled={isLoading}
+          sx={{
+            "& input": {
+              textTransform: "uppercase",
+              textAlign: "center",
+              letterSpacing: "2px",
+            },
+          }}
+          fullWidth
+        />
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={handleJoinOrCreate}
+          disabled={isLoading}
+          size="large"
+          fullWidth={!gameCode}
+          startIcon={isLoading ? <CircularProgress size={20} /> : null}
+        >
+          {isLoading ? "Loading..." : gameCode ? "Join Game" : "Create Game"}
+        </Button>
+      </Box>
+      <ActiveGames />
+      <AvailableGames />
+    </Box>
+  );
+};
+
+export default function LobbyScreen() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const [currentTab, setCurrentTab] = useState(0);
+
+  if (isMobile) {
+    return (
+      <Box sx={{ bgcolor: "background.default", height: "100vh" }}>
+        <Box sx={{ bgcolor: "background.paper" }}>
+          <Header />
+          <Tabs
+            value={currentTab}
+            onChange={(_, newValue) => setCurrentTab(newValue)}
+            variant="fullWidth"
+            sx={{ mb: 2 }}
+          >
+            <Tab label="Games" />
+            <Tab label="History" />
+            <Tab label="Leaderboard" />
+          </Tabs>
+        </Box>
+
+        <Box sx={{ px: 1 }}>
+          {currentTab === 0 && <GamesTab />}
+          {currentTab === 1 && <PlayerHistory />}
+          {currentTab === 2 && <Leaderboard />}
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Container
+      sx={{
         py: { xs: 0, sm: 3 },
       }}
     >
-      <Box
+      <Paper
+        elevation={3}
         sx={{
-          width: { xs: "100%", sm: "auto" },
-          maxWidth: { xs: "100%", sm: "900px" },
-          mx: { xs: 0, sm: "auto" },
+          p: { xs: 0, sm: 2, md: 3 },
+          width: "100%",
+          borderRadius: { xs: 0, sm: 1 },
+          minHeight: { xs: "100vh", sm: "auto" },
         }}
       >
-        <Paper
-          elevation={3}
-          sx={{
-            p: { xs: 2, sm: 3, md: 4 },
-            width: "100%",
-            borderRadius: { xs: 0, sm: 1 },
-            minHeight: { xs: "100vh", sm: "auto" },
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              mb: 2,
-            }}
-          >
-            <Badge
-              overlap="circular"
-              anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-              badgeContent={
-                <IconButton
-                  size="small"
-                  onClick={handleAvatarClick}
-                  disabled={isUploadingAvatar || !profilePlayerId}
-                  sx={{
-                    bgcolor: "primary.main",
-                    color: "white",
-                    "&:hover": { bgcolor: "primary.dark" },
-                    width: 32,
-                    height: 32,
-                  }}
-                >
-                  {isUploadingAvatar ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : (
-                    <PhotoCameraIcon sx={{ fontSize: 16 }} />
-                  )}
-                </IconButton>
-              }
-            >
-              <Avatar
-                src={profileIcon || undefined}
-                alt={username}
-                sx={{
-                  width: 60,
-                  height: 60,
-                  fontSize: "2rem",
-                  bgcolor: "secondary.main",
-                }}
-              >
-                {username.charAt(0).toUpperCase()}
-              </Avatar>
-            </Badge>
-            <Box>
-              <Typography
-                variant="h4"
-                component="h1"
-                sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
-              >
-                Welcome, {username}!
-              </Typography>
-            </Box>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              style={{ display: "none" }}
-              onChange={handleAvatarChange}
-            />
-          </Box>
-
-          {error && (
-            <Alert
-              severity="error"
-              sx={{ mb: 2 }}
-              onClose={() => setError(null)}
-            >
-              {error}
-            </Alert>
-          )}
-
-          {isMobile ? (
-            <>
-              <Tabs
-                value={currentTab}
-                onChange={(_, newValue) => setCurrentTab(newValue)}
-                variant="fullWidth"
-                sx={{ mb: 2 }}
-              >
-                <Tab label="Games" />
-                <Tab label="History" />
-              </Tabs>
-
-              {currentTab === 0 && (
-                <>
-                  <Box sx={{ mb: 4 }}>
-                    <Typography variant="subtitle1" gutterBottom>
-                      Join or Create Game
-                    </Typography>
-                    <Box
-                      sx={{ display: "flex", flexDirection: "column", gap: 2 }}
-                    >
-                      <TextField
-                        placeholder="Enter game code"
-                        value={gameCode}
-                        onChange={(e) =>
-                          setGameCode(e.target.value.toUpperCase())
-                        }
-                        disabled={isLoading}
-                        sx={{
-                          "& input": {
-                            textTransform: "uppercase",
-                            textAlign: "center",
-                            letterSpacing: "2px",
-                          },
-                        }}
-                        fullWidth
-                      />
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={handleJoinOrCreate}
-                        disabled={isLoading}
-                        size="large"
-                        fullWidth={!gameCode}
-                        startIcon={
-                          isLoading ? <CircularProgress size={20} /> : null
-                        }
-                      >
-                        {isLoading
-                          ? "Loading..."
-                          : gameCode
-                            ? "Join Game"
-                            : "Create Game"}
-                      </Button>
-                    </Box>
-                  </Box>
-
-                  <ActiveGames playerId={profilePlayerId} />
-
-                  <Box
-                    sx={{
-                      minHeight: "200px",
-                      display: "flex",
-                      flexDirection: "column",
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Typography variant="subtitle1">
-                        Available Games
-                      </Typography>
-                      <IconButton
-                        onClick={fetchGames}
-                        color="primary"
-                        disabled={isFetching}
-                      >
-                        {isFetching ? (
-                          <CircularProgress size={24} />
-                        ) : (
-                          <RefreshIcon />
-                        )}
-                      </IconButton>
-                    </Box>
-
-                    {isFetching ? (
-                      <Box
-                        sx={{
-                          flexGrow: 1,
-                          display: "flex",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <CircularProgress />
-                      </Box>
-                    ) : games.length === 0 ? (
-                      <Box
-                        sx={{
-                          flexGrow: 1,
-                          display: "flex",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <Typography sx={{ py: 2 }} color="textDisabled">
-                          No active games
-                        </Typography>
-                      </Box>
-                    ) : (
-                      <List>
-                        {games.map((game) => (
-                          <ListItem key={game.id}>
-                            <ListItemText
-                              primary={game.code}
-                              secondary={`${game.player_count}/3 players`}
-                            />
-                            <ListItemSecondaryAction>
-                              <Button
-                                variant="text"
-                                onClick={() => handleQuickJoin(game.code)}
-                                disabled={isLoading}
-                              >
-                                Join
-                              </Button>
-                            </ListItemSecondaryAction>
-                          </ListItem>
-                        ))}
-                      </List>
-                    )}
-                  </Box>
-                </>
-              )}
-
-              {currentTab === 1 && <PlayerHistory playerId={profilePlayerId} />}
-            </>
-          ) : (
-            <Box sx={{ display: "flex", gap: 3, alignItems: "flex-start" }}>
-              <Box sx={{ flex: 1, minWidth: 400 }}>
-                <Box sx={{ mb: 4 }}>
-                  <Typography variant="subtitle1" gutterBottom>
-                    Join or Create Game
-                  </Typography>
-                  <Box
-                    sx={{ display: "flex", flexDirection: "column", gap: 2 }}
-                  >
-                    <TextField
-                      placeholder="Enter game code"
-                      value={gameCode}
-                      onChange={(e) =>
-                        setGameCode(e.target.value.toUpperCase())
-                      }
-                      disabled={isLoading}
-                      sx={{
-                        "& input": {
-                          textTransform: "uppercase",
-                          textAlign: "center",
-                          letterSpacing: "2px",
-                        },
-                      }}
-                      fullWidth
-                    />
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      onClick={handleJoinOrCreate}
-                      disabled={isLoading}
-                      size="large"
-                      fullWidth={!gameCode}
-                      startIcon={
-                        isLoading ? <CircularProgress size={20} /> : null
-                      }
-                    >
-                      {isLoading
-                        ? "Loading..."
-                        : gameCode
-                          ? "Join Game"
-                          : "Create Game"}
-                    </Button>
-                  </Box>
-                </Box>
-
-                <ActiveGames playerId={profilePlayerId} />
-
-                <Box
-                  sx={{
-                    minHeight: "200px",
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
-                >
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <Typography variant="subtitle1">Available Games</Typography>
-                    <IconButton
-                      onClick={fetchGames}
-                      color="primary"
-                      disabled={isFetching}
-                    >
-                      {isFetching ? (
-                        <CircularProgress size={24} />
-                      ) : (
-                        <RefreshIcon />
-                      )}
-                    </IconButton>
-                  </Box>
-
-                  {isFetching ? (
-                    <Box
-                      sx={{
-                        flexGrow: 1,
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      <CircularProgress />
-                    </Box>
-                  ) : games.length === 0 ? (
-                    <Box
-                      sx={{
-                        flexGrow: 1,
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Typography sx={{ py: 2 }} color="textDisabled">
-                        No active games
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <List>
-                      {games.map((game) => (
-                        <ListItem key={game.id}>
-                          <ListItemText
-                            primary={game.code}
-                            secondary={`${game.player_count}/3 players`}
-                          />
-                          <ListItemSecondaryAction>
-                            <Button
-                              variant="text"
-                              onClick={() => handleQuickJoin(game.code)}
-                              disabled={isLoading}
-                            >
-                              Join
-                            </Button>
-                          </ListItemSecondaryAction>
-                        </ListItem>
-                      ))}
-                    </List>
-                  )}
-                </Box>
-              </Box>
-
-              <Box sx={{ flex: 1, minWidth: 400 }}>
-                <PlayerHistory playerId={profilePlayerId} />
-              </Box>
-            </Box>
-          )}
-        </Paper>
-      </Box>
-    </Box>
+        <Header />
+        <Grid container spacing={2}>
+          <Grid size={{ sm: 12, md: 6, xl: 8 }} container>
+            <Grid size={{ sm: 12, xl: 6 }}>
+              <GamesTab />
+            </Grid>
+            <Grid size={{ sm: 12, xl: 6 }}>
+              <PlayerHistory />
+            </Grid>
+          </Grid>
+          <Grid size={{ sm: 12, md: 6, xl: 4 }}>
+            <Leaderboard />
+          </Grid>
+        </Grid>
+      </Paper>
+    </Container>
   );
 }

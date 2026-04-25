@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -332,9 +333,11 @@ func (d *PgDatabase) SavePlayerResults(results []game.PlayerResultState) error {
 	for _, result := range results {
 		_, err := d.DB.Exec(
 			`INSERT INTO player_results (
-				game_id, session_id, player_id, player_position, player_points, is_winner
-			) VALUES ($1, $2, $3, $4, $5, $6)`,
+				game_id, session_id, player_id, player_position, player_points, is_winner,
+				rating_before, rating_after, rating_change
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 			result.GameID, result.SessionID, result.PlayerID, result.PlayerPosition, result.PlayerPoints, result.IsWinner,
+			result.RatingBefore, result.RatingAfter, result.RatingChange,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save player result: %w", err)
@@ -346,13 +349,15 @@ func (d *PgDatabase) SavePlayerResults(results []game.PlayerResultState) error {
 func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
 	query := `
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner,
+			   pr.rating_before, pr.rating_after, pr.rating_change,
 			   array_agg(DISTINCT prof.name) FILTER (WHERE p.profile_id != pr.player_id) AS other_players
 		FROM player_results pr
 		JOIN games g ON g.id = pr.game_id
 		JOIN players p ON p.game_id = g.id
 		JOIN profiles prof ON prof.id = p.profile_id
 		WHERE pr.player_id = $1
-		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner
+		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner,
+		         pr.rating_before, pr.rating_after, pr.rating_change
 		ORDER BY pr.id DESC
 	`
 	if limit > 0 {
@@ -372,6 +377,7 @@ func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.Player
 		if err := rows.Scan(
 			&result.GameID, &result.SessionID, &result.PlayerID,
 			&result.PlayerPosition, &result.PlayerPoints, &result.IsWinner,
+			&result.RatingBefore, &result.RatingAfter, &result.RatingChange,
 			&otherPlayers,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan player result: %w", err)
@@ -517,4 +523,83 @@ func (d *PgDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameState, 
 	}
 
 	return games, nil
+}
+
+// Rating methods
+
+func (d *PgDatabase) GetPlayerRating(profileID string) (*PlayerRating, error) {
+	var rating PlayerRating
+	err := d.DB.QueryRow(`
+		SELECT profile_id, rating, games_played, wins, losses, peak_rating, last_updated
+		FROM player_ratings
+		WHERE profile_id = $1
+	`, profileID).Scan(
+		&rating.ProfileID, &rating.Rating, &rating.GamesPlayed,
+		&rating.Wins, &rating.Losses, &rating.PeakRating, &rating.LastUpdated,
+	)
+	if err == sql.ErrNoRows {
+		// Return default rating for new player
+		return &PlayerRating{
+			ProfileID:   profileID,
+			Rating:      1500,
+			GamesPlayed: 0,
+			Wins:        0,
+			Losses:      0,
+			PeakRating:  1500,
+			LastUpdated: time.Time{},
+		}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get player rating: %w", err)
+	}
+	return &rating, nil
+}
+
+func (d *PgDatabase) SavePlayerRating(rating PlayerRating) error {
+	_, err := d.DB.Exec(`
+		INSERT INTO player_ratings (profile_id, rating, games_played, wins, losses, peak_rating, last_updated)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (profile_id) DO UPDATE SET
+			rating = $2,
+			games_played = $3,
+			wins = $4,
+			losses = $5,
+			peak_rating = $6,
+			last_updated = $7
+	`, rating.ProfileID, rating.Rating, rating.GamesPlayed, rating.Wins, rating.Losses, rating.PeakRating, rating.LastUpdated)
+	if err != nil {
+		return fmt.Errorf("failed to save player rating: %w", err)
+	}
+	return nil
+}
+
+func (d *PgDatabase) GetLeaderboard(limit int) ([]PlayerRating, error) {
+	query := `
+		SELECT pr.profile_id, pr.rating, pr.games_played, pr.wins, pr.losses, pr.peak_rating, pr.last_updated
+		FROM player_ratings pr
+		JOIN profiles p ON p.id = pr.profile_id
+		ORDER BY pr.rating DESC
+	`
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	rows, err := d.DB.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get leaderboard: %w", err)
+	}
+	defer rows.Close()
+
+	var ratings []PlayerRating
+	for rows.Next() {
+		var rating PlayerRating
+		if err := rows.Scan(
+			&rating.ProfileID, &rating.Rating, &rating.GamesPlayed,
+			&rating.Wins, &rating.Losses, &rating.PeakRating, &rating.LastUpdated,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan rating: %w", err)
+		}
+		ratings = append(ratings, rating)
+	}
+	return ratings, nil
 }

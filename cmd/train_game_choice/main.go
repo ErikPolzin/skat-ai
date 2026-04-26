@@ -23,7 +23,7 @@ func main() {
 	trainer := training.NewGameChoiceTrainer()
 	trainer.TrainGameChoice(*episodes)
 
-	trainedAgent := trainer.GetAgent(0)
+	trainedAgent := trainer.GetGameChoiceAgent(0)
 
 	// Save Q-table
 	fmt.Println("\nSaving trained game choice agent...")

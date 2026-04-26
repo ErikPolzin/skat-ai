@@ -46,6 +46,7 @@ const Header = () => {
     if (profileId) {
       fetchPlayerRating();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId]);
 
   const fetchPlayerRating = async () => {

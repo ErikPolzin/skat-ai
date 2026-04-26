@@ -82,7 +82,8 @@ export function GameModeSelector() {
   const everyonePassed = game.bidValue === 0;
 
   // Check if player is playing hand (didn't pick up skat)
-  const isPlayingHand = game.skatCards.length === 0 || !game.hasPickedUpSkat;
+  // Only true if skat cards are available but player hasn't picked them up
+  const isPlayingHand = game.playedHand;
 
   // Calculate game value for current selection
   const gameValue = useMemo(() => {
@@ -173,7 +174,6 @@ export function GameModeSelector() {
 
       {isPlayingHand && selectedMode !== "null" && (
         <div className="announcements">
-          <h4>Announcements (Hand only):</h4>
           <label className="announcement-option">
             <input
               type="checkbox"

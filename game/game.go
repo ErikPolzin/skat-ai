@@ -104,10 +104,25 @@ type PlayerResultState struct {
 	PlayerPosition GamePosition `json:"player_position"`
 	PlayerPoints   int          `json:"player_points"`
 	IsWinner       bool         `json:"is_winner"`
+	IsDeclarer     bool         `json:"is_declarer"`
 	RatingBefore   int          `json:"rating_before"`
 	RatingAfter    int          `json:"rating_after"`
 	RatingChange   int          `json:"rating_change"`
 	OtherPlayers   []string     `json:"other_players,omitempty"`
+}
+
+// SessionGameResult represents the results of a single game within a session
+type SessionGameResult struct {
+	GameID         string            `json:"game_id"`
+	GameNumber     int               `json:"game_number"`
+	DeclarerName   string            `json:"declarer_name"`
+	DeclarerWon    bool              `json:"declarer_won"`
+	GameMode       string            `json:"game_mode"`
+	TrumpSuit      string            `json:"trump_suit"`
+	PlayerResults  map[string]int    `json:"player_results"`  // PlayerID -> Points
+	PlayerNames    map[string]string `json:"player_names"`    // PlayerID -> Name
+	PlayerWinners  map[string]bool   `json:"player_winners"`  // PlayerID -> IsWinner
+	ForfeitedPlayer *GamePosition    `json:"forfeited_player"`
 }
 
 type GamePhase string
@@ -505,65 +520,4 @@ func (gs *GameState) GetRandomPosition() GamePosition {
 		return -1
 	}
 	return GamePosition(availablePositions[rand.Int()%len(availablePositions)])
-}
-
-func Results(gs *GameState) []PlayerResultState {
-	if gs.Phase != PhaseComplete {
-		return nil
-	}
-
-	results := make([]PlayerResultState, 0, 3)
-
-	// If game was forfeited, use forfeit scoring
-	if gs.ForfeitedPlayer != nil {
-		for pos := Dealer; pos <= Speaker; pos++ {
-			player := gs.Players[pos]
-			if player == nil {
-				continue
-			}
-
-			points := 60 // Other players get points
-			isWinner := true
-			if pos == *gs.ForfeitedPlayer {
-				points = -120 // Forfeited player loses
-				isWinner = false
-			}
-
-			result := PlayerResultState{
-				GameID:         gs.ID,
-				SessionID:      gs.SessionID,
-				PlayerID:       player.ID,
-				IsWinner:       isWinner,
-				PlayerPosition: pos,
-				PlayerPoints:   points,
-			}
-
-			results = append(results, result)
-		}
-		return results
-	}
-
-	// Normal game scoring
-	declarerWon, _, _ := gs.GetGameResult()
-	points := gs.CalculatePlayerPoints()
-
-	for pos := Dealer; pos <= Speaker; pos++ {
-		player := gs.Players[pos]
-		if player == nil {
-			continue
-		}
-
-		result := PlayerResultState{
-			GameID:         gs.ID,
-			SessionID:      gs.SessionID,
-			PlayerID:       player.ID,
-			IsWinner:       (gs.Declarer != nil && pos == *gs.Declarer && declarerWon) || (gs.Declarer != nil && pos != *gs.Declarer && !declarerWon),
-			PlayerPosition: pos,
-			PlayerPoints:   points[pos],
-		}
-
-		results = append(results, result)
-	}
-
-	return results
 }

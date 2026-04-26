@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS player_results (
     player_position INT NOT NULL,
     player_points INT DEFAULT 0,
     is_winner BOOLEAN DEFAULT FALSE,
+    is_declarer BOOLEAN DEFAULT FALSE,
     rating_before INT DEFAULT 1500,
     rating_after INT DEFAULT 1500,
     rating_change INT DEFAULT 0,

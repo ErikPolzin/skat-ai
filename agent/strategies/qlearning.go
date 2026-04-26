@@ -288,30 +288,30 @@ func (q *QLearningBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Car
 // Training methods
 
 // OnGameEnd updates Q-values based on game outcome
-func (q *QLearningBiddingStrategy) OnGameEnd(becameDeclarer bool, wonGame bool, gameValue int, pointsScored int) {
+func (q *QLearningBiddingStrategy) OnGameEnd(playerResult game.PlayerResultState) {
 	reward := 0.0
 
-	if becameDeclarer {
-		if wonGame {
-			safetyMargin := float64(pointsScored-61) / 60.0
+	if playerResult.IsDeclarer {
+		if playerResult.IsWinner {
+			safetyMargin := float64(playerResult.PlayerPoints-61) / 60.0
 			reward = 1.0 + safetyMargin*0.5
 		} else {
-			if pointsScored >= 55 {
+			if playerResult.PlayerPoints >= 55 {
 				reward = -0.3
-			} else if pointsScored >= 45 {
+			} else if playerResult.PlayerPoints >= 45 {
 				reward = -0.6
 			} else {
 				reward = -1.0
 			}
 			// Extra penalty for overbidding badly
-			if q.currentBid > 30 && pointsScored < 40 {
+			if q.currentBid > 30 && playerResult.PlayerPoints < 40 {
 				reward -= 0.5
 			}
 		}
 	} else {
 		if q.currentBid == 0 {
 			// Agent passed
-			if wonGame {
+			if playerResult.IsWinner {
 				reward = -0.1 // Missed opportunity
 			} else {
 				reward = 0.1 // Correctly passed
@@ -452,24 +452,23 @@ func (q *QLearningGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode g
 // Training methods
 
 // OnGameChoiceEnd updates Q-values for game choice based on outcome
-func (q *QLearningGameChoiceStrategy) OnGameChoiceEnd(wonGame bool, pointsScored int) {
+func (q *QLearningGameChoiceStrategy) OnGameChoiceEnd(playerResult game.PlayerResultState) {
 	reward := 0.0
 
-	if wonGame {
+	if playerResult.IsWinner {
 		// Reward proportional to how well we won
-		safetyMargin := float64(pointsScored-61) / 60.0
+		safetyMargin := float64(playerResult.PlayerPoints-61) / 60.0
 		reward = 1.0 + safetyMargin*0.3
 	} else {
 		// Penalty proportional to how badly we lost
-		if pointsScored >= 55 {
+		if playerResult.PlayerPoints >= 55 {
 			reward = -0.4 // Close loss
-		} else if pointsScored >= 45 {
+		} else if playerResult.PlayerPoints >= 45 {
 			reward = -0.7
 		} else {
 			reward = -1.0 // Bad loss
 		}
 	}
-
 	q.qTable.Update(q.currentHandState, q.currentGameChoice, reward)
 }
 

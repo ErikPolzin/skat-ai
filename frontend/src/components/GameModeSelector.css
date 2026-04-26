@@ -169,25 +169,17 @@
 }
 
 .announcements {
-  margin-bottom: 20px;
-  padding: 15px;
+  padding: 10px;
   background: rgba(0, 0, 0, 0.05);
   border-radius: 12px;
   text-align: left;
 }
 
-.announcements h4 {
-  margin: 0 0 10px 0;
-  font-size: 14px;
-  color: #bbbbbb;
-  font-weight: 600;
-}
-
 .announcement-option {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
+  gap: 2px;
+  padding: 2px;
   margin: 5px 0;
   cursor: pointer;
   border-radius: 6px;

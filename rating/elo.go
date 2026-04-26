@@ -55,22 +55,22 @@ func CalculateRatingChange(rating, opponentRating int, actualScore float64, game
 
 // UpdateRatings updates ratings for all players and populates rating fields in results
 // In Skat, the declarer plays against two opponents as a team
-func UpdateRatings(gameState *game.GameState, database db.Database, results []game.PlayerResultState) ([]game.PlayerResultState, error) {
+func UpdateRatings(gameState *game.GameState, database db.Database, results *[3]game.PlayerResultState) error {
 	if gameState.Phase != game.PhaseComplete {
-		return results, fmt.Errorf("game is not complete")
+		return fmt.Errorf("game is not complete")
 	}
 
 	// Get game result
 	declarerWon, _, _ := gameState.GetGameResult()
-	gameValue := gameState.CalculateGameValue()
+	gameValue := gameState.Result().Value
 
 	// Get declarer
 	if gameState.Declarer == nil {
-		return results, fmt.Errorf("declarer not set")
+		return fmt.Errorf("declarer not set")
 	}
 	declarer := gameState.Players[*gameState.Declarer]
 	if declarer == nil {
-		return results, fmt.Errorf("declarer not found")
+		return fmt.Errorf("declarer not found")
 	}
 
 	// Count AI opponents and scale K-factor accordingly
@@ -96,7 +96,7 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results []ga
 		if player != nil {
 			rating, err := database.GetPlayerRating(player.ID)
 			if err != nil {
-				return results, fmt.Errorf("failed to get player rating: %w", err)
+				return fmt.Errorf("failed to get player rating: %w", err)
 			}
 			playerRatings[player.ID] = rating
 		}
@@ -113,7 +113,7 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results []ga
 	}
 
 	if len(opponents) != 2 {
-		return results, fmt.Errorf("expected 2 opponents, got %d", len(opponents))
+		return fmt.Errorf("expected 2 opponents, got %d", len(opponents))
 	}
 
 	avgOpponentRating := (opponentRatings[0] + opponentRatings[1]) / 2
@@ -155,7 +155,7 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results []ga
 
 	// Save declarer rating
 	if err := database.SavePlayerRating(*declarerRating); err != nil {
-		return results, fmt.Errorf("failed to save declarer rating: %w", err)
+		return fmt.Errorf("failed to save declarer rating: %w", err)
 	}
 
 	// Update opponent ratings
@@ -187,7 +187,7 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results []ga
 
 		// Save opponent rating
 		if err := database.SavePlayerRating(*opponentRating); err != nil {
-			return results, fmt.Errorf("failed to save opponent rating: %w", err)
+			return fmt.Errorf("failed to save opponent rating: %w", err)
 		}
 	}
 
@@ -202,5 +202,5 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results []ga
 		}
 	}
 
-	return results, nil
+	return nil
 }

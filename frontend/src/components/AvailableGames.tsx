@@ -33,6 +33,7 @@ const AvailableGames = () => {
     if (profileId) {
       fetchGames();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId]);
 
   const fetchGames = async () => {

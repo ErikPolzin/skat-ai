@@ -108,9 +108,28 @@ func (gs *GameState) Result() GameResult {
 	return result
 }
 
-// CalculateGameValue calculates the final game value (for backward compatibility)
-func (gs *GameState) CalculateGameValue() int {
-	return gs.Result().Value
+func (gs *GameState) PlayerResults() *[3]PlayerResultState {
+	if gs.Phase != PhaseComplete || gs.Declarer == nil {
+		return nil
+	}
+	results := [3]PlayerResultState{}
+
+	for pos := Dealer; pos <= Speaker; pos++ {
+		player := gs.Players[pos]
+		if player == nil {
+			continue
+		}
+		results[int(pos)] = PlayerResultState{
+			GameID:         gs.ID,
+			SessionID:      gs.SessionID,
+			PlayerID:       player.ID,
+			IsWinner:       gs.isWinner(pos),
+			IsDeclarer:     gs.Declarer != nil && pos == *gs.Declarer,
+			PlayerPosition: pos,
+			PlayerPoints:   gs.CalculatePlayerPoints(pos),
+		}
+	}
+	return &results
 }
 
 // countMatadorsWithSign returns matadors with sign (positive=with, negative=without)
@@ -185,25 +204,26 @@ func (gs *GameState) countMatadorsWithSign() int {
 	}
 }
 
-// CalculatePlayerPoints calculates points for each player
-// Returns a map of position -> points scored
+// CalculatePlayerPoints calculates points for a player
 // In Skat, only the declarer's score changes - opponents don't gain/lose individual points
-func (gs *GameState) CalculatePlayerPoints() map[GamePosition]int {
-	points := make(map[GamePosition]int)
-
-	gameValue := gs.CalculateGameValue()
-
-	// Only the declarer's score changes
-	if gs.Declarer != nil {
-		points[*gs.Declarer] = gameValue
-	}
-
-	// Opponents don't gain or lose points
-	for pos := Dealer; pos <= Speaker; pos++ {
-		if gs.Declarer == nil || pos != *gs.Declarer {
-			points[pos] = 0
+func (gs *GameState) CalculatePlayerPoints(pos GamePosition) int {
+	if gs.ForfeitedPlayer != nil {
+		if pos == *gs.ForfeitedPlayer {
+			return -120
+		} else {
+			return 60
 		}
+	} else if gs.Declarer != nil && pos == *gs.Declarer {
+		return gs.Result().Value
 	}
+	return 0
+}
 
-	return points
+func (gs *GameState) isWinner(pos GamePosition) bool {
+	if gs.ForfeitedPlayer != nil {
+		return pos != *gs.ForfeitedPlayer
+	} else if gs.Declarer != nil && pos == *gs.Declarer && gs.Result().DeclarerWon {
+		return true
+	}
+	return false
 }

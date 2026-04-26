@@ -22,6 +22,7 @@ type Database interface {
 	GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error)
 	CountGamesInSession(sessionID string) (int, error)
 	GetSessionResults(sessionID string) ([]game.PlayerResultState, error)
+	GetFormattedSessionResults(sessionID string) ([]game.SessionGameResult, error)
 	ListAgentProfiles() ([]ProfileEntry, error)
 	CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []string) (int, error)
 	GetActiveGamesByPlayer(playerID string) ([]game.GameState, error)

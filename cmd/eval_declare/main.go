@@ -63,6 +63,7 @@ func main() {
 	var baselineGamesAtomic atomic.Int64
 	var baselinePointsAtomic atomic.Int64
 	var gamesCompletedAtomic atomic.Int64
+	var passedGamesAtomic atomic.Int64
 
 	// Progress reporting
 	done := make(chan struct{})
@@ -121,21 +122,21 @@ func main() {
 				agents[(testPos+1)%3] = baselineAgent
 				agents[(testPos+2)%3] = baselineAgent
 
-				declarer, points := training.PlayFullGame(agents[0], agents[1], agents[2])
+				g := training.PlayFullGame(agents[0], agents[1], agents[2])
+				result := g.Result()
 
-				// Check if declarer won (earned positive points)
-				won := declarer >= 0 && points[declarer] > 0
-
-				if declarer == game.GamePosition(testPos) {
+				if g.Declarer == nil {
+					passedGamesAtomic.Add(1)
+				} else if *g.Declarer == game.GamePosition(testPos) {
 					testGamesAtomic.Add(1)
-					testPointsAtomic.Add(int64(points[testPos]))
-					if won {
+					testPointsAtomic.Add(int64(result.Value))
+					if result.DeclarerWon {
 						testWinsAtomic.Add(1)
 					}
-				} else if declarer >= 0 {
+				} else {
 					baselineGamesAtomic.Add(1)
-					baselinePointsAtomic.Add(int64(points[declarer]))
-					if won {
+					baselinePointsAtomic.Add(int64(result.Value))
+					if result.DeclarerWon {
 						baselineWinsAtomic.Add(1)
 					}
 				}
@@ -154,10 +155,13 @@ func main() {
 	baselineGames := baselineGamesAtomic.Load()
 	baselineWins := baselineWinsAtomic.Load()
 	baselinePoints := baselinePointsAtomic.Load()
+	passedGames := passedGamesAtomic.Load()
 
 	fmt.Println("\n" + strings.Repeat("=", 50))
 	fmt.Println("FINAL RESULTS")
 	fmt.Println(strings.Repeat("=", 50))
+	fmt.Printf("\nPassed games (everyone passed): %d/%d (%.1f%%)\n",
+		passedGames, *games, float64(passedGames)/float64(*games)*100)
 
 	if testGames > 0 {
 		fmt.Printf("\nTest (Q-learning game choice):\n")

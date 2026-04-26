@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS player_results (
     player_position INTEGER NOT NULL,
     player_points INTEGER DEFAULT 0,
     is_winner INTEGER DEFAULT 0,
+    is_declarer INTEGER DEFAULT 0,
     rating_before INTEGER DEFAULT 1500,
     rating_after INTEGER DEFAULT 1500,
     rating_change INTEGER DEFAULT 0,

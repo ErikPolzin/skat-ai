@@ -34,22 +34,14 @@ func initializeGameWithDeal() *game.GameState {
 
 // PlayFullGame plays a complete game from deal to finish using the provided agents
 // Returns the declarer position and player points
-func PlayFullGame(agent1, agent2, agent3 *agent.SkatAgent) (game.GamePosition, [3]int) {
-	g := game.NewGame()
-	for p := 0; p < 3; p++ {
-		g.Players[p] = &game.PlayerState{
-			ID:      fmt.Sprintf("player-%d", p),
-			Name:    fmt.Sprintf("Player %d", p),
-			Hand:    []game.Card{},
-			IsAgent: true,
-		}
-	}
+func PlayFullGame(agent1, agent2, agent3 *agent.SkatAgent) *game.GameState {
+	g := initializeGameWithDeal()
+	PlayGameToCompletion(g, [3]*agent.SkatAgent{agent1, agent2, agent3})
+	return g
+}
 
-	g.Phase = game.PhaseDealing
-	g.Deal()
-
-	agents := [3]*agent.SkatAgent{agent1, agent2, agent3}
-
+// PlayGameToCompletion plays out a game using the provided agents
+func PlayGameToCompletion(g *game.GameState, agents [3]*agent.SkatAgent) {
 	// Bidding phase
 	for g.Phase == game.PhaseBidding {
 		currentAgent := agents[g.CurrentPlayer]
@@ -68,38 +60,21 @@ func PlayFullGame(agent1, agent2, agent3 *agent.SkatAgent) (game.GamePosition, [
 	}
 
 	// Playing phase
-	PlayGameToCompletion(g, agents)
-
-	points := g.CalculatePlayerPoints()
-	if g.Declarer == nil {
-		return -1, [3]int{points[0], points[1], points[2]}
-	}
-	return *g.Declarer, [3]int{points[0], points[1], points[2]}
-}
-
-// PlayGameToCompletion plays out a game using the provided agents
-func PlayGameToCompletion(g *game.GameState, agents [3]*agent.SkatAgent) {
-	maxTricks := 10
-	tricksPlayed := 0
-
-	for g.Phase == game.PhasePlaying && tricksPlayed < maxTricks {
+	for g.Phase == game.PhasePlaying {
 		validMoves := g.GetValidMoves()
 		if len(validMoves) == 0 {
-			break
+			panic("Cannot play game, no valid moves")
 		}
-
 		currentAgent := agents[g.CurrentPlayer]
 		move := currentAgent.SelectMove(g, validMoves)
 		if _, err := g.PlayCard(move); err != nil {
 			panic(fmt.Sprintf("PlayCard error: %v", err))
 		}
-
 		// Resolve trick if complete
 		if len(g.Trick) == 3 {
 			if _, err := g.ResolveTrick(); err != nil {
 				panic(fmt.Sprintf("ResolveTrick error: %v", err))
 			}
-			tricksPlayed++
 		}
 	}
 }

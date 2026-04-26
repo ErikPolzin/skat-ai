@@ -43,15 +43,36 @@ func (cm *ClientManager) BroadcastToPlayers(gs *game.GameState, msg *Message) {
 }
 
 func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fromPlayer game.GamePosition) {
+	// Fetch formatted session results if game just completed
+	var sessionResults []game.SessionGameResult
+	var gamesPlayed int
+	if gs.Phase == game.PhaseComplete && gs.SessionID != "" {
+		results, err := cm.db.GetFormattedSessionResults(gs.SessionID)
+		if err != nil {
+			logger.Warning("Failed to fetch session results for broadcast", "session_id", gs.SessionID, "error", err)
+		} else {
+			sessionResults = results
+			gamesPlayed = len(results)
+		}
+	}
+
 	for _, player := range gs.Players {
 		if player != nil && !player.IsAgent { // Only send to human players
+			msgData := map[string]any{
+				"diff":        gs.SerializeForPlayer(player.ID),
+				"description": msg,
+				"from_player": fromPlayer,
+			}
+
+			// Include session results if available
+			if sessionResults != nil {
+				msgData["session_results"] = sessionResults
+				msgData["games_played"] = gamesPlayed
+			}
+
 			stateMsg := &Message{
 				Type: "state_update",
-				Data: map[string]any{
-					"diff":        gs.SerializeForPlayer(player.ID),
-					"description": msg,
-					"from_player": fromPlayer,
-				},
+				Data: msgData,
 			}
 			cm.SendToClient(player.ID, stateMsg)
 		}
@@ -61,16 +82,20 @@ func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fr
 // saveGameResults saves player results when a game completes
 func (s *Server) maybeSaveGameResults(gs *game.GameState) {
 	if gs.Phase == game.PhaseComplete {
-		results := game.Results(gs)
+		results := gs.PlayerResults()
+		if results == nil {
+			logger.Warning("Failed to update player ratings, no results")
+			return
+		}
 
 		// Update player ratings and populate rating fields in results
-		results, err := rating.UpdateRatings(gs, s.db, results)
+		err := rating.UpdateRatings(gs, s.db, results)
 		if err != nil {
 			logger.Warning("Failed to update player ratings", "error", err)
 		}
 
 		// Save results with rating information
-		if err := s.db.SavePlayerResults(results); err != nil {
+		if err := s.db.SavePlayerResults(results[:]); err != nil {
 			logger.Warning("Failed to save player results", "error", err)
 		}
 	}
@@ -101,4 +126,3 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 		s.clients.BroadcastStateChange(gs, response, currentPlayer)
 	}
 }
-

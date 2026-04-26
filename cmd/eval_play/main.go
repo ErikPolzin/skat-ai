@@ -86,15 +86,18 @@ func main() {
 				agents[(testPos+1)%3] = workerBaselineAgent
 				agents[(testPos+2)%3] = workerBaselineAgent
 
-				_, points := training.PlayFullGame(agents[0], agents[1], agents[2])
-
+				g := training.PlayFullGame(agents[0], agents[1], agents[2])
+				pr := g.PlayerResults()
+				points := [3]int64{
+					int64(pr[0].PlayerPoints),
+					int64(pr[1].PlayerPoints),
+					int64(pr[2].PlayerPoints),
+				}
 				// Award all points (declarer gets their points, defenders split theirs)
-				testPointsAtomic.Add(int64(points[testPos]))
-
+				testPointsAtomic.Add(points[testPos])
 				// Baseline gets points from the other two positions
 				baselinePoints := points[(testPos+1)%3] + points[(testPos+2)%3]
-				baselinePointsAtomic.Add(int64(baselinePoints))
-
+				baselinePointsAtomic.Add(baselinePoints)
 				gamesCompletedAtomic.Add(1)
 			}
 		}()

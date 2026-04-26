@@ -502,6 +502,7 @@ func (gs *GameState) ForfeitDueToInactivity() []PlayerResultState {
 				PlayerPosition: GamePosition(pos),
 				PlayerPoints:   points,
 				IsWinner:       isWinner,
+				IsDeclarer:     gs.Declarer != nil && GamePosition(pos) == *gs.Declarer,
 			})
 		}
 	}

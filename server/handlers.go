@@ -391,34 +391,10 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 		// Game is in progress - end it and award points to remaining players
 		// Player who left forfeits and loses maximum points
 		gs.Phase = game.PhaseComplete
-
-		// Award forfeit points: leaving player gets -120, others get +60 each
-		results := []game.PlayerResultState{}
-		for pos, player := range gs.Players {
-			if player != nil {
-				points := 60 // Remaining players get points
-				isWinner := true
-				if game.GamePosition(pos) == position {
-					points = -120 // Leaving player loses
-					isWinner = false
-				}
-				results = append(results, game.PlayerResultState{
-					GameID:         gs.ID,
-					SessionID:      gs.SessionID,
-					PlayerID:       player.ID,
-					PlayerPosition: game.GamePosition(pos),
-					PlayerPoints:   points,
-					IsWinner:       isWinner,
-				})
-			}
-		}
-
-		// Save the results
-		if err := s.db.SavePlayerResults(results); err != nil {
-			logger.Warning("Failed to save forfeit results", "game_id", gs.ID, "error", err)
-		}
+		gs.ForfeitedPlayer = &position
 
 		s.db.SaveGame(*gs)
+		s.maybeSaveGameResults(gs)
 
 		// Broadcast forfeit to other players
 		s.clients.BroadcastToPlayers(gs, &Message{
@@ -605,65 +581,11 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 	vars := mux.Vars(r)
 	sessionID := vars["id"]
 
-	playerResults, err := s.db.GetSessionResults(sessionID)
+	results, err := s.db.GetFormattedSessionResults(sessionID)
 	if err != nil {
 		logger.Warning("Failed to get session results", "session_id", sessionID, "error", err)
 		http.Error(w, fmt.Sprintf("Failed to get session results: %v", err), http.StatusInternalServerError)
 		return
-	}
-
-	// Group results by game
-	gameResultsMap := make(map[string]map[string]interface{})
-	for _, pr := range playerResults {
-		if _, exists := gameResultsMap[pr.GameID]; !exists {
-			// Fetch game to get additional info
-			gs, err := s.db.GetGameByID(pr.GameID)
-			if err != nil {
-				logger.Warning("Failed to get game", "game_id", pr.GameID, "error", err)
-				continue
-			}
-
-			var declarer *game.PlayerState
-			if gs.Declarer != nil {
-				declarer = gs.Players[*gs.Declarer]
-			}
-			declarerWon, _, _ := gs.GetGameResult()
-
-			declarerName := ""
-			if declarer != nil {
-				declarerName = declarer.Name
-			}
-
-			gameResultsMap[pr.GameID] = map[string]interface{}{
-				"game_id":         pr.GameID,
-				"game_number":     gs.GameNumber,
-				"declarer_name":   declarerName,
-				"declarer_won":    declarerWon,
-				"game_mode":       string(gs.Mode),
-				"trump_suit":      gs.TrumpSuit.String(),
-				"player_results":  make(map[string]int),
-				"player_names":    make(map[string]string),
-				"player_winners":  make(map[string]bool),
-				"forfeited_player": gs.ForfeitedPlayer,
-			}
-
-			// Add all player names
-			for _, player := range gs.Players {
-				if player != nil {
-					gameResultsMap[pr.GameID]["player_names"].(map[string]string)[player.ID] = player.Name
-				}
-			}
-		}
-
-		// Add player points and winner status
-		gameResultsMap[pr.GameID]["player_results"].(map[string]int)[pr.PlayerID] = pr.PlayerPoints
-		gameResultsMap[pr.GameID]["player_winners"].(map[string]bool)[pr.PlayerID] = pr.IsWinner
-	}
-
-	// Convert map to slice
-	var results []map[string]interface{}
-	for _, result := range gameResultsMap {
-		results = append(results, result)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

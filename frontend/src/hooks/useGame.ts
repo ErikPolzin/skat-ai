@@ -344,6 +344,7 @@ export function useGame(
     speakerPassed: state.speaker_passed,
     dealerPassed: state.dealer_passed,
     phase: state.phase,
+    playedHand: state.played_hand,
     gameOver,
     gameMode: state.mode,
     trumpSuit: state.trump_suit,

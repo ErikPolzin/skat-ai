@@ -212,38 +212,71 @@ func (d *MemoryDatabase) GetSessionResults(sessionID string) ([]game.PlayerResul
 
 	// Find all completed games for this session
 	for _, gameState := range d.games {
-		if gameState.SessionID != sessionID || gameState.Phase != game.PhaseComplete {
+		if gameState.SessionID == sessionID && gameState.Phase == game.PhaseComplete {
+			playerResults := gameState.PlayerResults()
+			if playerResults != nil {
+				for _, r := range playerResults {
+					results = append(results, r)
+				}
+			}
+		}
+	}
+
+	return results, nil
+}
+
+func (d *MemoryDatabase) GetFormattedSessionResults(sessionID string) ([]game.SessionGameResult, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var results []game.SessionGameResult
+
+	// Find all completed games for this session
+	for _, gs := range d.games {
+		if gs.SessionID != sessionID || gs.Phase != game.PhaseComplete {
 			continue
 		}
 
-		// Get player results for this game
-		points := gameState.CalculatePlayerPoints()
-
-		for pos := game.Dealer; pos <= game.Speaker; pos++ {
-			player := gameState.Players[pos]
-			if player == nil {
-				continue
-			}
-
-			isDeclarer := gameState.Declarer != nil && pos == *gameState.Declarer
-			var isWinner bool
-			if isDeclarer {
-				declarerWon, _, _ := gameState.GetGameResult()
-				isWinner = declarerWon
-			} else {
-				declarerWon, _, _ := gameState.GetGameResult()
-				isWinner = !declarerWon
-			}
-
-			results = append(results, game.PlayerResultState{
-				GameID:         gameState.ID,
-				SessionID:      sessionID,
-				PlayerID:       player.ID,
-				PlayerPosition: pos,
-				PlayerPoints:   points[pos],
-				IsWinner:       isWinner,
-			})
+		var declarer *game.PlayerState
+		if gs.Declarer != nil {
+			declarer = gs.Players[*gs.Declarer]
 		}
+		declarerWon, _, _ := gs.GetGameResult()
+
+		declarerName := ""
+		if declarer != nil {
+			declarerName = declarer.Name
+		}
+
+		result := game.SessionGameResult{
+			GameID:         gs.ID,
+			GameNumber:     gs.GameNumber,
+			DeclarerName:   declarerName,
+			DeclarerWon:    declarerWon,
+			GameMode:       string(gs.Mode),
+			TrumpSuit:      gs.TrumpSuit.String(),
+			PlayerResults:  make(map[string]int),
+			PlayerNames:    make(map[string]string),
+			PlayerWinners:  make(map[string]bool),
+			ForfeitedPlayer: gs.ForfeitedPlayer,
+		}
+
+		// Add player names and results
+		playerResults := gs.PlayerResults()
+		if playerResults != nil {
+			for _, pr := range playerResults {
+				result.PlayerResults[pr.PlayerID] = pr.PlayerPoints
+				result.PlayerWinners[pr.PlayerID] = pr.IsWinner
+			}
+		}
+
+		for _, player := range gs.Players {
+			if player != nil {
+				result.PlayerNames[player.ID] = player.Name
+			}
+		}
+
+		results = append(results, result)
 	}
 
 	return results, nil

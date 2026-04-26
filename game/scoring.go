@@ -7,6 +7,17 @@ func (gs *GameState) Result() GameResult {
 	// Check if game was forfeited
 	result.IsForfeit = gs.ForfeitedPlayer >= 0
 
+	// Handle forfeit games with fixed penalty value
+	if result.IsForfeit {
+		result.DeclarerWon = gs.ForfeitedPlayer != gs.Declarer
+		if result.DeclarerWon {
+			result.Value = 120 // Declarer wins when opponent forfeits
+		} else {
+			result.Value = -120 // Declarer loses when they forfeit
+		}
+		return result
+	}
+
 	// Base value depends on game mode
 	switch gs.Mode {
 	case ModeGrand:

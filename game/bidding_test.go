@@ -13,27 +13,33 @@ func TestBiddingPhases(t *testing.T) {
 		expectedBid    int
 	}{
 		{
-			name:           "Speaker passes immediately, Listener vs Dealer",
-			bids:           []bool{false, true, true, true, false}, // Speaker pass, Listener hold, Dealer hold, Listener bid, Dealer pass
-			expectedWinner: Listener,
-			expectedBid:    20,
-		},
-		{
-			name:           "Listener passes immediately, Speaker vs Dealer",
-			bids:           []bool{true, false, true, false}, // Speaker bid, Listener pass, Speaker bid, Dealer pass
-			expectedWinner: Speaker,
-			expectedBid:    20,
-		},
-		{
-			name:           "Both pass Speaker and Listener, Dealer takes game",
-			bids:           []bool{false, false}, // Speaker pass, Listener pass -> Dealer can bid or pass
+			name:           "Speaker passes, Dealer bids, Listener holds, Dealer raises, Listener passes",
+			bids:           []bool{false, true, true, true, false}, // Speaker pass, Dealer bid 18, Listener hold, Dealer bid 20, Listener pass
 			expectedWinner: Dealer,
+			expectedBid:    20,
+		},
+		{
+			name:           "Speaker passes, Dealer bids, Listener passes",
+			bids:           []bool{false, true, false}, // Speaker pass, Dealer bid 18, Listener pass
+			expectedWinner: Dealer,
+			expectedBid:    18,
+		},
+		{
+			name:           "Speaker passes, Dealer passes",
+			bids:           []bool{false, false}, // Speaker pass, Dealer pass -> Listener wins at 0
+			expectedWinner: Listener,
 			expectedBid:    0,
 		},
 		{
-			name:           "Speaker wins Phase 1, beats Dealer in Phase 2",
-			bids:           []bool{true, false, true, false}, // Speaker bid, Listener pass, Speaker bid, Dealer pass
+			name:           "Speaker bids, Listener passes, Dealer passes",
+			bids:           []bool{true, false, false}, // Speaker bid 18, Listener pass, Dealer pass -> Speaker wins at 18
 			expectedWinner: Speaker,
+			expectedBid:    18,
+		},
+		{
+			name:           "Speaker bids, Listener passes, Dealer bids, Speaker passes",
+			bids:           []bool{true, false, true, false}, // Speaker bid 18, Listener pass, Dealer bid 20, Speaker pass
+			expectedWinner: Dealer,
 			expectedBid:    20,
 		},
 	}

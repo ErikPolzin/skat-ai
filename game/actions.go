@@ -78,7 +78,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 	if gs.Mode == ModeNull {
 		// In null games, if declarer takes any trick, game ends immediately
 		if gs.TrickWinner == gs.Declarer {
-			gs.Phase = PhaseComplete // Game ends immediately - declarer loses
+			gs.Phase = PhaseComplete      // Game ends immediately - declarer loses
 			gs.CurrentPlayerDeadline = "" // Clear deadline when game ends
 			gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
 			gs.Trick = nil
@@ -129,16 +129,17 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		// Player passes
 		switch gs.CurrentPlayer {
 		case Speaker:
-			// Speaker passes in Phase 1 - Listener wins Phase 1, now faces Dealer in Phase 2
+			// Speaker passes in Phase 1 - Listener wins Phase 1
 			gs.SpeakerPassed = true
-			// Start Phase 2: Listener vs Dealer
-			gs.CurrentPlayer = Listener
+			// Move to Phase 2: Dealer now sets the bid value
+			gs.CurrentPlayer = Dealer
 		case Listener:
 			// Listener passes
 			gs.ListenerPassed = true
 			if !gs.SpeakerPassed {
-				// Phase 1: Listener passed, Speaker wins Phase 1, now faces Dealer in Phase 2
-				gs.CurrentPlayer = Speaker
+				// Phase 1: Listener passed, Speaker wins Phase 1
+				// Move to Phase 2: Dealer now sets the bid value
+				gs.CurrentPlayer = Dealer
 			} else {
 				// Both Speaker and Listener passed - bidding ends
 				// Dealer wins by default (or Listener gets forehand privilege if dealer also passed)
@@ -161,9 +162,8 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 				// Turn passes to Listener to respond
 				gs.CurrentPlayer = Listener
 			} else {
-				// Phase 2: Speaker is bidding against Dealer (Listener passed)
-				// Speaker names a value (either starting Phase 2 or raising after Dealer held)
-				gs.BidValue = gs.getNextBidValue()
+				// Phase 2: Speaker responds to Dealer by holding
+				// Speaker holds, turn back to Dealer who must raise
 				gs.CurrentPlayer = Dealer
 			}
 		case Listener:
@@ -172,14 +172,14 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 				// Listener holds, turn back to Speaker who must raise
 				gs.CurrentPlayer = Speaker
 			} else {
-				// Phase 2: Listener is bidding against Dealer (Speaker passed)
-				// Listener names a value (either starting Phase 2 or raising after Dealer held)
-				gs.BidValue = gs.getNextBidValue()
+				// Phase 2: Listener responds to Dealer by holding
+				// Listener holds, turn back to Dealer who must raise
 				gs.CurrentPlayer = Dealer
 			}
 		case Dealer:
-			// Phase 2: Dealer responds to the Phase 1 winner by holding
-			// Dealer holds, turn back to bidder who must raise on their next turn
+			// Phase 2: Dealer bids (names a value) against the Phase 1 winner
+			gs.BidValue = gs.getNextBidValue()
+			// Turn passes to Phase 1 winner to respond (hold or pass)
 			if !gs.ListenerPassed {
 				gs.CurrentPlayer = Listener
 			} else {

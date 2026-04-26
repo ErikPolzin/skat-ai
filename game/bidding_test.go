@@ -78,8 +78,10 @@ func TestBiddingPhases(t *testing.T) {
 			if gs.Phase != PhaseSkatExchange {
 				t.Errorf("Expected phase %s, got %s", PhaseSkatExchange, gs.Phase)
 			}
-			if gs.Declarer != tt.expectedWinner {
-				t.Errorf("Expected winner %d, got %d", tt.expectedWinner, gs.Declarer)
+			if gs.Declarer == nil {
+				t.Errorf("Expected winner %d, got nil", tt.expectedWinner)
+			} else if *gs.Declarer != tt.expectedWinner {
+				t.Errorf("Expected winner %d, got %d", tt.expectedWinner, *gs.Declarer)
 			}
 			if tt.expectedBid > 0 && gs.BidValue != tt.expectedBid {
 				t.Errorf("Expected bid value %d, got %d", tt.expectedBid, gs.BidValue)

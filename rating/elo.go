@@ -65,7 +65,10 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results []ga
 	gameValue := gameState.CalculateGameValue()
 
 	// Get declarer
-	declarer := gameState.Players[gameState.Declarer]
+	if gameState.Declarer == nil {
+		return results, fmt.Errorf("declarer not set")
+	}
+	declarer := gameState.Players[*gameState.Declarer]
 	if declarer == nil {
 		return results, fmt.Errorf("declarer not found")
 	}
@@ -103,7 +106,7 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results []ga
 	var opponents []*game.PlayerState
 	var opponentRatings []int
 	for pos, player := range gameState.Players {
-		if player != nil && game.GamePosition(pos) != gameState.Declarer {
+		if player != nil && game.GamePosition(pos) != *gameState.Declarer {
 			opponents = append(opponents, player)
 			opponentRatings = append(opponentRatings, playerRatings[player.ID].Rating)
 		}

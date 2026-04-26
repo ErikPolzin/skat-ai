@@ -225,7 +225,7 @@ func (d *MemoryDatabase) GetSessionResults(sessionID string) ([]game.PlayerResul
 				continue
 			}
 
-			isDeclarer := pos == gameState.Declarer
+			isDeclarer := gameState.Declarer != nil && pos == *gameState.Declarer
 			var isWinner bool
 			if isDeclarer {
 				declarerWon, _, _ := gameState.GetGameResult()

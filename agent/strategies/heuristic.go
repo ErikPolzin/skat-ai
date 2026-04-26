@@ -115,7 +115,7 @@ func (h *HeuristicCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []
 	sortByValue(validMoves)
 
 	currentPlayer := gs.CurrentPlayer
-	isDefender := currentPlayer != gs.Declarer
+	isDefender := gs.Declarer == nil || currentPlayer != *gs.Declarer
 
 	if isDefender {
 		return h.selectDefenderMove(gs, validMoves)
@@ -237,7 +237,7 @@ func (h *HeuristicCardPlayStrategy) getTrickWinner(gs *game.GameState, trick []g
 func (h *HeuristicCardPlayStrategy) getDefenderPartner(gs *game.GameState) game.GamePosition {
 	currentPlayer := gs.CurrentPlayer
 	for pos := game.Dealer; pos <= game.Speaker; pos++ {
-		if pos != currentPlayer && pos != gs.Declarer {
+		if pos != currentPlayer && (gs.Declarer == nil || pos != *gs.Declarer) {
 			return pos
 		}
 	}

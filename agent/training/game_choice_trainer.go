@@ -40,7 +40,7 @@ func (gct *GameChoiceTrainer) trainSingleEpisode() {
 
 	// Skip bidding - randomly assign declarer
 	declarer := game.GamePosition(rand.Intn(3))
-	g.Declarer = declarer
+	g.Declarer = &declarer
 	g.Phase = game.PhaseSkatExchange
 	g.CurrentPlayer = declarer
 

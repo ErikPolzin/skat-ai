@@ -173,7 +173,7 @@ func (gs *GameState) SerializeForPlayer(playerID string) *GameInfo {
 
 	if player != nil {
 		info.Hand = player.Hand
-		if position == gs.Declarer {
+		if gs.Declarer != nil && position == *gs.Declarer {
 			info.Skat = gs.Skat
 		}
 	}

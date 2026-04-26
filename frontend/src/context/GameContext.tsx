@@ -11,12 +11,15 @@ import { useProfileStore } from "../stores/profileStore";
 import { useWebSocketContext } from "./WebSocketContext";
 import { GameControls, useControls } from "../hooks/useControls";
 import { Message } from "../types";
-import { type GameInfo } from "../api/games";
+import { GamePosition, type GameInfo } from "../api/games";
 
 const GameContext = createContext<
   | (Game & {
       controls: GameControls;
-      trickWinnerRef: React.MutableRefObject<{ winner: number; declarer: number }>;
+      trickWinnerRef: React.MutableRefObject<{
+        winner: GamePosition | null;
+        declarer: GamePosition | null;
+      }>;
     })
   | null
 >(null);
@@ -31,7 +34,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   // Store trick winner in a ref that persists across renders
-  const trickWinnerRef = React.useRef<{ winner: number; declarer: number }>({
+  const trickWinnerRef = React.useRef<{
+    winner: GamePosition | null;
+    declarer: GamePosition | null;
+  }>({
     winner: game.trickWinner,
     declarer: game.declarerPosition,
   });
@@ -54,7 +60,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
           // If trick is complete (3 cards) or being cleared, update the ref
           // This allows exit animations to access the correct winner
-          if ((diff.state.trick?.length === 3 || diff.state.trick === null) && diff.state.trick_winner >= 0) {
+          if (
+            (diff.state.trick?.length === 3 || diff.state.trick === null) &&
+            diff.state.trick_winner != null
+          ) {
             trickWinnerRef.current = {
               winner: diff.state.trick_winner,
               declarer: diff.state.declarer,
@@ -108,7 +117,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       case "player_forfeit":
         // Player forfeited an active game
         if (message.data.player_name) {
-          addMessage(`${message.data.player_name} has forfeited. Game ended.`, true);
+          addMessage(
+            `${message.data.player_name} has forfeited. Game ended.`,
+            true,
+          );
         } else {
           addMessage(`A player has forfeited. Game ended.`, true);
         }

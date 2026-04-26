@@ -58,11 +58,11 @@ func PlayFullGame(agent1, agent2, agent3 *agent.SkatAgent) (game.GamePosition, [
 	}
 
 	// Skat exchange and game choice
-	if g.Phase == game.PhaseSkatExchange {
-		declarerAgent := agents[g.Declarer]
+	if g.Phase == game.PhaseSkatExchange && g.Declarer != nil {
+		declarerAgent := agents[*g.Declarer]
 		g.SkatDecision(true)
 		mode, trumpSuit := declarerAgent.ChooseGame(g)
-		card1, card2 := declarerAgent.ChooseSkatDiscard(g.Players[g.Declarer].Hand, mode, trumpSuit)
+		card1, card2 := declarerAgent.ChooseSkatDiscard(g.Players[*g.Declarer].Hand, mode, trumpSuit)
 		g.Discard(card1, card2)
 		g.DeclareGame(mode, trumpSuit, false, false) // No announcements in training
 	}
@@ -71,7 +71,10 @@ func PlayFullGame(agent1, agent2, agent3 *agent.SkatAgent) (game.GamePosition, [
 	PlayGameToCompletion(g, agents)
 
 	points := g.CalculatePlayerPoints()
-	return g.Declarer, [3]int{points[0], points[1], points[2]}
+	if g.Declarer == nil {
+		return -1, [3]int{points[0], points[1], points[2]}
+	}
+	return *g.Declarer, [3]int{points[0], points[1], points[2]}
 }
 
 // PlayGameToCompletion plays out a game using the provided agents

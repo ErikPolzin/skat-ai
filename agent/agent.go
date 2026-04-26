@@ -68,7 +68,10 @@ func (sa *SkatAgent) Bid(state *game.GameState) bool {
 }
 
 func (sa *SkatAgent) ChooseGame(state *game.GameState) (game.GameMode, game.Suit) {
-	hand := state.Players[state.Declarer].Hand
+	if state.Declarer == nil {
+		return game.ModeGrand, game.Clubs // Default fallback
+	}
+	hand := state.Players[*state.Declarer].Hand
 	bidValue := int(state.BidValue)
 	return sa.gameChoiceStrategy.ChooseGame(hand, bidValue)
 }

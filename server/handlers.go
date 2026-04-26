@@ -623,13 +623,21 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 				continue
 			}
 
-			declarer := gs.Players[gs.Declarer]
+			var declarer *game.PlayerState
+			if gs.Declarer != nil {
+				declarer = gs.Players[*gs.Declarer]
+			}
 			declarerWon, _, _ := gs.GetGameResult()
+
+			declarerName := ""
+			if declarer != nil {
+				declarerName = declarer.Name
+			}
 
 			gameResultsMap[pr.GameID] = map[string]interface{}{
 				"game_id":         pr.GameID,
 				"game_number":     gs.GameNumber,
-				"declarer_name":   declarer.Name,
+				"declarer_name":   declarerName,
 				"declarer_won":    declarerWon,
 				"game_mode":       string(gs.Mode),
 				"trump_suit":      gs.TrumpSuit.String(),

@@ -26,6 +26,7 @@ const getApiUrl = () => process.env.REACT_APP_API_URL || "";
 
 export type GameMode = "grand" | "suit" | "null";
 export type TrumpSuit = "♣" | "♠" | "♥" | "♦";
+export type GamePosition = 0 | 1 | 2;
 
 export interface GameState {
   id: string;
@@ -33,13 +34,13 @@ export interface GameState {
   session_id: string;
   game_number: number;
   players: [ServerPlayer | null, ServerPlayer | null, ServerPlayer | null];
-  current_player: number;
-  declarer: number;
+  current_player: GamePosition;
+  declarer: GamePosition | null;
   mode: GameMode;
   trump_suit: TrumpSuit;
   trick: Card[] | null;
-  trick_winner: number;
-  trick_starter: number;
+  trick_winner: GamePosition | null;
+  trick_starter: GamePosition;
   phase: string;
   declarer_score: number;
   opponent_score: number;
@@ -52,6 +53,7 @@ export interface GameState {
   announced_schneider: boolean; // Declarer announced schneider
   announced_schwarz: boolean; // Declarer announced schwarz
   current_player_deadline: string; // RFC3339 timestamp when current player times out
+  forfeited_player: GamePosition | null; // Position of player who forfeited, if any
 }
 
 export interface GameResult {
@@ -303,7 +305,7 @@ export interface SessionResults {
     player_results: { [playerId: string]: number };
     player_names: { [playerId: string]: string };
     player_winners: { [playerId: string]: boolean };
-    forfeited_player: number;
+    forfeited_player: GamePosition | null;
   }>;
 }
 

@@ -265,7 +265,7 @@ func (m *MCTSCardPlayStrategy) selectRolloutMove(state *game.GameState, validMov
 	}
 
 	currentPlayer := state.CurrentPlayer
-	isDefender := currentPlayer != state.Declarer
+	isDefender := state.Declarer == nil || currentPlayer != *state.Declarer
 
 	if isDefender {
 		return m.selectDefenderRolloutMove(state, validMoves)
@@ -304,7 +304,7 @@ func (m *MCTSCardPlayStrategy) selectDefenderRolloutMove(state *game.GameState, 
 
 	currentWinner := m.getTrickWinner(state)
 
-	if currentWinner == state.Declarer {
+	if state.Declarer != nil && currentWinner == *state.Declarer {
 		for i := len(validMoves) - 1; i >= 0; i-- {
 			move := validMoves[i]
 			wouldWin := true
@@ -356,7 +356,7 @@ func (m *MCTSCardPlayStrategy) selectDeclarerRolloutMove(state *game.GameState, 
 func (m *MCTSCardPlayStrategy) getDefenderPartner(state *game.GameState) game.GamePosition {
 	currentPlayer := state.CurrentPlayer
 	for pos := game.Dealer; pos <= game.Speaker; pos++ {
-		if pos != currentPlayer && pos != state.Declarer {
+		if pos != currentPlayer && (state.Declarer == nil || pos != *state.Declarer) {
 			return pos
 		}
 	}
@@ -394,7 +394,7 @@ func (m *MCTSCardPlayStrategy) isTrump(state *game.GameState, card game.Card) bo
 func (m *MCTSCardPlayStrategy) evaluateTerminalState(state *game.GameState, playerID game.GamePosition) float64 {
 	declarerWon := state.DeclarerScore >= 61
 
-	if playerID == state.Declarer {
+	if state.Declarer != nil && playerID == *state.Declarer {
 		if declarerWon {
 			return 1.0
 		}

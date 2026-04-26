@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS games (
     trick_starter INT DEFAULT 0,
     trick_winner INT DEFAULT 0,
     current_player INT DEFAULT 0,
-    declarer INT DEFAULT -1,
+    declarer INT,
     declarer_score INT DEFAULT 0,
     opponent_score INT DEFAULT 0,
     game_mode VARCHAR(50) DEFAULT '',
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS games (
     dealer_passed BOOLEAN DEFAULT FALSE,
     overbid BOOLEAN DEFAULT FALSE,
     current_player_deadline TIMESTAMP,
-    forfeited_player INTEGER DEFAULT -1,
+    forfeited_player INTEGER,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE

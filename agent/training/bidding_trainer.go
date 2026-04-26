@@ -63,7 +63,7 @@ func (bt *BiddingTrainer) trainSingleEpisode(winsAtomic *[3]atomic.Int64, totalG
 
 	gamesPlayedAtomic.Add(1)
 
-	g.Declarer = declarer
+	g.Declarer = &declarer
 	declarerInt := int(declarer)
 
 	// Use proper game flow for skat exchange
@@ -168,9 +168,9 @@ func (bt *BiddingTrainer) runBidding(g *game.GameState) (game.GamePosition, int)
 	}
 
 	// Check if all passed
-	if g.Declarer == -1 {
+	if g.Declarer == nil {
 		return -1, 0
 	}
 
-	return g.Declarer, g.BidValue
+	return *g.Declarer, g.BidValue
 }

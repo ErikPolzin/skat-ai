@@ -28,16 +28,16 @@ export function useGame(
       session_id: "",
       game_number: 0,
       players: [null, null, null],
-      current_player: -1,
+      current_player: 0,
       phase: "waiting_for_players",
       trick: null,
       declarer_score: 0,
       opponent_score: 0,
-      declarer: -1,
+      declarer: null,
       mode: "grand",
       trump_suit: "♣",
       trick_starter: 0,
-      trick_winner: -1,
+      trick_winner: null,
       bid_value: 0,
       listener_passed: false,
       speaker_passed: false,
@@ -47,6 +47,7 @@ export function useGame(
       announced_schneider: false,
       announced_schwarz: false,
       current_player_deadline: "",
+      forfeited_player: null,
     },
     player_id: undefined,
     hand: [],
@@ -78,17 +79,16 @@ export function useGame(
   const isSkatExchange = state.phase === "skat_exchange";
   const isDeclarerChoice = state.phase === "declarer_choice";
   const isInLobby = state.phase === "waiting_for_players";
-  const isDeclarer = playerPosition === state.declarer;
+  const isDeclarer =
+    playerPosition !== null &&
+    state.declarer !== null &&
+    playerPosition === state.declarer;
   const isDealer = playerPosition === 0;
   const isNull = state.mode === "null";
   const gameOver = state.phase === "complete";
 
   // Check if it's my turn by comparing position
-  const isMyTurn =
-    state.current_player !== undefined &&
-    state.current_player !== null &&
-    state.current_player >= 0 &&
-    state.current_player === playerPosition;
+  const isMyTurn = state.current_player === playerPosition;
 
   // UI-only state
   const [messages, setMessages] = useState<GameMessage[]>([]);
@@ -99,12 +99,18 @@ export function useGame(
   const messageIdCounter = useRef(0);
 
   const opponents = useMemo(
-    () => players.filter((p) => p && p.position !== state.declarer) as Player[],
+    () =>
+      players.filter(
+        (p) => p && (state.declarer === null || p.position !== state.declarer),
+      ) as Player[],
     [state.declarer, players],
   );
 
   const declarer = useMemo(
-    () => players.find((p) => p && p.position === state.declarer),
+    () =>
+      state.declarer !== null
+        ? players.find((p) => p && p.position === state.declarer)
+        : undefined,
     [state.declarer, players],
   );
 
@@ -252,16 +258,16 @@ export function useGame(
         session_id: "",
         game_number: 0,
         players: [null, null, null],
-        current_player: -1,
+        current_player: 0,
         phase: "waiting_for_players",
         trick: null,
         declarer_score: 0,
         opponent_score: 0,
-        declarer: -1,
+        declarer: null,
         mode: "grand",
         trump_suit: "♣",
         trick_starter: 0,
-        trick_winner: -1,
+        trick_winner: null,
         bid_value: 0,
         listener_passed: false,
         speaker_passed: false,
@@ -271,6 +277,7 @@ export function useGame(
         announced_schneider: false,
         announced_schwarz: false,
         current_player_deadline: "",
+        forfeited_player: null,
       },
       player_id: undefined,
       hand: [],
@@ -354,9 +361,16 @@ export function useGame(
     isInLobby,
     // Use result data when available
     playerWon: result
-      ? playerPosition === state.declarer
-        ? result.declarer_won
-        : !result.declarer_won
+      ? result.is_forfeit
+        ? // In forfeit games, use forfeited_player to determine winner
+          state.forfeited_player !== null &&
+          playerPosition !== state.forfeited_player
+        : // In normal games, check if player was declarer and if declarer won
+          playerPosition !== null && state.declarer !== null
+          ? playerPosition === state.declarer
+            ? result.declarer_won
+            : !result.declarer_won
+          : false
       : false,
     isSchneider: result?.is_schneider ?? false,
     isSchwarz: result?.is_schwarz ?? false,

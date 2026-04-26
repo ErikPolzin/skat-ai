@@ -5,11 +5,11 @@ func (gs *GameState) Result() GameResult {
 	result := GameResult{}
 
 	// Check if game was forfeited
-	result.IsForfeit = gs.ForfeitedPlayer >= 0
+	result.IsForfeit = gs.ForfeitedPlayer != nil
 
 	// Handle forfeit games with fixed penalty value
 	if result.IsForfeit {
-		result.DeclarerWon = gs.ForfeitedPlayer != gs.Declarer
+		result.DeclarerWon = gs.Declarer != nil && *gs.ForfeitedPlayer != *gs.Declarer
 		if result.DeclarerWon {
 			result.Value = 120 // Declarer wins when opponent forfeits
 		} else {
@@ -115,11 +115,15 @@ func (gs *GameState) CalculateGameValue() int {
 
 // countMatadorsWithSign returns matadors with sign (positive=with, negative=without)
 func (gs *GameState) countMatadorsWithSign() int {
-	if gs.Declarer < 0 || gs.Declarer >= GamePosition(len(gs.Players)) {
+	if gs.Declarer == nil {
 		return 0
 	}
 
-	declarer := gs.Players[gs.Declarer]
+	if *gs.Declarer < 0 || *gs.Declarer >= GamePosition(len(gs.Players)) {
+		return 0
+	}
+
+	declarer := gs.Players[*gs.Declarer]
 	if declarer == nil {
 		return 0
 	}
@@ -190,11 +194,13 @@ func (gs *GameState) CalculatePlayerPoints() map[GamePosition]int {
 	gameValue := gs.CalculateGameValue()
 
 	// Only the declarer's score changes
-	points[gs.Declarer] = gameValue
+	if gs.Declarer != nil {
+		points[*gs.Declarer] = gameValue
+	}
 
 	// Opponents don't gain or lose points
 	for pos := Dealer; pos <= Speaker; pos++ {
-		if pos != gs.Declarer {
+		if gs.Declarer == nil || pos != *gs.Declarer {
 			points[pos] = 0
 		}
 	}

@@ -62,7 +62,7 @@ func (gs *GameState) PlayCard(card Card) (string, error) {
 			}
 		}
 		actualWinner := (gs.TrickStarter + winner) % 3
-		gs.TrickWinner = actualWinner
+		gs.TrickWinner = &actualWinner
 		gs.CurrentPlayer = actualWinner
 	} else {
 		// Next player
@@ -73,22 +73,28 @@ func (gs *GameState) PlayCard(card Card) (string, error) {
 }
 
 func (gs *GameState) ResolveTrick() (string, error) {
+	if gs.Declarer == nil {
+		return "", fmt.Errorf("declarer not set")
+	}
+	if gs.TrickWinner == nil {
+		return "", fmt.Errorf("trick winner not set")
+	}
 
 	// Calculate points based on game mode
 	if gs.Mode == ModeNull {
 		// In null games, if declarer takes any trick, game ends immediately
-		if gs.TrickWinner == gs.Declarer {
+		if *gs.TrickWinner == *gs.Declarer {
 			gs.Phase = PhaseComplete      // Game ends immediately - declarer loses
 			gs.CurrentPlayerDeadline = "" // Clear deadline when game ends
 			gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
 			gs.Trick = nil
-			declarer := gs.GetPlayerByPosition(gs.Declarer)
+			declarer := gs.GetPlayerByPosition(*gs.Declarer)
 			return fmt.Sprintf("%s lost the null game", declarer.Name), nil // Exit early - game is over
 		}
 	} else {
 		// In normal games, calculate card points
 		for _, card := range gs.Trick {
-			if gs.TrickWinner == gs.Declarer {
+			if *gs.TrickWinner == *gs.Declarer {
 				gs.DeclarerScore += card.Value()
 			} else {
 				gs.OpponentScore += card.Value()
@@ -98,14 +104,16 @@ func (gs *GameState) ResolveTrick() (string, error) {
 
 	gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
 	gs.Trick = nil
-	gs.TrickStarter = gs.TrickWinner
+	if gs.TrickWinner != nil {
+		gs.TrickStarter = *gs.TrickWinner
+	}
 
 	// Check if game is over
 	if len(gs.Players[0].Hand) == 0 {
 		gs.Phase = PhaseComplete
 		gs.CurrentPlayerDeadline = "" // Clear deadline when game ends
 		// Add skat cards to declarer's score in normal games
-		if gs.Mode != ModeNull && gs.Declarer >= 0 {
+		if gs.Mode != ModeNull {
 			gs.DeclarerScore += gs.Skat[0].Value() + gs.Skat[1].Value()
 		}
 	}
@@ -140,16 +148,12 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 				// Phase 1: Listener passed, Speaker wins Phase 1
 				// Move to Phase 2: Dealer now sets the bid value
 				gs.CurrentPlayer = Dealer
-			} else {
-				// Both Speaker and Listener passed - bidding ends
-				// Dealer wins by default (or Listener gets forehand privilege if dealer also passed)
-				gs.CurrentPlayer = -1 // Bidding over
 			}
+			// Both Speaker and Listener passed - bidding will end after pass count check
 		case Dealer:
 			// Dealer passes in Phase 2
 			gs.DealerPassed = true
-			// The Phase 1 winner wins overall
-			gs.CurrentPlayer = -1 // Bidding over
+			// The Phase 1 winner wins overall - bidding will end after pass count check
 		}
 	} else {
 		// Player accepts or raises
@@ -200,22 +204,24 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		passCount++
 	}
 
-	if passCount >= 2 || gs.CurrentPlayer == -1 {
+	if passCount >= 2 {
 		// Bidding is over, determine declarer
+		var declarer GamePosition
 		if !gs.ListenerPassed {
-			gs.Declarer = Listener
+			declarer = Listener
 		} else if !gs.SpeakerPassed {
-			gs.Declarer = Speaker
+			declarer = Speaker
 		} else if !gs.DealerPassed {
-			gs.Declarer = Dealer
+			declarer = Dealer
 		} else {
 			// All three passed - Listener must play by forehand privilege
-			gs.Declarer = Listener
+			declarer = Listener
 			gs.BidValue = 18 // Minimum bid
 		}
+		gs.Declarer = &declarer
 		// Move to skat exchange phase
 		gs.Phase = PhaseSkatExchange
-		gs.CurrentPlayer = gs.Declarer
+		gs.CurrentPlayer = *gs.Declarer
 	}
 	action := "pass"
 	if accept {
@@ -324,7 +330,10 @@ func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit, announceSchneide
 // (without schneider or schwarz). Used for validating the game declaration against the bid.
 func (gs *GameState) calculatePotentialGameValue() int {
 	// Use the Cards.GameValue method for consistency
-	hand := Cards(gs.Players[gs.Declarer].Hand)
+	if gs.Declarer == nil {
+		return 0
+	}
+	hand := Cards(gs.Players[*gs.Declarer].Hand)
 	return hand.GameValue(gs.Mode, gs.TrumpSuit)
 }
 
@@ -333,10 +342,13 @@ func (gs *GameState) SkatDecision(pickup bool) (string, error) {
 	if gs.Phase != PhaseSkatExchange {
 		return "", fmt.Errorf("not in skat exchange phase")
 	}
+	if gs.Declarer == nil {
+		return "", fmt.Errorf("declarer not set")
+	}
 
 	if pickup {
 		// Add skat cards to declarer's hand
-		gs.Players[gs.Declarer].Hand = append(gs.Players[gs.Declarer].Hand, gs.Skat[0], gs.Skat[1])
+		gs.Players[*gs.Declarer].Hand = append(gs.Players[*gs.Declarer].Hand, gs.Skat[0], gs.Skat[1])
 		// Stay in PhaseSkatExchange so player can discard
 		gs.PlayedHand = false
 		return "Pick up skat", nil
@@ -354,12 +366,16 @@ func (gs *GameState) Discard(card1, card2 Card) (string, error) {
 		return "", fmt.Errorf("not in skat exchange phase")
 	}
 
-	if len(gs.Players[gs.Declarer].Hand) != 12 {
+	if gs.Declarer == nil {
+		return "", fmt.Errorf("no declarer set")
+	}
+
+	if len(gs.Players[*gs.Declarer].Hand) != 12 {
 		return "", fmt.Errorf("must pick up skat before discarding")
 	}
 
 	// Remove cards from hand
-	hand := gs.Players[gs.Declarer].Hand
+	hand := gs.Players[*gs.Declarer].Hand
 	found1, found2 := false, false
 	newHand := []Card{}
 
@@ -379,7 +395,7 @@ func (gs *GameState) Discard(card1, card2 Card) (string, error) {
 		return "", fmt.Errorf("cards not in hand")
 	}
 
-	gs.Players[gs.Declarer].Hand = newHand
+	gs.Players[*gs.Declarer].Hand = newHand
 	gs.Skat[0] = card1
 	gs.Skat[1] = card2
 
@@ -401,7 +417,7 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.ID = uuid.New().String()
 	gs.GameNumber++
 	gs.Phase = PhaseDealing
-	gs.Declarer = -1
+	gs.Declarer = nil
 	gs.BidValue = 0
 	gs.CurrentPlayer = 0
 	gs.ListenerPassed = false
@@ -410,7 +426,7 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.DeclarerScore = 0
 	gs.OpponentScore = 0
 	gs.Trick = nil
-	gs.ForfeitedPlayer = -1
+	gs.ForfeitedPlayer = nil
 	gs.PlayedHand = false
 	gs.AnnouncedSchneider = false
 	gs.AnnouncedSchwarz = false
@@ -464,7 +480,8 @@ func (gs *GameState) ForfeitDueToInactivity() []PlayerResultState {
 	// Mark game as complete and record who forfeited
 	gs.Phase = PhaseComplete
 	gs.CurrentPlayerDeadline = "" // Clear the deadline
-	gs.ForfeitedPlayer = gs.CurrentPlayer
+	currentPos := gs.CurrentPlayer
+	gs.ForfeitedPlayer = &currentPos
 
 	// Award forfeit points: inactive player gets -120, others get +60 each
 	results := []PlayerResultState{}

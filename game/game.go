@@ -45,11 +45,11 @@ type GameState struct {
 	Players       [3]*PlayerState `json:"players"`        // Players in the game
 	Skat          SkatCards       `json:"-"`              // Ommitted in JSON, not public knowledge
 	CurrentPlayer GamePosition    `json:"current_player"` // Current player position
-	Declarer      GamePosition    `json:"declarer"`       // Declarer position
+	Declarer      *GamePosition   `json:"declarer"`       // Declarer position (nil if not determined yet)
 	Mode          GameMode        `json:"mode"`           // Game mode (Suit, Null, Grand)
 	TrumpSuit     Suit            `json:"trump_suit"`     // Trump suite (D, H, A, C)
 	Trick         Cards           `json:"trick"`          // Current trick being played
-	TrickWinner   GamePosition    `json:"trick_winner"`   // Who won the last trick
+	TrickWinner   *GamePosition   `json:"trick_winner"`   // Who won the last trick
 	TrickStarter  GamePosition    `json:"trick_starter"`  // Who started the current trick
 	CardsPlayed   [][]Card        `json:"-"`              // History of all tricks
 	Phase         GamePhase       `json:"phase"`          // Current phase of the game
@@ -70,8 +70,8 @@ type GameState struct {
 	Overbid        bool `json:"overbid"`         // True if declarer's game value < bid value (automatic loss)
 
 	// Inactivity timeout tracking
-	CurrentPlayerDeadline string       `json:"current_player_deadline"` // RFC3339 timestamp when current player times out
-	ForfeitedPlayer       GamePosition `json:"forfeited_player"`        // Position of player who forfeited (-1 if no forfeit)
+	CurrentPlayerDeadline string        `json:"current_player_deadline"` // RFC3339 timestamp when current player times out
+	ForfeitedPlayer       *GamePosition `json:"forfeited_player"`        // Position of player who forfeited (nil if no forfeit)
 }
 
 type GameResult struct {
@@ -149,13 +149,13 @@ func NewGame() *GameState {
 		Code:            NewGameCode(),
 		Players:         [3]*PlayerState{},
 		Phase:           PhaseWaitingForPlayers, // Start waiting for players
-		Declarer:        -1,                     // Not determined yet
+		Declarer:        nil,                    // Not determined yet
 		CurrentPlayer:   0,                      // Dealer starts as the current player
 		BidValue:        0,                      // Bidding starts at 0
 		ListenerPassed:  false,
 		SpeakerPassed:   false,
 		DealerPassed:    false,
-		ForfeitedPlayer: -1, // No forfeit
+		ForfeitedPlayer: nil, // No forfeit
 	}
 	return gs
 }
@@ -342,9 +342,14 @@ func (gs *GameState) compareNonTrumpRank(a, b Rank) bool {
 
 // Clone creates a deep copy of the game state
 func (gs *GameState) Clone() *GameState {
+	var declarer *GamePosition
+	if gs.Declarer != nil {
+		d := *gs.Declarer
+		declarer = &d
+	}
 	clone := &GameState{
 		CurrentPlayer: gs.CurrentPlayer,
-		Declarer:      gs.Declarer,
+		Declarer:      declarer,
 		Mode:          gs.Mode,
 		TrumpSuit:     gs.TrumpSuit,
 		TrickWinner:   gs.TrickWinner,
@@ -414,8 +419,8 @@ func (gs *GameState) IsSchwarz() bool {
 // GetGameResult returns the result of the game including schneider/schwarz
 func (gs *GameState) GetGameResult() (declarerWon bool, schneider bool, schwarz bool) {
 	// Handle forfeit games - winner is determined by who forfeited
-	if gs.ForfeitedPlayer >= 0 {
-		declarerWon = gs.ForfeitedPlayer != gs.Declarer // Declarer wins if they didn't forfeit
+	if gs.ForfeitedPlayer != nil {
+		declarerWon = gs.Declarer != nil && *gs.ForfeitedPlayer != *gs.Declarer // Declarer wins if they didn't forfeit
 		schneider = false
 		schwarz = false
 		return
@@ -510,7 +515,7 @@ func Results(gs *GameState) []PlayerResultState {
 	results := make([]PlayerResultState, 0, 3)
 
 	// If game was forfeited, use forfeit scoring
-	if gs.ForfeitedPlayer >= 0 {
+	if gs.ForfeitedPlayer != nil {
 		for pos := Dealer; pos <= Speaker; pos++ {
 			player := gs.Players[pos]
 			if player == nil {
@@ -519,7 +524,7 @@ func Results(gs *GameState) []PlayerResultState {
 
 			points := 60 // Other players get points
 			isWinner := true
-			if pos == gs.ForfeitedPlayer {
+			if pos == *gs.ForfeitedPlayer {
 				points = -120 // Forfeited player loses
 				isWinner = false
 			}
@@ -552,7 +557,7 @@ func Results(gs *GameState) []PlayerResultState {
 			GameID:         gs.ID,
 			SessionID:      gs.SessionID,
 			PlayerID:       player.ID,
-			IsWinner:       (pos == gs.Declarer && declarerWon) || (pos != gs.Declarer && !declarerWon),
+			IsWinner:       (gs.Declarer != nil && pos == *gs.Declarer && declarerWon) || (gs.Declarer != nil && pos != *gs.Declarer && !declarerWon),
 			PlayerPosition: pos,
 			PlayerPoints:   points[pos],
 		}

@@ -128,19 +128,20 @@ func (es *ExplorationSchedule) Set(value float64) {
 
 // EncodeGameAction encodes game mode + suit choice into a single integer
 // Grand: 0, Suit Clubs: 1, Suit Spades: 2, Suit Hearts: 3, Suit Diamonds: 4
+// Note: Suit enum is NoSuit=0, Clubs=1, Spades=2, Hearts=3, Diamonds=4
 func EncodeGameAction(mode game.GameMode, suit game.Suit) int {
 	if mode == game.ModeGrand {
 		return 0
 	}
-	return int(suit) + 1 // Clubs=1, Spades=2, Hearts=3, Diamonds=4
+	return int(suit) // Suit values already match: Clubs=1, Spades=2, Hearts=3, Diamonds=4
 }
 
 // DecodeGameAction decodes an integer action into game mode and suit
 func DecodeGameAction(action int) (game.GameMode, game.Suit) {
 	if action == 0 {
-		return game.ModeGrand, game.Clubs // Suit doesn't matter for Grand
+		return game.ModeGrand, game.NoSuit // Suit doesn't matter for Grand
 	}
-	return game.ModeSuit, game.Suit(action - 1)
+	return game.ModeSuit, game.Suit(action)
 }
 
 // StrategyMetrics tracks strategy performance metrics
@@ -324,29 +325,13 @@ func (q *QLearningBiddingStrategy) CalculateReward(playerResult game.PlayerResul
 	reward := 0.0
 
 	if playerResult.IsDeclarer {
-		if playerResult.IsWinner {
-			// Reward based on game value won
-			if playerResult.PlayerPoints >= 60 {
-				reward = 1.5 // High value win
-			} else if playerResult.PlayerPoints >= 40 {
-				reward = 1.2 // Medium value win
-			} else {
-				reward = 1.0 // Low value win
-			}
+		if playerResult.IsOverbid {
+			reward = -5.0
 		} else {
-			// Penalty based on game value lost (negative PlayerPoints)
-			if playerResult.PlayerPoints >= -40 {
-				reward = -0.6 // Small loss
-			} else if playerResult.PlayerPoints >= -80 {
-				reward = -1.2 // Medium loss
-			} else {
-				reward = -2.0 // Big loss (overbid, doubled penalty)
-			}
-
-			// Extra penalty for high bids that fail (overbid indicator)
-			if q.currentBid > 40 && playerResult.PlayerPoints <= -80 {
-				reward -= 1.0 // Overbid with doubled penalty
-			}
+			// Use actual PlayerPoints scaled to reasonable range
+			// PlayerPoints range: typically -240 to +120
+			// Scale to reward range roughly -4.0 to +2.0
+			reward = float64(playerResult.PlayerPoints) / 60.0
 		}
 	} else {
 		if q.currentBid == 0 {
@@ -354,7 +339,7 @@ func (q *QLearningBiddingStrategy) CalculateReward(playerResult game.PlayerResul
 			// PlayerPoints is always 0 for defenders, so use IsWinner instead
 			if playerResult.IsWinner {
 				// Defenders won, passing was correct
-				reward = 0.2
+				reward = 1.0
 			} else {
 				// Declarer won, might have missed opportunity to bid
 				reward = -0.1
@@ -574,31 +559,14 @@ func (q *QLearningGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode g
 
 // CalculateReward calculates the reward for a game choice based on outcome
 func (q *QLearningGameChoiceStrategy) CalculateReward(playerResult game.PlayerResultState) float64 {
-	reward := 0.0
-
-	if playerResult.IsWinner {
-		// Reward proportional to game value won
-		// Higher value games (48, 60+) get bigger rewards
-		if playerResult.PlayerPoints >= 60 {
-			reward = 1.3 // High value win
-		} else if playerResult.PlayerPoints >= 40 {
-			reward = 1.1 // Medium value win
-		} else {
-			reward = 1.0 // Low value win
-		}
-	} else {
-		// Penalty proportional to game value lost
-		// PlayerPoints is negative when losing (the penalty paid)
-		if playerResult.PlayerPoints >= -40 {
-			reward = -0.5 // Small loss
-		} else if playerResult.PlayerPoints >= -80 {
-			reward = -0.8 // Medium loss
-		} else {
-			reward = -1.2 // Big loss (overbid, doubled penalty)
-		}
+	// Was overbid, nothing we could do
+	if playerResult.IsDeclarer && playerResult.IsOverbid {
+		return 0.0
 	}
-
-	return reward
+	// Use actual PlayerPoints scaled to reasonable range
+	// PlayerPoints range: typically -240 to +120
+	// Scale to reward range roughly -4.0 to +2.0
+	return float64(playerResult.PlayerPoints) / 60.0
 }
 
 // OnGameChoiceEnd updates Q-values for game choice based on outcome

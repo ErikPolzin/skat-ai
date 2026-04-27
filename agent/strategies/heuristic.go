@@ -345,10 +345,80 @@ func (h *HeuristicGameChoiceStrategy) evaluateDiscardScore(card game.Card, nonTr
 }
 
 // HeuristicCardPlayStrategy uses rule-based heuristics for card play
-type HeuristicCardPlayStrategy struct{}
+type HeuristicCardPlayStrategy struct {
+	// Card tracking for inference
+	cardsPlayed map[game.Card]bool
+}
+
+func NewHeuristicCardPlayStrategy() *HeuristicCardPlayStrategy {
+	return &HeuristicCardPlayStrategy{
+		cardsPlayed: make(map[game.Card]bool),
+	}
+}
 
 func (h *HeuristicCardPlayStrategy) GetName() string {
 	return "HeuristicCardPlay"
+}
+
+// OnTrickComplete tracks cards that have been played
+func (h *HeuristicCardPlayStrategy) OnTrickComplete(trick []game.Card) {
+	if h.cardsPlayed == nil {
+		h.cardsPlayed = make(map[game.Card]bool)
+	}
+	for _, card := range trick {
+		h.cardsPlayed[card] = true
+	}
+}
+
+// Reset clears tracking (call at start of new game)
+func (h *HeuristicCardPlayStrategy) Reset() {
+	h.cardsPlayed = make(map[game.Card]bool)
+}
+
+// countRemainingTrumps counts how many trumps haven't been played yet
+func (h *HeuristicCardPlayStrategy) countRemainingTrumps(gs *game.GameState, myHand []game.Card) int {
+	if h.cardsPlayed == nil {
+		h.cardsPlayed = make(map[game.Card]bool)
+	}
+
+	myTrumps := make(map[game.Card]bool)
+	for _, card := range myHand {
+		if h.isTrump(gs, card) {
+			myTrumps[card] = true
+		}
+	}
+
+	remaining := 0
+	// Check all possible trumps
+	if gs.Mode == game.ModeGrand {
+		// Only jacks are trump
+		for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+			card := game.Card{Suit: suit, Rank: game.Jack}
+			if !h.cardsPlayed[card] && !myTrumps[card] {
+				remaining++
+			}
+		}
+	} else if gs.Mode == game.ModeSuit {
+		// Jacks + trump suit
+		for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+			card := game.Card{Suit: suit, Rank: game.Jack}
+			if !h.cardsPlayed[card] && !myTrumps[card] {
+				remaining++
+			}
+		}
+		// Trump suit cards (excluding jacks)
+		for rank := game.Seven; rank <= game.Ace; rank++ {
+			if rank == game.Jack {
+				continue
+			}
+			card := game.Card{Suit: gs.TrumpSuit, Rank: rank}
+			if !h.cardsPlayed[card] && !myTrumps[card] {
+				remaining++
+			}
+		}
+	}
+
+	return remaining
 }
 
 func (h *HeuristicCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []game.Card) game.Card {
@@ -373,19 +443,100 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 
 	// Leading the trick
 	if len(trick) == 0 {
-		// Lead with trump to draw out defenders' trumps
-		for i := len(validMoves) - 1; i >= 0; i-- {
-			if h.isTrump(gs, validMoves[i]) {
-				return validMoves[i]
+		// Strategy: Cash Aces before drawing trumps
+		// This prevents defenders from trumping our high-value winners
+
+		// First, check for unprotected Aces in side suits
+		for _, move := range validMoves {
+			if move.Rank == game.Ace && !h.isTrump(gs, move) {
+				// Lead the Ace to cash it
+				return move
 			}
 		}
-		// Otherwise lead high value cards
-		for i := len(validMoves) - 1; i >= 0; i-- {
-			if validMoves[i].Value() >= 10 {
-				return validMoves[i]
+
+		// Next, check for protected Ace-10 combinations (Ace with 10)
+		for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+			if h.isTrump(gs, game.Card{Suit: suit, Rank: game.Ace}) {
+				continue // Skip trump suit
+			}
+
+			hasAce, hasTen := false, false
+			var aceCard game.Card
+
+			for _, move := range validMoves {
+				if move.Suit == suit && move.Rank == game.Ace {
+					hasAce = true
+					aceCard = move
+				}
+				if move.Suit == suit && move.Rank == game.Ten {
+					hasTen = true
+				}
+			}
+
+			// If we have Ace-10, lead Ace first
+			if hasAce && hasTen {
+				return aceCard
 			}
 		}
-		// Lead highest card
+
+		// Now consider drawing trumps if we have strong trump control
+		trumpCount := 0
+		var highestTrump game.Card
+		hasTrump := false
+
+		for _, move := range validMoves {
+			if h.isTrump(gs, move) {
+				trumpCount++
+				if !hasTrump || h.cardStrongerThan(gs, move, highestTrump) {
+					highestTrump = move
+					hasTrump = true
+				}
+			}
+		}
+
+		// Use card tracking to decide if we should draw trumps
+		remainingOpponentTrumps := h.countRemainingTrumps(gs, validMoves)
+
+		// Draw trumps if:
+		// 1. We have good trump control (3+ trumps), AND
+		// 2. Opponents still have trumps that could ruff our winners
+		if trumpCount >= 3 && hasTrump && remainingOpponentTrumps > 0 {
+			return highestTrump
+		}
+
+		// If opponents are out of trumps (or very few), focus on cashing winners
+		if remainingOpponentTrumps <= 1 && hasTrump {
+			// Don't waste time drawing last trump if we can cash winners
+			// Fall through to longest suit strategy
+		}
+
+		// Otherwise, lead from our longest side suit
+		suitLengths := make(map[game.Suit]int)
+		for _, move := range validMoves {
+			if !h.isTrump(gs, move) {
+				suitLengths[move.Suit]++
+			}
+		}
+
+		longestSuit := game.NoSuit
+		maxLength := 0
+		for suit, length := range suitLengths {
+			if length > maxLength {
+				maxLength = length
+				longestSuit = suit
+			}
+		}
+
+		// Lead from longest suit (high card first)
+		if longestSuit != game.NoSuit {
+			for i := len(validMoves) - 1; i >= 0; i-- {
+				if validMoves[i].Suit == longestSuit {
+					return validMoves[i]
+				}
+			}
+		}
+
+		// Fallback: lead highest card
 		return validMoves[len(validMoves)-1]
 	}
 
@@ -405,40 +556,120 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 
 	// Leading the trick
 	if len(trick) == 0 {
-		// Lead trump if we have it
-		for i := len(validMoves) - 1; i >= 0; i-- {
-			if h.isTrump(gs, validMoves[i]) {
-				return validMoves[i]
+		// Defender strategy: Attack declarer's weak suits, NOT trumps
+		// Leading trumps as a defender is usually wrong - it helps declarer draw trumps
+
+		// Count our holdings by suit
+		suitCounts := make(map[game.Suit]int)
+		trumpCount := 0
+		hasAce := make(map[game.Suit]bool)
+
+		for _, move := range validMoves {
+			if h.isTrump(gs, move) {
+				trumpCount++
+			} else {
+				suitCounts[move.Suit]++
+				if move.Rank == game.Ace {
+					hasAce[move.Suit] = true
+				}
 			}
 		}
-		// Lead Ace if we have one
+
+		// Strategy 1: Lead Ace from short suit (2 cards or less)
+		// This cashes the Ace before declarer can trump it
+		for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+			if hasAce[suit] && suitCounts[suit] <= 2 {
+				// Find and lead the Ace
+				for _, move := range validMoves {
+					if move.Suit == suit && move.Rank == game.Ace {
+						return move
+					}
+				}
+			}
+		}
+
+		// Strategy 2: Lead from longest non-trump suit
+		// Forces declarer to use trumps or lose control
+		longestSuit := game.NoSuit
+		maxLength := 0
+		for suit, length := range suitCounts {
+			if length > maxLength {
+				maxLength = length
+				longestSuit = suit
+			}
+		}
+
+		if longestSuit != game.NoSuit && maxLength >= 3 {
+			// Lead high card from long suit to force declarer
+			for i := len(validMoves) - 1; i >= 0; i-- {
+				if validMoves[i].Suit == longestSuit && !h.isTrump(gs, validMoves[i]) {
+					return validMoves[i]
+				}
+			}
+		}
+
+		// Strategy 3: Lead any Ace we have (cash winners)
 		for _, move := range validMoves {
-			if move.Rank == game.Ace {
+			if move.Rank == game.Ace && !h.isTrump(gs, move) {
 				return move
 			}
 		}
-		// Otherwise lead low card
+
+		// Strategy 4: Lead low card from side suit to find partner's strength
+		for _, move := range validMoves {
+			if !h.isTrump(gs, move) && move.Value() == 0 {
+				return move
+			}
+		}
+
+		// Strategy 5: Only lead trump if we have nothing else or very strong trumps
+		if trumpCount >= 4 {
+			// We have strong trump control - lead trump to attack declarer
+			for i := len(validMoves) - 1; i >= 0; i-- {
+				if h.isTrump(gs, validMoves[i]) {
+					return validMoves[i]
+				}
+			}
+		}
+
+		// Fallback: lead lowest card
 		return validMoves[0]
 	}
 
+	// Following in trick
 	// Check if partner is winning (in 3rd position)
 	if len(trick) == 2 {
 		winner := h.getTrickWinner(gs, trick)
 		partner := h.getDefenderPartner(gs)
 		if winner == partner {
-			// Partner winning - play lowest card
+			// Partner winning - play lowest card (don't waste high cards)
 			return validMoves[0]
 		}
 	}
 
-	// Try to beat the trick
+	// Try to beat the trick with LOWEST winning card (efficient)
+	for _, move := range validMoves {
+		if h.wouldWinTrick(gs, move, trick) {
+			return move // validMoves is sorted low to high, so first winner is lowest
+		}
+	}
+
+	// Can't win - discard highest useless card if partner might win
+	// or lowest card if declarer is winning
+	if len(trick) == 1 {
+		// Second to play - discard low to signal weakness
+		return validMoves[0]
+	}
+
+	// Third to play and can't win - discard high cards we don't need
 	for i := len(validMoves) - 1; i >= 0; i-- {
-		if h.wouldWinTrick(gs, validMoves[i], trick) {
+		if validMoves[i].Value() == 0 {
+			// Prefer discarding worthless cards from high to low
 			return validMoves[i]
 		}
 	}
 
-	// Can't win - play lowest card
+	// All cards have value - discard lowest
 	return validMoves[0]
 }
 
@@ -450,6 +681,10 @@ func (h *HeuristicCardPlayStrategy) isTrump(gs *game.GameState, card game.Card) 
 		return true
 	}
 	return false
+}
+
+func (h *HeuristicCardPlayStrategy) cardStrongerThan(gs *game.GameState, card1, card2 game.Card) bool {
+	return gs.CardBeats(card1, card2)
 }
 
 func (h *HeuristicCardPlayStrategy) wouldWinTrick(gs *game.GameState, card game.Card, trick []game.Card) bool {

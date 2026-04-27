@@ -97,9 +97,9 @@ func runParallelTraining(episodes int, episodeFunc func()) {
 				return
 			default:
 				completed := episodesCompletedAtomic.Load()
-				if completed-lastReported >= 100 {
+				if completed-lastReported >= 10000 {
 					fmt.Printf(".")
-					if completed%1000 == 0 {
+					if completed%100000 == 0 {
 						fmt.Printf(" %d\n", completed)
 					}
 					lastReported = completed

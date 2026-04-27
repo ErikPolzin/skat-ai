@@ -8,6 +8,7 @@ import (
 	"skat/agent"
 	"skat/agent/training"
 	"skat/game"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -159,7 +160,7 @@ func runEvaluation(testType string, games int) {
 				g := training.PlayFullGame(agents[0], agents[1], agents[2])
 				result := g.Result()
 
-				if g.Declarer == nil {
+				if g.Declarer == nil || g.SpeakerPassed && g.ListenerPassed && g.DealerPassed {
 					passedGamesAtomic.Add(1)
 				} else if *g.Declarer == game.GamePosition(testPos) {
 					testGamesAtomic.Add(1)
@@ -547,6 +548,81 @@ func createBiddingAgent() *agent.SkatAgent {
 	)
 }
 
+func displayActionDistribution(actionCounts map[int]int, totalActions int, strategyName string) {
+	// Create sorted list of actions
+	type actionData struct {
+		action int
+		count  int
+		pct    float64
+	}
+
+	var actions []actionData
+	for action, count := range actionCounts {
+		pct := float64(count) / float64(totalActions) * 100
+		actions = append(actions, actionData{action, count, pct})
+	}
+
+	// Sort by action number
+	// For bidding: sort by bid value (0, 18, 20, 22, ...)
+	// For game choice: sort by action (0=Grand, 1=Clubs, 2=Spades, 3=Hearts, 4=Diamonds)
+	sort.Slice(actions, func(i, j int) bool {
+		return actions[i].action < actions[j].action
+	})
+
+	// Find max percentage for scaling the bars
+	maxPct := 0.0
+	for _, a := range actions {
+		if a.pct > maxPct {
+			maxPct = a.pct
+		}
+	}
+
+	// Display horizontal bar chart
+	const barWidth = 40
+	for _, a := range actions {
+		actionName := decodeActionName(a.action, strategyName)
+
+		// Calculate bar length (scale to barWidth)
+		barLen := int(a.pct / maxPct * barWidth)
+		if barLen < 1 && a.count > 0 {
+			barLen = 1 // At least show something if there's any count
+		}
+
+		// Create bar
+		bar := strings.Repeat("█", barLen)
+
+		// Format: "    Pass      ████████████ 11.6% (2152)"
+		fmt.Printf("    %-10s %s %.1f%% (%d)\n", actionName, bar, a.pct, a.count)
+	}
+}
+
+func decodeActionName(action int, strategyName string) string {
+	if strategyName == "Game Choice" {
+		// Game choice actions: 0=Grand, 1=Clubs, 2=Spades, 3=Hearts, 4=Diamonds
+		switch action {
+		case 0:
+			return "Grand"
+		case 1:
+			return "Clubs"
+		case 2:
+			return "Spades"
+		case 3:
+			return "Hearts"
+		case 4:
+			return "Diamonds"
+		default:
+			return fmt.Sprintf("Unknown(%d)", action)
+		}
+	} else if strategyName == "Bidding" {
+		// Bidding actions are bid values or 0 for pass
+		if action == 0 {
+			return "Pass"
+		}
+		return fmt.Sprintf("Bid %d", action)
+	}
+	return fmt.Sprintf("Action %d", action)
+}
+
 func binomialCoeff(n, k int) int {
 	if k > n {
 		return 0
@@ -620,12 +696,9 @@ func analyzeQTable(qtable map[int]map[int]float64, name string) {
 	fmt.Printf("  Q-value range: [%.3f, %.3f]\n", minQ, maxQ)
 	fmt.Printf("  Average Q-value: %.3f\n", avgQ)
 
-	// Show action distribution
+	// Show action distribution as sorted horizontal bar chart
 	fmt.Printf("  Action distribution:\n")
-	for action, count := range actionCounts {
-		fmt.Printf("    Action %d: %d times (%.1f%%)\n",
-			action, count, float64(count)/float64(numStateActions)*100)
-	}
+	displayActionDistribution(actionCounts, numStateActions, name)
 	fmt.Println()
 }
 

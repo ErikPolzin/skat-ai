@@ -22,6 +22,16 @@ import (
 	"github.com/rs/cors"
 )
 
+// cloudRunDelayMiddleware adds artificial delay in non-Cloud Run environments
+func (s *Server) cloudRunDelayMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.IsCloudRun() {
+			time.Sleep(2 * time.Second)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // SetupRoutes configures HTTP routes
 func (s *Server) SetupRoutes() http.Handler {
 	r := mux.NewRouter()
@@ -34,6 +44,7 @@ func (s *Server) SetupRoutes() http.Handler {
 
 	// REST API endpoints
 	api := r.PathPrefix("/api").Subrouter()
+	api.Use(s.cloudRunDelayMiddleware)
 	api.HandleFunc("/games", s.handleListOpenSessions).Methods("GET")
 	api.HandleFunc("/games", s.handleCreateGame).Methods("POST")
 	api.HandleFunc("/games/{id}", s.handleGetGame).Methods("GET")
@@ -737,10 +748,6 @@ type GameActionFunc func(gs *game.GameState, playerID string, r *http.Request) (
 
 // handleGameAction is a common handler for game actions
 func (s *Server) handleGameAction(w http.ResponseWriter, r *http.Request, validateTurn bool, action GameActionFunc) {
-	// Add 2 second delay for local development to test loading states
-	if !s.IsCloudRun() {
-		time.Sleep(2 * time.Second)
-	}
 
 	vars := mux.Vars(r)
 	gameID := vars["id"]
@@ -881,11 +888,6 @@ func (s *Server) handleDiscardCards(w http.ResponseWriter, r *http.Request) {
 
 // handleStartNextGame handles starting the next game
 func (s *Server) handleStartNextGame(w http.ResponseWriter, r *http.Request) {
-	// Add 2 second delay for local development to test loading states
-	if !s.IsCloudRun() {
-		time.Sleep(2 * time.Second)
-	}
-
 	vars := mux.Vars(r)
 	gameID := vars["id"]
 

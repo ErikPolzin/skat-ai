@@ -11,6 +11,7 @@ import {
   IconButton,
   CircularProgress,
   Chip,
+  Skeleton,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import CloseIcon from "@mui/icons-material/Close";
@@ -111,81 +112,115 @@ export default function ActiveGames() {
           disabled={isFetching}
           size="small"
         >
-          {isFetching ? <CircularProgress size={24} /> : <RefreshIcon />}
+          <RefreshIcon />
         </IconButton>
       </Box>
 
       <List>
-        {games.map((game) => (
-          <ListItem
-            key={game.id}
-            sx={{
-              border: 1,
-              borderColor: "divider",
-              borderRadius: 1,
-              mb: 1,
-            }}
-          >
-            <ListItemText
-              primary={
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
-                    {game.code}
-                  </Typography>
-                  <Chip
-                    label={getPhaseLabel(game.phase)}
-                    size="small"
-                    color={getPhaseColor(game.phase)}
-                  />
-                  {game.game_number > 1 && (
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ ml: "auto" }}
+        {isFetching && games.length === 0
+          ? // Skeleton loader for initial load
+            Array.from({ length: 2 }).map((_, index) => (
+              <ListItem
+                key={`skeleton-${index}`}
+                sx={{
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  mb: 1,
+                }}
+              >
+                <ListItemText
+                  primary={
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <Skeleton variant="text" width={80} height={24} />
+                      <Skeleton variant="rounded" width={60} height={24} />
+                    </Box>
+                  }
+                  secondary={
+                    <Skeleton variant="text" width={150} height={20} />
+                  }
+                />
+                <ListItemSecondaryAction>
+                  <Box sx={{ display: "flex", gap: 1 }}>
+                    <Skeleton variant="rounded" width={70} height={32} />
+                    <Skeleton variant="circular" width={32} height={32} />
+                  </Box>
+                </ListItemSecondaryAction>
+              </ListItem>
+            ))
+          : games.map((game) => (
+              <ListItem
+                key={game.id}
+                sx={{
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  mb: 1,
+                }}
+              >
+                <ListItemText
+                  primary={
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        flexWrap: "wrap",
+                      }}
                     >
-                      Game #{game.game_number}
+                      <Typography
+                        variant="subtitle1"
+                        sx={{ fontWeight: "bold" }}
+                      >
+                        {game.code}
+                      </Typography>
+                      <Chip
+                        label={getPhaseLabel(game.phase)}
+                        size="small"
+                        color={getPhaseColor(game.phase)}
+                      />
+                      {game.game_number > 1 && (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ ml: "auto" }}
+                        >
+                          Game #{game.game_number}
+                        </Typography>
+                      )}
+                    </Box>
+                  }
+                  secondary={
+                    <Typography variant="body2" color="text.secondary">
+                      {game.player_names.join(", ")}
                     </Typography>
-                  )}
-                </Box>
-              }
-              secondary={
-                <Typography variant="body2" color="text.secondary">
-                  {game.player_names.join(", ")}
-                </Typography>
-              }
-            />
-            <ListItemSecondaryAction>
-              <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                <Button
-                  variant="contained"
-                  onClick={() => handleRejoinGame(game.id)}
-                  size="small"
-                >
-                  Rejoin
-                </Button>
-                <IconButton
-                  onClick={(e) => handleLeaveGame(game.id, e)}
-                  disabled={leavingGameId === game.id}
-                  color="error"
-                  size="small"
-                >
-                  {leavingGameId === game.id ? (
-                    <CircularProgress size={20} color="error" />
-                  ) : (
-                    <CloseIcon fontSize="small" />
-                  )}
-                </IconButton>
-              </Box>
-            </ListItemSecondaryAction>
-          </ListItem>
-        ))}
+                  }
+                />
+                <ListItemSecondaryAction>
+                  <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <Button
+                      variant="contained"
+                      onClick={() => handleRejoinGame(game.id)}
+                      size="small"
+                    >
+                      Rejoin
+                    </Button>
+                    <IconButton
+                      onClick={(e) => handleLeaveGame(game.id, e)}
+                      disabled={leavingGameId === game.id}
+                      color="error"
+                      size="small"
+                    >
+                      {leavingGameId === game.id ? (
+                        <CircularProgress size={20} color="error" />
+                      ) : (
+                        <CloseIcon fontSize="small" />
+                      )}
+                    </IconButton>
+                  </Box>
+                </ListItemSecondaryAction>
+              </ListItem>
+            ))}
       </List>
     </Box>
   );

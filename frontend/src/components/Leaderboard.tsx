@@ -10,8 +10,8 @@ import {
   TableRow,
   Paper,
   Avatar,
-  CircularProgress,
   Chip,
+  Skeleton,
 } from "@mui/material";
 import { getLeaderboard, type LeaderboardEntry } from "../api/games";
 
@@ -52,16 +52,46 @@ export default function Leaderboard() {
 
   if (isLoading) {
     return (
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "400px",
-        }}
-      >
-        <CircularProgress />
-      </Box>
+      <TableContainer component={Paper}>
+        <Table stickyHeader size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Rank</TableCell>
+              <TableCell>Player</TableCell>
+              <TableCell align="right">Rating</TableCell>
+              <TableCell align="right">Games</TableCell>
+              <TableCell align="right">Win Rate</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {Array.from({ length: 10 }).map((_, index) => (
+              <TableRow key={`skeleton-${index}`}>
+                <TableCell>
+                  <Skeleton variant="text" width={40} height={32} />
+                </TableCell>
+                <TableCell>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Skeleton variant="circular" width={32} height={32} />
+                    <Box>
+                      <Skeleton variant="text" width={100} height={20} />
+                      <Skeleton variant="rounded" width={80} height={18} />
+                    </Box>
+                  </Box>
+                </TableCell>
+                <TableCell align="right">
+                  <Skeleton variant="text" width={50} height={24} />
+                </TableCell>
+                <TableCell align="right">
+                  <Skeleton variant="text" width={30} height={20} />
+                </TableCell>
+                <TableCell align="right">
+                  <Skeleton variant="text" width={50} height={20} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
     );
   }
 

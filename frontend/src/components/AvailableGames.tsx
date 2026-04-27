@@ -8,6 +8,7 @@ import {
   ListItemSecondaryAction,
   ListItemText,
   Typography,
+  Skeleton,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import {
@@ -82,11 +83,25 @@ const AvailableGames = () => {
       >
         <Typography variant="subtitle1">Available Games</Typography>
         <IconButton onClick={fetchGames} color="primary" disabled={isFetching}>
-          {isFetching ? <CircularProgress size={24} /> : <RefreshIcon />}
+          <RefreshIcon />
         </IconButton>
       </Box>
 
-      {games.length === 0 ? (
+      {isFetching && games.length === 0 ? (
+        <List>
+          {Array.from({ length: 3 }).map((_, index) => (
+            <ListItem key={`skeleton-${index}`}>
+              <ListItemText
+                primary={<Skeleton variant="text" width={100} height={24} />}
+                secondary={<Skeleton variant="text" width={80} height={20} />}
+              />
+              <ListItemSecondaryAction>
+                <Skeleton variant="rounded" width={60} height={32} />
+              </ListItemSecondaryAction>
+            </ListItem>
+          ))}
+        </List>
+      ) : games.length === 0 ? (
         <Box
           sx={{
             flexGrow: 1,

@@ -7,6 +7,7 @@ import {
   ListItemText,
   CircularProgress,
   IconButton,
+  Skeleton,
 } from "@mui/material";
 import { getPlayerHistory, type PlayerResult } from "../api/games";
 import { selectPlayerId, useProfileStore } from "../stores/profileStore";
@@ -53,10 +54,28 @@ export default function PlayerHistory() {
       >
         <Typography variant="subtitle1">Game History</Typography>
         <IconButton onClick={fetchHistory} color="primary" disabled={isLoading}>
-          {isLoading ? <CircularProgress size={24} /> : <RefreshIcon />}
+          <RefreshIcon />
         </IconButton>
       </Box>
-      {history.length === 0 ? (
+      {isLoading && history.length === 0 ? (
+        <List dense>
+          {Array.from({ length: 5 }).map((_, index) => (
+            <ListItem key={`skeleton-${index}`}>
+              <ListItemText
+                primary={
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Skeleton variant="text" width={30} height={20} />
+                    <Skeleton variant="text" width={50} height={20} />
+                    <Skeleton variant="text" width={60} height={20} />
+                    <Skeleton variant="text" width={70} height={20} />
+                  </Box>
+                }
+                secondary={<Skeleton variant="text" width={120} height={16} />}
+              />
+            </ListItem>
+          ))}
+        </List>
+      ) : history.length === 0 ? (
         <Box
           sx={{
             flexGrow: 1,

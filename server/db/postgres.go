@@ -387,6 +387,8 @@ func (d *PgDatabase) SavePlayerResults(results []game.PlayerResultState) error {
 func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
 	query := `
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
+			   (pr.is_declarer AND g.overbid) AS is_overbid,
+			   (g.forfeited_player = pr.player_position) AS is_forfeit,
 			   pr.rating_before, pr.rating_after, pr.rating_change,
 			   array_agg(DISTINCT prof.name) FILTER (WHERE p.profile_id != pr.player_id) AS other_players
 		FROM player_results pr
@@ -395,7 +397,7 @@ func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.Player
 		JOIN profiles prof ON prof.id = p.profile_id
 		WHERE pr.player_id = $1
 		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-		         pr.rating_before, pr.rating_after, pr.rating_change
+		         g.overbid, g.forfeited_player, pr.rating_before, pr.rating_after, pr.rating_change
 		ORDER BY pr.id DESC
 	`
 	if limit > 0 {
@@ -415,7 +417,7 @@ func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.Player
 		if err := rows.Scan(
 			&result.GameID, &result.SessionID, &result.PlayerID,
 			&result.PlayerPosition, &result.PlayerPoints, &result.IsWinner, &result.IsDeclarer,
-			&result.RatingBefore, &result.RatingAfter, &result.RatingChange,
+			&result.IsOverbid, &result.IsForfeit, &result.RatingBefore, &result.RatingAfter, &result.RatingChange,
 			&otherPlayers,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan player result: %w", err)
@@ -445,10 +447,13 @@ func (d *PgDatabase) CountGamesInSession(sessionID string) (int, error) {
 
 func (d *PgDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultState, error) {
 	rows, err := d.DB.Query(`
-		SELECT game_id, session_id, player_id, player_position, player_points, is_winner, is_declarer
-		FROM player_results
-		WHERE session_id = $1
-		ORDER BY game_id ASC, player_position ASC
+		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
+			   (pr.is_declarer AND g.overbid) AS is_overbid,
+			   (g.forfeited_player = pr.player_position) AS is_forfeit
+		FROM player_results pr
+		JOIN games g ON g.id = pr.game_id
+		WHERE pr.session_id = $1
+		ORDER BY pr.game_id ASC, pr.player_position ASC
 	`, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session results: %w", err)
@@ -459,7 +464,8 @@ func (d *PgDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultSta
 	for rows.Next() {
 		var result game.PlayerResultState
 		if err := rows.Scan(&result.GameID, &result.SessionID, &result.PlayerID,
-			&result.PlayerPosition, &result.PlayerPoints, &result.IsWinner, &result.IsDeclarer); err != nil {
+			&result.PlayerPosition, &result.PlayerPoints, &result.IsWinner, &result.IsDeclarer,
+			&result.IsOverbid, &result.IsForfeit); err != nil {
 			return nil, fmt.Errorf("failed to scan player result: %w", err)
 		}
 		results = append(results, result)

@@ -442,10 +442,13 @@ func (d *TursoDatabase) CountGamesInSession(sessionID string) (int, error) {
 
 func (d *TursoDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultState, error) {
 	rows, err := d.DB.Query(`
-		SELECT game_id, session_id, player_id, player_position, player_points, is_winner, is_declarer
-		FROM player_results
-		WHERE session_id = ?
-		ORDER BY game_id ASC, player_position ASC
+		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
+			   (pr.is_declarer AND g.overbid) AS is_overbid,
+			   (g.forfeited_player = pr.player_position) AS is_forfeit
+		FROM player_results pr
+		JOIN games g ON g.id = pr.game_id
+		WHERE pr.session_id = ?
+		ORDER BY pr.game_id ASC, pr.player_position ASC
 	`, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session results: %w", err)
@@ -455,13 +458,15 @@ func (d *TursoDatabase) GetSessionResults(sessionID string) ([]game.PlayerResult
 	var results []game.PlayerResultState
 	for rows.Next() {
 		var result game.PlayerResultState
-		var isWinner, isDeclarer int
+		var isWinner, isDeclarer, isOverbid, isForfeit int
 		if err := rows.Scan(&result.GameID, &result.SessionID, &result.PlayerID,
-			&result.PlayerPosition, &result.PlayerPoints, &isWinner, &isDeclarer); err != nil {
+			&result.PlayerPosition, &result.PlayerPoints, &isWinner, &isDeclarer, &isOverbid, &isForfeit); err != nil {
 			return nil, fmt.Errorf("failed to scan player result: %w", err)
 		}
 		result.IsWinner = isWinner != 0
 		result.IsDeclarer = isDeclarer != 0
+		result.IsOverbid = isOverbid != 0
+		result.IsForfeit = isForfeit != 0
 		results = append(results, result)
 	}
 
@@ -567,6 +572,8 @@ func (d *TursoDatabase) GetFormattedSessionResults(sessionID string) ([]game.Ses
 func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
 	query := `
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
+			   (pr.is_declarer AND g.overbid) AS is_overbid,
+			   (g.forfeited_player = pr.player_position) AS is_forfeit,
 			   pr.rating_before, pr.rating_after, pr.rating_change,
 			   GROUP_CONCAT(DISTINCT CASE WHEN p.profile_id != pr.player_id THEN prof.name END) AS other_players
 		FROM player_results pr
@@ -575,7 +582,7 @@ func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.Pla
 		JOIN profiles prof ON prof.id = p.profile_id
 		WHERE pr.player_id = ?
 		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-		         pr.rating_before, pr.rating_after, pr.rating_change
+		         g.overbid, g.forfeited_player, pr.rating_before, pr.rating_after, pr.rating_change
 		ORDER BY pr.id DESC
 	`
 	if limit > 0 {
@@ -591,18 +598,20 @@ func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.Pla
 	var results []game.PlayerResultState
 	for rows.Next() {
 		var result game.PlayerResultState
-		var isWinner, isDeclarer int
+		var isWinner, isDeclarer, isOverbid, isForfeit int
 		var otherPlayersStr *string
 		if err := rows.Scan(
 			&result.GameID, &result.SessionID, &result.PlayerID,
 			&result.PlayerPosition, &result.PlayerPoints, &isWinner, &isDeclarer,
-			&result.RatingBefore, &result.RatingAfter, &result.RatingChange,
+			&isOverbid, &isForfeit, &result.RatingBefore, &result.RatingAfter, &result.RatingChange,
 			&otherPlayersStr,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan player result: %w", err)
 		}
 		result.IsWinner = isWinner != 0
 		result.IsDeclarer = isDeclarer != 0
+		result.IsOverbid = isOverbid != 0
+		result.IsForfeit = isForfeit != 0
 
 		// Convert comma-separated string to []string
 		if otherPlayersStr != nil && *otherPlayersStr != "" {

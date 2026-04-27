@@ -105,6 +105,8 @@ type PlayerResultState struct {
 	PlayerPoints   int          `json:"player_points"`
 	IsWinner       bool         `json:"is_winner"`
 	IsDeclarer     bool         `json:"is_declarer"`
+	IsOverbid      bool         `json:"is_overbid"`
+	IsForfeit      bool         `json:"is_forfeit"`
 	RatingBefore   int          `json:"rating_before"`
 	RatingAfter    int          `json:"rating_after"`
 	RatingChange   int          `json:"rating_change"`
@@ -113,16 +115,16 @@ type PlayerResultState struct {
 
 // SessionGameResult represents the results of a single game within a session
 type SessionGameResult struct {
-	GameID         string            `json:"game_id"`
-	GameNumber     int               `json:"game_number"`
-	DeclarerName   string            `json:"declarer_name"`
-	DeclarerWon    bool              `json:"declarer_won"`
-	GameMode       string            `json:"game_mode"`
-	TrumpSuit      string            `json:"trump_suit"`
-	PlayerResults  map[string]int    `json:"player_results"`  // PlayerID -> Points
-	PlayerNames    map[string]string `json:"player_names"`    // PlayerID -> Name
-	PlayerWinners  map[string]bool   `json:"player_winners"`  // PlayerID -> IsWinner
-	ForfeitedPlayer *GamePosition    `json:"forfeited_player"`
+	GameID          string            `json:"game_id"`
+	GameNumber      int               `json:"game_number"`
+	DeclarerName    string            `json:"declarer_name"`
+	DeclarerWon     bool              `json:"declarer_won"`
+	GameMode        string            `json:"game_mode"`
+	TrumpSuit       string            `json:"trump_suit"`
+	PlayerResults   map[string]int    `json:"player_results"` // PlayerID -> Points
+	PlayerNames     map[string]string `json:"player_names"`   // PlayerID -> Name
+	PlayerWinners   map[string]bool   `json:"player_winners"` // PlayerID -> IsWinner
+	ForfeitedPlayer *GamePosition     `json:"forfeited_player"`
 }
 
 type GamePhase string

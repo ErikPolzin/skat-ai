@@ -119,12 +119,16 @@ func (gs *GameState) PlayerResults() *[3]PlayerResultState {
 		if player == nil {
 			continue
 		}
+		isDeclarer := gs.Declarer != nil && pos == *gs.Declarer
+		isForfeit := gs.ForfeitedPlayer != nil && pos == *gs.ForfeitedPlayer
 		results[int(pos)] = PlayerResultState{
 			GameID:         gs.ID,
 			SessionID:      gs.SessionID,
 			PlayerID:       player.ID,
 			IsWinner:       gs.isWinner(pos),
-			IsDeclarer:     gs.Declarer != nil && pos == *gs.Declarer,
+			IsDeclarer:     isDeclarer,
+			IsOverbid:      isDeclarer && gs.Overbid,
+			IsForfeit:      isForfeit,
 			PlayerPosition: pos,
 			PlayerPoints:   gs.CalculatePlayerPoints(pos),
 		}

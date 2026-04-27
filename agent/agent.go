@@ -24,6 +24,7 @@ var (
 	NewQLearningBiddingStrategy       = strategies.NewQLearningBiddingStrategy
 	NewQLearningGameChoiceStrategy    = strategies.NewQLearningGameChoiceStrategy
 	NewMCTSCardPlayStrategyWithParams = strategies.NewMCTSCardPlayStrategyWithParams
+	NewHeuristicCardPlayStrategy      = strategies.NewHeuristicCardPlayStrategy
 )
 
 // BiddingStrategy interface for bidding decisions
@@ -117,7 +118,7 @@ func NewHeuristicAgent(name string) *SkatAgent {
 		name:               name,
 		biddingStrategy:    &HeuristicBiddingStrategy{},
 		gameChoiceStrategy: &HeuristicGameChoiceStrategy{},
-		cardPlayStrategy:   &HeuristicCardPlayStrategy{},
+		cardPlayStrategy:   NewHeuristicCardPlayStrategy(),
 	}
 }
 
@@ -162,13 +163,13 @@ func NewHybridAgent(name string, biddingType, gameChoiceType, cardPlayType strin
 	// Configure card play strategy
 	switch cardPlayType {
 	case "heuristic":
-		agent.cardPlayStrategy = &HeuristicCardPlayStrategy{}
+		agent.cardPlayStrategy = NewHeuristicCardPlayStrategy()
 	case "mcts":
 		agent.cardPlayStrategy = NewMCTSCardPlayStrategyWithParams(simulations, 1.41, 10)
 	case "random":
 		agent.cardPlayStrategy = &RandomCardPlayStrategy{}
 	default:
-		agent.cardPlayStrategy = &HeuristicCardPlayStrategy{}
+		agent.cardPlayStrategy = NewHeuristicCardPlayStrategy()
 	}
 
 	return agent
@@ -203,4 +204,23 @@ func (sa *SkatAgent) GetGameChoiceStrategy() GameChoiceStrategy {
 // GetCardPlayStrategy returns the card play strategy
 func (sa *SkatAgent) GetCardPlayStrategy() CardPlayStrategy {
 	return sa.cardPlayStrategy
+}
+
+// OnTrickComplete notifies the card play strategy that a trick was completed
+// This allows strategies with memory (like HeuristicCardPlayStrategy) to track played cards
+func (sa *SkatAgent) OnTrickComplete(trick []game.Card) {
+	// Check if the strategy supports trick tracking
+	if tracker, ok := sa.cardPlayStrategy.(interface {
+		OnTrickComplete([]game.Card)
+	}); ok {
+		tracker.OnTrickComplete(trick)
+	}
+}
+
+// OnGameStart resets any stateful strategies for a new game
+func (sa *SkatAgent) OnGameStart() {
+	// Check if the strategy supports reset
+	if resettable, ok := sa.cardPlayStrategy.(interface{ Reset() }); ok {
+		resettable.Reset()
+	}
 }

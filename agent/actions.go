@@ -24,7 +24,7 @@ func getAgentForPlayer(player *game.PlayerState) *SkatAgent {
 
 	// Initialize shared agent once
 	sharedAgentOnce.Do(func() {
-		sharedAgent = NewSkatAgent("SkatAgent", 500)
+		sharedAgent = NewHeuristicAgent("SkatAgent")
 
 		// Log current working directory for debugging
 		if cwd, err := os.Getwd(); err == nil {
@@ -156,13 +156,45 @@ func NextAction(gs *game.GameState) Action {
 
 func generateAgentDealAction(gs *game.GameState, player *game.PlayerState) Action {
 	return func() (string, error) {
-		return gs.Deal()
+		result, err := gs.Deal()
+
+		// Reset card tracking for all agents at start of new game
+		if err == nil {
+			for i := range gs.Players {
+				if gs.Players[i].IsAgent {
+					agent := getAgentForPlayer(gs.Players[i])
+					if agent != nil {
+						agent.OnGameStart()
+					}
+				}
+			}
+		}
+
+		return result, err
 	}
 }
 
 func generateResolveTrickAction(gs *game.GameState) Action {
 	return func() (string, error) {
-		return gs.ResolveTrick()
+		// Track the trick before it gets cleared
+		trick := make([]game.Card, len(gs.Trick))
+		copy(trick, gs.Trick)
+
+		result, err := gs.ResolveTrick()
+
+		// Notify all agents that a trick was completed (for card tracking)
+		if err == nil && len(trick) == 3 {
+			for i := range gs.Players {
+				if gs.Players[i].IsAgent {
+					agent := getAgentForPlayer(gs.Players[i])
+					if agent != nil {
+						agent.OnTrickComplete(trick)
+					}
+				}
+			}
+		}
+
+		return result, err
 	}
 }
 

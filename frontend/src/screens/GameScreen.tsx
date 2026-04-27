@@ -115,7 +115,7 @@ function GameScreenContent() {
         >
           <SessionResults
             results={game.sessionResults}
-            playerId={game.playerId}
+            playerId={game.player?.id}
             gameId={game.gameId}
             gamesPlayed={game.gamesPlayed}
             maxGames={10}
@@ -128,7 +128,7 @@ function GameScreenContent() {
       {!isWideScreen && game.playerCount === 3 && (
         <SessionResults
           results={game.sessionResults}
-          playerId={game.playerId}
+          playerId={game.player?.id}
           gameId={game.gameId}
           gamesPlayed={game.gamesPlayed}
           maxGames={10}

@@ -157,14 +157,15 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
     if (!isLoading && playerId) {
       setIsLoading(true);
       try {
-        await api.startNextGame(game.gameId, playerId);
+        await api.readyForNextGame(game.gameId, playerId);
       } catch (error) {
-        console.error("Play next game action failed:", error);
+        console.error("Ready for next game action failed:", error);
+        showSnackbar("Failed to mark ready for next game", "error");
       } finally {
         setIsLoading(false);
       }
     }
-  }, [game.gameId, isLoading, playerId]);
+  }, [game.gameId, isLoading, playerId, showSnackbar]);
 
   return {
     playCard,

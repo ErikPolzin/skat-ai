@@ -77,16 +77,29 @@ export function MotionCardTable() {
   });
 
   // Track deadline timer for countdown display
-  const { secondsRemaining, formattedTime, isExpired } = useDeadlineTimer(game.currentPlayerDeadline || "");
+  const { secondsRemaining, formattedTime, isExpired } = useDeadlineTimer(
+    game.currentPlayerDeadline || "",
+  );
 
   // Report timeout to server when deadline expires
   useEffect(() => {
-    if (isExpired && game.currentPlayerDeadline && game.phase !== "complete" && game.playerId) {
-      reportTimeout(game.gameId, game.playerId).catch((err) => {
+    if (
+      isExpired &&
+      game.currentPlayerDeadline &&
+      game.phase !== "complete" &&
+      game.player?.id
+    ) {
+      reportTimeout(game.gameId, game.player?.id).catch((err) => {
         console.error("Failed to report timeout:", err);
       });
     }
-  }, [isExpired, game.currentPlayerDeadline, game.gameId, game.playerId, game.phase]);
+  }, [
+    isExpired,
+    game.currentPlayerDeadline,
+    game.gameId,
+    game.player?.id,
+    game.phase,
+  ]);
 
   // Calculate table size based on window size
   // This matches the CSS table-surface dimensions
@@ -505,18 +518,24 @@ export function MotionCardTable() {
             <span className="mode-title">
               {getGameModeDisplay(game.gameMode, game.trumpSuit)}
             </span>
-            {game.currentPlayerDeadline && secondsRemaining !== null && secondsRemaining > 0 && secondsRemaining <= 30 && (
-              <div style={{
-                color: "#f44336",
-                fontSize: "24px",
-                fontWeight: "bold",
-                marginTop: "12px",
-                textShadow: "0 2px 4px rgba(0,0,0,0.5)",
-                animation: secondsRemaining <= 10 ? "pulse 1s infinite" : undefined,
-              }}>
-                {formattedTime}
-              </div>
-            )}
+            {game.currentPlayerDeadline &&
+              secondsRemaining !== null &&
+              secondsRemaining > 0 &&
+              secondsRemaining <= 30 && (
+                <div
+                  style={{
+                    color: "#f44336",
+                    fontSize: "24px",
+                    fontWeight: "bold",
+                    marginTop: "12px",
+                    textShadow: "0 2px 4px rgba(0,0,0,0.5)",
+                    animation:
+                      secondsRemaining <= 10 ? "pulse 1s infinite" : undefined,
+                  }}
+                >
+                  {formattedTime}
+                </div>
+              )}
           </div>
         ) : null}
 
@@ -535,15 +554,17 @@ export function MotionCardTable() {
                 isAI={game.topPlayer.is_agent}
                 size={isMobile ? 70 : 65}
               />
-              <div style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                borderRadius: "50%",
-                overflow: "hidden"
-              }}>
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                }}
+              >
                 {game.topPlayer.profile_icon ? (
                   <img
                     src={game.topPlayer.profile_icon}
@@ -590,19 +611,23 @@ export function MotionCardTable() {
             >
               <CircularTimer
                 deadline={game.currentPlayerDeadline || ""}
-                isCurrentPlayer={game.leftPlayer.position === game.currentPlayer}
+                isCurrentPlayer={
+                  game.leftPlayer.position === game.currentPlayer
+                }
                 isAI={game.leftPlayer.is_agent}
                 size={isMobile ? 70 : 65}
               />
-              <div style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                borderRadius: "50%",
-                overflow: "hidden"
-              }}>
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                }}
+              >
                 {game.leftPlayer.profile_icon ? (
                   <img
                     src={game.leftPlayer.profile_icon}
@@ -642,35 +667,37 @@ export function MotionCardTable() {
         <div
           className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""} ${game.controls.isLoading ? "loading" : ""} ${isMobile ? "mobile" : ""}`}
         >
-          <div className="avatar-circle" style={{ position: "relative", overflow: "visible" }}>
+          <div
+            className="avatar-circle"
+            style={{ position: "relative", overflow: "visible" }}
+          >
             <CircularTimer
               deadline={game.currentPlayerDeadline || ""}
               isCurrentPlayer={game.isMyTurn}
               isAI={false}
               size={isMobile ? 70 : 65}
             />
-            <div style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              borderRadius: "50%",
-              overflow: "hidden"
-            }}>
-              {game.playerProfileIcon ? (
-                <img
-                  src={game.playerProfileIcon}
-                  alt={game.playerName}
-                />
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                borderRadius: "50%",
+                overflow: "hidden",
+              }}
+            >
+              {game.player?.profile_icon ? (
+                <img src={game.player?.profile_icon} alt={game.player?.name} />
               ) : (
-                <span>{game.playerName.charAt(0).toUpperCase()}</span>
+                <span>{game.player?.name.charAt(0).toUpperCase()}</span>
               )}
             </div>
           </div>
           <div className="avatar-info">
             <div className="player-name">
-              {game.playerName}
+              {game.player?.name}
               {game.isDeclarer && " (D)"}
             </div>
             {game.getRole(game.playerPosition) && (
@@ -772,7 +799,9 @@ export function MotionCardTable() {
                 suit={card.suit}
                 key={playerKeys[index]}
                 selected={selected}
-                disabled={game.phase === "playing" && game.isMyTurn && !isValidMove}
+                disabled={
+                  game.phase === "playing" && game.isMyTurn && !isValidMove
+                }
                 animate={animatePosition}
                 initial={initialPosition}
                 skipInitialAnimation={!shouldAnimateFromDeck}
@@ -869,54 +898,55 @@ export function MotionCardTable() {
           })}
 
           {/* Trick Cards */}
-          {!game.gameOver && game.trick.map((card, index) => (
-            <Card
-              key={trickKeys[index]}
-              index={index}
-              rank={card.rank}
-              suit={card.suit}
-              className="motion-card"
-              skipInitialAnimation={true}
-              animate={{
-                ...getTrickPosition(index, game.trick.length),
-              }}
-              // Pass custom exit prop that will be used when card is removed
-              custom={{
-                trickWinner: game.trickWinner,
-                declarerPosition: game.declarerPosition,
-                playerIsDeclarer,
-              }}
-              exit={(() => {
-                // Use the trick winner stored when the WebSocket message arrived
-                // This is the most reliable way to get the correct winner for exit animations
-                const trickWinner = game.trickWinnerRef.current.winner;
-                const declarerPosition = game.trickWinnerRef.current.declarer;
+          {!game.gameOver &&
+            game.trick.map((card, index) => (
+              <Card
+                key={trickKeys[index]}
+                index={index}
+                rank={card.rank}
+                suit={card.suit}
+                className="motion-card"
+                skipInitialAnimation={true}
+                animate={{
+                  ...getTrickPosition(index, game.trick.length),
+                }}
+                // Pass custom exit prop that will be used when card is removed
+                custom={{
+                  trickWinner: game.trickWinner,
+                  declarerPosition: game.declarerPosition,
+                  playerIsDeclarer,
+                }}
+                exit={(() => {
+                  // Use the trick winner stored when the WebSocket message arrived
+                  // This is the most reliable way to get the correct winner for exit animations
+                  const trickWinner = game.trickWinnerRef.current.winner;
+                  const declarerPosition = game.trickWinnerRef.current.declarer;
 
-                // Check if the trick winner is the declarer
-                const declarerWonTrick = trickWinner === declarerPosition;
+                  // Check if the trick winner is the declarer
+                  const declarerWonTrick = trickWinner === declarerPosition;
 
-                if (declarerWonTrick) {
-                  // Declarer won - cards go to declarer's pile
-                  if (playerIsDeclarer) {
-                    // Player is declarer - go to player pile (bottom)
-                    return { ...getPlayerPilePosition() };
+                  if (declarerWonTrick) {
+                    // Declarer won - cards go to declarer's pile
+                    if (playerIsDeclarer) {
+                      // Player is declarer - go to player pile (bottom)
+                      return { ...getPlayerPilePosition() };
+                    } else {
+                      // Opponent is declarer - go to opponent pile (top)
+                      return { ...getOpponentPilePosition() };
+                    }
                   } else {
-                    // Opponent is declarer - go to opponent pile (top)
-                    return { ...getOpponentPilePosition() };
+                    // Defenders won - cards go to defenders' pile
+                    if (playerIsDeclarer) {
+                      // Player is declarer - defenders' pile is opponent pile (top)
+                      return { ...getOpponentPilePosition() };
+                    } else {
+                      // Player is defender - defenders' pile is player pile (bottom)
+                      return { ...getPlayerPilePosition() };
+                    }
                   }
-                } else {
-                  // Defenders won - cards go to defenders' pile
-                  if (playerIsDeclarer) {
-                    // Player is declarer - defenders' pile is opponent pile (top)
-                    return { ...getOpponentPilePosition() };
-                  } else {
-                    // Player is defender - defenders' pile is player pile (bottom)
-                    return { ...getPlayerPilePosition() };
-                  }
-                }
-              })()}
-            />
-          ))}
+                })()}
+              />
+            ))}
         </AnimatePresence>
 
         {/* Score Pile Labels - only show during playing phase when declarer is set and there are cards */}

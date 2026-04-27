@@ -314,11 +314,11 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 		if player != nil {
 			handString := player.Hand.String()
 			_, err := d.DB.Exec(
-				`INSERT INTO players (game_id, profile_id, hand, position)
-				VALUES (?, ?, ?, ?)
+				`INSERT INTO players (game_id, profile_id, hand, position, ready_for_next)
+				VALUES (?, ?, ?, ?, ?)
 				ON CONFLICT (game_id, profile_id) DO UPDATE SET
-					hand = excluded.hand, position = excluded.position`,
-				gs.ID, player.ID, handString, pos,
+					hand = excluded.hand, position = excluded.position, ready_for_next = excluded.ready_for_next`,
+				gs.ID, player.ID, handString, pos, player.ReadyForNext,
 			)
 			if err != nil {
 				return fmt.Errorf("failed to save player: %w", err)
@@ -369,7 +369,7 @@ func (d *TursoDatabase) DeleteGame(gameID string) error {
 
 func (d *TursoDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 	rows, err := d.DB.Query(`
-		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent, pr.profile_icon, pr.is_online
+		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent, pr.profile_icon, pr.is_online, pl.ready_for_next
 		FROM players pl
 		JOIN profiles pr ON pr.id = pl.profile_id
 		WHERE pl.game_id = ?
@@ -384,9 +384,9 @@ func (d *TursoDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error)
 		var handString string
 		var position int
 		var ps game.PlayerState
-		var isAgent, isOnline int
+		var isAgent, isOnline, readyForNext int
 		if err := rows.Scan(
-			&handString, &position, &ps.ID, &ps.Name, &isAgent, &ps.ProfileIcon, &isOnline); err != nil {
+			&handString, &position, &ps.ID, &ps.Name, &isAgent, &ps.ProfileIcon, &isOnline, &readyForNext); err != nil {
 			return [3]*game.PlayerState{}, fmt.Errorf("failed to scan player: %w", err)
 		}
 		ps.Hand, err = game.ParseCards(handString)
@@ -395,6 +395,7 @@ func (d *TursoDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error)
 		}
 		ps.IsAgent = isAgent != 0
 		ps.IsOnline = isOnline != 0
+		ps.ReadyForNext = readyForNext != 0
 		if position >= 0 && position < 3 {
 			players[position] = &ps
 		}

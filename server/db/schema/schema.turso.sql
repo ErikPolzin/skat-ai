@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS players (
     profile_id TEXT NOT NULL,
     hand TEXT NOT NULL,
     position INTEGER NOT NULL,
+    ready_for_next INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (game_id, profile_id),
     FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE

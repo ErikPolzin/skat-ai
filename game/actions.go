@@ -432,6 +432,7 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.AnnouncedSchwarz = false
 	for _, player := range gs.Players {
 		player.Hand = []Card{}
+		player.ReadyForNext = false // Reset ready state for new game
 	}
 	gs.UpdateCurrentPlayerDeadline()
 	logger.Info("Started a new game", "game_id", gs.ID)

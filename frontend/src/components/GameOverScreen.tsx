@@ -38,7 +38,10 @@ export function GameOverScreen() {
         {game.playerWon ? "YOU WON" : "YOU LOST"}
       </span>
       {result.is_forfeit ? (
-        <span className="game-over-score" style={{ fontSize: "18px", marginTop: "12px" }}>
+        <span
+          className="game-over-score"
+          style={{ fontSize: "18px", marginTop: "12px" }}
+        >
           Game forfeited due to inactivity
         </span>
       ) : (
@@ -96,18 +99,39 @@ export function GameOverScreen() {
       )}
       <div className="game-over-buttons">
         {game.canPlayNext && (
-          <Button
-            variant="contained"
-            color="primary"
-            size="large"
-            fullWidth
-            onClick={() => game.controls.playNextGame()}
-            disabled={!game.controls.isConnected || game.controls.isLoading}
-          >
-            {game.controls.isLoading
-              ? "Loading..."
-              : `Play Next (${game.gamesPlayed + 1}/10)`}
-          </Button>
+          <>
+            <Button
+              variant="contained"
+              color="primary"
+              size="large"
+              fullWidth
+              onClick={() => game.controls.playNextGame()}
+              disabled={
+                !game.controls.isConnected ||
+                game.controls.isLoading ||
+                game.player?.ready_for_next
+              }
+            >
+              {game.player?.ready_for_next
+                ? "Waiting for other players..."
+                : game.controls.isLoading
+                  ? "Loading..."
+                  : `Play Next (${game.gamesPlayed + 1}/10)`}
+            </Button>
+            {game.player?.ready_for_next && (
+              <span
+                style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}
+              >
+                {
+                  game.players.filter(
+                    (p) => p && !p.is_agent && p.ready_for_next,
+                  ).length
+                }{" "}
+                / {game.players.filter((p) => p && !p.is_agent).length} players
+                ready
+              </span>
+            )}
+          </>
         )}
         <Button
           variant={game.canPlayNext ? "outlined" : "contained"}

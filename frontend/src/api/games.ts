@@ -7,6 +7,7 @@ export interface ServerPlayer {
   is_agent: boolean;
   profile_icon: string;
   is_online: boolean;
+  ready_for_next: boolean;
 }
 
 // Client player representation (with position derived from array index)
@@ -16,6 +17,7 @@ export interface Player {
   is_agent: boolean;
   profile_icon: string;
   is_online: boolean;
+  ready_for_next: boolean;
   position: number;
   card_count?: number;
 }
@@ -420,11 +422,11 @@ export async function discardCards(
   return gameAction(gameId, "discard_cards", playerId, { cards });
 }
 
-export async function startNextGame(
+export async function readyForNextGame(
   gameId: string,
   playerId: string,
 ): Promise<void> {
-  return gameAction(gameId, "start_next_game", playerId);
+  return gameAction(gameId, "ready_for_next", playerId);
 }
 
 export async function reportTimeout(

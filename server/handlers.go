@@ -26,7 +26,7 @@ import (
 func (s *Server) cloudRunDelayMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.IsCloudRun() {
-			time.Sleep(2 * time.Second)
+			time.Sleep(1 * time.Second)
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -58,7 +58,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/games/{id}/choose_game", s.handleChooseGame).Methods("POST")
 	api.HandleFunc("/games/{id}/skat_decision", s.handleSkatDecision).Methods("POST")
 	api.HandleFunc("/games/{id}/discard_cards", s.handleDiscardCards).Methods("POST")
-	api.HandleFunc("/games/{id}/start_next_game", s.handleStartNextGame).Methods("POST")
+	api.HandleFunc("/games/{id}/ready_for_next", s.handleReadyForNext).Methods("POST")
 	api.HandleFunc("/games/{id}/timeout", s.handleTimeout).Methods("POST")
 	api.HandleFunc("/profiles", s.handleCreateProfile).Methods("POST")
 	api.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
@@ -886,12 +886,12 @@ func (s *Server) handleDiscardCards(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleStartNextGame handles starting the next game
-func (s *Server) handleStartNextGame(w http.ResponseWriter, r *http.Request) {
+// handleReadyForNext marks a player as ready for the next game
+func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	gameID := vars["id"]
 
-	_, err := getAuthenticatedPlayerID(r)
+	playerID, err := getAuthenticatedPlayerID(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -903,33 +903,61 @@ func (s *Server) handleStartNextGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For start_next_game, we don't validate current player since any player can trigger it
-	currentPosition := gs.CurrentPlayer
-	response, err := gs.NextGame()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	// Find the player and mark them as ready
+	position := gs.GetPositionForPlayer(playerID)
+	if position == -1 {
+		http.Error(w, "player not in this game", http.StatusBadRequest)
 		return
 	}
 
-	newGameID := gs.ID
+	player := gs.Players[position]
+	player.ReadyForNext = true
+
+	// Check if all human players are ready
+	allReady := true
+	for _, p := range gs.Players {
+		if p != nil && !p.IsAgent && !p.ReadyForNext {
+			allReady = false
+			break
+		}
+	}
+
+	// Broadcast the updated state to all players BEFORE checking if all are ready
+	s.clients.BroadcastStateChange(gs, fmt.Sprintf("%s is ready for the next game", player.Name), gs.CurrentPlayer)
+
 	s.db.SaveGame(*gs)
 
-	// Send start_next_game message to trigger navigation
-	s.clients.BroadcastToPlayers(gs, &Message{
-		Type: "start_next_game",
-		Data: map[string]any{"game_id": newGameID},
-	})
+	// If all human players are ready, automatically start the next game
+	if allReady {
+		response, err := gs.NextGame()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	// Also broadcast the state change
-	s.clients.BroadcastStateChange(gs, response, currentPosition)
-	go s.BroadcastAIActions(gs)
+		newGameID := gs.ID
+		s.db.SaveGame(*gs)
 
-	// Custom response with new game ID
+		// Send start_next_game message to trigger navigation
+		s.clients.BroadcastToPlayers(gs, &Message{
+			Type: "start_next_game",
+			Data: map[string]any{"game_id": newGameID},
+		})
+
+		// Also broadcast the state change
+		s.clients.BroadcastStateChange(gs, response, gs.CurrentPlayer)
+		go s.BroadcastAIActions(gs)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "game_started",
+			"game_id": newGameID,
+		})
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "ok",
-		"game_id": newGameID,
-	})
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {

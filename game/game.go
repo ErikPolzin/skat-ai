@@ -149,13 +149,14 @@ func NewGameCode() GameCode {
 
 // PlayerState represents one player's state
 type PlayerState struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Hand        Cards  `json:"-"`
-	CardCount   int    `json:"card_count"`
-	IsAgent     bool   `json:"is_agent"`
-	ProfileIcon string `json:"profile_icon"`
-	IsOnline    bool   `json:"is_online"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Hand         Cards  `json:"-"`
+	CardCount    int    `json:"card_count"`
+	IsAgent      bool   `json:"is_agent"`
+	ProfileIcon  string `json:"profile_icon"`
+	IsOnline     bool   `json:"is_online"`
+	ReadyForNext bool   `json:"ready_for_next"` // Player has consented to play next game
 }
 
 // NewGame creates a new Skat game

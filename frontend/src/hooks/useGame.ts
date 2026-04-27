@@ -69,12 +69,12 @@ export function useGame(
   );
 
   // Derive player info from players array
-  const myPlayer = useMemo(
+  const player = useMemo(
     () => players.find((p) => p?.id === playerId),
     [players, playerId],
   );
 
-  const playerPosition = myPlayer?.position ?? null;
+  const playerPosition = player?.position ?? null;
   const isBiddingPhase = state.phase === "bidding";
   const isSkatExchange = state.phase === "skat_exchange";
   const isDeclarerChoice = state.phase === "declarer_choice";
@@ -320,9 +320,7 @@ export function useGame(
     gameCode: state.code,
     sessionId: state.session_id,
     gameNumber: state.game_number,
-    playerId,
-    playerName: myPlayer?.name || "",
-    playerProfileIcon: myPlayer?.profile_icon || "",
+    player,
     playerPosition,
     playerHand: hand,
     leftPlayer,

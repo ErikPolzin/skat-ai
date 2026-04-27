@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS players (
     game_id VARCHAR(255) NOT NULL,
     hand TEXT NOT NULL,
     position INT NOT NULL,
+    ready_for_next BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (game_id, profile_id),
     FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE

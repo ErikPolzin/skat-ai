@@ -1,5 +1,11 @@
 import React, { useState } from "react";
-import { Box, Typography, Button, Paper, CircularProgress } from "@mui/material";
+import {
+  Box,
+  Typography,
+  Button,
+  Paper,
+  CircularProgress,
+} from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
 import { leaveGame } from "../api/games";
@@ -11,11 +17,11 @@ export function GameLobbyWaiting() {
   const playersNeeded = 3 - game.playerCount;
 
   const handleLeaveGame = async () => {
-    if (!game.playerId || !game.gameId) return;
+    if (!game.player?.id || !game.gameId) return;
 
     try {
       setIsLeaving(true);
-      await leaveGame(game.gameId, game.playerId);
+      await leaveGame(game.gameId, game.player?.id);
       navigate("/");
     } catch (error) {
       console.error("Failed to leave game:", error);

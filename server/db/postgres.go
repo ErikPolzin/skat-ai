@@ -282,11 +282,11 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 		if player != nil {
 			handString := player.Hand.String()
 			_, err := d.DB.Exec(
-				`INSERT INTO players (game_id, profile_id, hand, position)
-				VALUES ($1, $2, $3, $4)
+				`INSERT INTO players (game_id, profile_id, hand, position, ready_for_next)
+				VALUES ($1, $2, $3, $4, $5)
 				ON CONFLICT (game_id, profile_id) DO UPDATE SET
-					hand = $3, position = $4`,
-				gs.ID, player.ID, handString, pos,
+					hand = $3, position = $4, ready_for_next = $5`,
+				gs.ID, player.ID, handString, pos, player.ReadyForNext,
 			)
 			if err != nil {
 				return fmt.Errorf("failed to save player: %w", err)
@@ -337,7 +337,7 @@ func (d *PgDatabase) DeleteGame(gameID string) error {
 
 func (d *PgDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 	rows, err := d.DB.Query(`
-		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent, pr.profile_icon, pr.is_online
+		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent, pr.profile_icon, pr.is_online, pl.ready_for_next
 		FROM players pl
 		JOIN profiles pr ON pr.id = pl.profile_id
 		WHERE pl.game_id = $1
@@ -353,7 +353,7 @@ func (d *PgDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 		var position int
 		var ps game.PlayerState
 		if err := rows.Scan(
-			&handString, &position, &ps.ID, &ps.Name, &ps.IsAgent, &ps.ProfileIcon, &ps.IsOnline); err != nil {
+			&handString, &position, &ps.ID, &ps.Name, &ps.IsAgent, &ps.ProfileIcon, &ps.IsOnline, &ps.ReadyForNext); err != nil {
 			return [3]*game.PlayerState{}, fmt.Errorf("failed to scan player: %w", err)
 		}
 		ps.Hand, err = game.ParseCards(handString)

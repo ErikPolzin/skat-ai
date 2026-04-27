@@ -159,6 +159,8 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results *[3]
 	}
 
 	// Update opponent ratings
+	// Note: Opponents who passed don't get wins/losses/games_played updated
+	// Only their rating is adjusted to reflect the declarer's performance
 	for _, opponent := range opponents {
 		opponentRating := playerRatings[opponent.ID]
 
@@ -174,12 +176,8 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results *[3]
 		ratingChanges[opponent.ID] = opponentChange
 
 		opponentRating.Rating += opponentChange
-		opponentRating.GamesPlayed++
-		if !declarerWon {
-			opponentRating.Wins++
-		} else {
-			opponentRating.Losses++
-		}
+		// Don't update games_played, wins, or losses for opponents
+		// Only the declarer's stats are updated
 		if opponentRating.Rating > opponentRating.PeakRating {
 			opponentRating.PeakRating = opponentRating.Rating
 		}

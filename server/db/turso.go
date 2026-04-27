@@ -444,7 +444,7 @@ func (d *TursoDatabase) GetSessionResults(sessionID string) ([]game.PlayerResult
 	rows, err := d.DB.Query(`
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
 			   (pr.is_declarer AND g.overbid) AS is_overbid,
-			   (g.forfeited_player = pr.player_position) AS is_forfeit
+			   CASE WHEN g.forfeited_player = pr.player_position THEN 1 ELSE 0 END AS is_forfeit
 		FROM player_results pr
 		JOIN games g ON g.id = pr.game_id
 		WHERE pr.session_id = ?
@@ -573,7 +573,7 @@ func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.Pla
 	query := `
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
 			   (pr.is_declarer AND g.overbid) AS is_overbid,
-			   (g.forfeited_player = pr.player_position) AS is_forfeit,
+			   CASE WHEN g.forfeited_player = pr.player_position THEN 1 ELSE 0 END AS is_forfeit,
 			   pr.rating_before, pr.rating_after, pr.rating_change,
 			   GROUP_CONCAT(DISTINCT CASE WHEN p.profile_id != pr.player_id THEN prof.name END) AS other_players
 		FROM player_results pr

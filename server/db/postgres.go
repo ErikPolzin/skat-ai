@@ -388,7 +388,7 @@ func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.Player
 	query := `
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
 			   (pr.is_declarer AND g.overbid) AS is_overbid,
-			   (g.forfeited_player = pr.player_position) AS is_forfeit,
+			   COALESCE(g.forfeited_player = pr.player_position, false) AS is_forfeit,
 			   pr.rating_before, pr.rating_after, pr.rating_change,
 			   array_agg(DISTINCT prof.name) FILTER (WHERE p.profile_id != pr.player_id) AS other_players
 		FROM player_results pr
@@ -449,7 +449,7 @@ func (d *PgDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultSta
 	rows, err := d.DB.Query(`
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
 			   (pr.is_declarer AND g.overbid) AS is_overbid,
-			   (g.forfeited_player = pr.player_position) AS is_forfeit
+			   COALESCE(g.forfeited_player = pr.player_position, false) AS is_forfeit
 		FROM player_results pr
 		JOIN games g ON g.id = pr.game_id
 		WHERE pr.session_id = $1

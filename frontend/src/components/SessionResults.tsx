@@ -104,6 +104,7 @@ export function SessionResults({
           justifyContent: "space-between",
           px: 3,
           minHeight: "62px",
+          bgcolor: theme.palette.primary.main,
         }}
       >
         <Typography variant="subtitle1" sx={{ color: "white" }}>
@@ -112,7 +113,7 @@ export function SessionResults({
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
           {!isMobile && (
             <Button
-              variant="outlined"
+              variant="contained"
               color="error"
               size="small"
               onClick={handleLeaveSession}
@@ -141,9 +142,7 @@ export function SessionResults({
       </Box>
 
       {/* Player Cumulative Scores Table */}
-      <TableContainer
-        sx={{ flexGrow: 1, overflowY: "auto" }}
-      >
+      <TableContainer sx={{ flexGrow: 1, overflowY: "auto" }}>
         <Table
           size="small"
           stickyHeader

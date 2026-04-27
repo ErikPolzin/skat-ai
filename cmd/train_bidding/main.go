@@ -6,6 +6,7 @@ import (
 	"skat/agent"
 	"skat/agent/training"
 	"skat/config"
+	"time"
 )
 
 func main() {
@@ -19,7 +20,9 @@ func main() {
 	trainer := training.NewBiddingTrainer()
 
 	// Train bidding through self-play
+	startTime := time.Now()
 	trainer.TrainBidding(*episodes)
+	duration := time.Since(startTime)
 
 	// Save the trained Q-table using config system
 	fmt.Println("\nSaving trained agent...")
@@ -46,4 +49,5 @@ func main() {
 	fmt.Printf("  Q-value range:  %.3f to %.3f\n", stats["min_q"], stats["max_q"])
 	fmt.Printf("  Average Q:      %.3f\n", stats["avg_q"])
 	fmt.Printf("  Final epsilon:  %.3f\n", stats["epsilon"])
+	fmt.Printf("\nTraining time: %v\n", duration.Round(time.Second))
 }

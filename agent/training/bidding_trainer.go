@@ -11,12 +11,37 @@ type BiddingTrainer struct {
 }
 
 func NewBiddingTrainer() *BiddingTrainer {
+	// Create 3 agents with Q-learning bidding but heuristic game choice/play
+	// This ensures agents learn bidding in a stable environment
+	qBidding0 := agent.NewQLearningBiddingStrategy(0.15)
+	qBidding1 := agent.NewQLearningBiddingStrategy(0.15)
+	qBidding2 := agent.NewQLearningBiddingStrategy(0.15)
+
+	// Share the same Q-table across all bidding strategies
+	qBidding0.ShareQTable(qBidding1)
+	qBidding0.ShareQTable(qBidding2)
+
+	agent0 := agent.NewAgentWithStrategies(
+		"Agent-0",
+		qBidding0,
+		&agent.HeuristicGameChoiceStrategy{},
+		&agent.HeuristicCardPlayStrategy{},
+	)
+	agent1 := agent.NewAgentWithStrategies(
+		"Agent-1",
+		qBidding1,
+		&agent.HeuristicGameChoiceStrategy{},
+		&agent.HeuristicCardPlayStrategy{},
+	)
+	agent2 := agent.NewAgentWithStrategies(
+		"Agent-2",
+		qBidding2,
+		&agent.HeuristicGameChoiceStrategy{},
+		&agent.HeuristicCardPlayStrategy{},
+	)
+
 	return &BiddingTrainer{
-		agents: [3]*agent.SkatAgent{
-			agent.NewSkatAgent("Agent-0", 100),
-			agent.NewSkatAgent("Agent-1", 100),
-			agent.NewSkatAgent("Agent-2", 100),
-		},
+		agents: [3]*agent.SkatAgent{agent0, agent1, agent2},
 	}
 }
 
@@ -38,7 +63,7 @@ func (bt *BiddingTrainer) trainSingleEpisode() {
 	for i, pr := range g.PlayerResults() {
 		if qStrat, ok := bt.agents[i].GetBiddingStrategy().(*agent.QLearningBiddingStrategy); ok {
 			qStrat.OnGameEnd(pr)
-			qStrat.DecayEpsilon(0.15)
+			qStrat.DecayEpsilon(0.01) // Sweet spot for convergence
 		}
 	}
 }

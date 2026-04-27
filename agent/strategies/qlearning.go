@@ -126,16 +126,92 @@ func (es *ExplorationSchedule) Set(value float64) {
 	es.epsilon = value
 }
 
-// Hand state encoding functions
-
-// EncodeHandState converts (aces, tens, jacks, trumps, gamesPlayable) into a single integer key
-// State space: 5×5×5×11×7 = 9,625 possible states
-func EncodeHandState(aces, tens, jacks, trumps, gamesPlayable int) int {
-	return aces*1925 + tens*385 + jacks*77 + trumps*7 + gamesPlayable
+// EncodeGameAction encodes game mode + suit choice into a single integer
+// Grand: 0, Suit Clubs: 1, Suit Spades: 2, Suit Hearts: 3, Suit Diamonds: 4
+func EncodeGameAction(mode game.GameMode, suit game.Suit) int {
+	if mode == game.ModeGrand {
+		return 0
+	}
+	return int(suit) + 1 // Clubs=1, Spades=2, Hearts=3, Diamonds=4
 }
 
-// EvaluateHand returns a state encoding based on high-value card counts
-func EvaluateHand(hand []game.Card, currentBid int) int {
+// DecodeGameAction decodes an integer action into game mode and suit
+func DecodeGameAction(action int) (game.GameMode, game.Suit) {
+	if action == 0 {
+		return game.ModeGrand, game.Clubs // Suit doesn't matter for Grand
+	}
+	return game.ModeSuit, game.Suit(action - 1)
+}
+
+// StrategyMetrics tracks strategy performance metrics
+type StrategyMetrics struct {
+	enabled        bool
+	unseenStates   int // Count of states not in Q-table
+	totalDecisions int // Total number of decisions made
+}
+
+// Track records a decision and checks if the state was in the Q-table
+func (m *StrategyMetrics) Track(state int, qtable map[int]map[int]float64) {
+	if !m.enabled {
+		return
+	}
+	m.totalDecisions++
+	if _, exists := qtable[state]; !exists {
+		m.unseenStates++
+	}
+}
+
+// Get returns the current metrics
+func (m *StrategyMetrics) Get() (unseenStates, totalDecisions int) {
+	return m.unseenStates, m.totalDecisions
+}
+
+// Reset clears the metrics counters
+func (m *StrategyMetrics) Reset() {
+	m.unseenStates = 0
+	m.totalDecisions = 0
+}
+
+// Enable turns on metrics collection
+func (m *StrategyMetrics) Enable() {
+	m.enabled = true
+}
+
+// Disable turns off metrics collection
+func (m *StrategyMetrics) Disable() {
+	m.enabled = false
+}
+
+// QLearningBiddingStrategy uses Q-learning for bidding decisions
+type QLearningBiddingStrategy struct {
+	qTable            *QTable
+	epsilon           *ExplorationSchedule
+	heuristicFallback *HeuristicBiddingStrategy
+
+	// Track current episode for training
+	currentHandScore int
+	currentBid       int
+
+	// Metrics tracking (disabled by default)
+	metrics StrategyMetrics
+}
+
+// NewQLearningBiddingStrategy creates a new Q-learning bidding strategy
+func NewQLearningBiddingStrategy(epsilon float64) *QLearningBiddingStrategy {
+	return &QLearningBiddingStrategy{
+		qTable:            NewQTable(0.1, 0.9),
+		epsilon:           NewExplorationSchedule(epsilon, 0.01, 0.995),
+		heuristicFallback: &HeuristicBiddingStrategy{},
+	}
+}
+
+func (q *QLearningBiddingStrategy) GetName() string {
+	return "QLearningBidding"
+}
+
+// EncodeHand returns a state encoding for the given hand and current bid
+// State space: 5×5×5×11×12 = 16,500 states
+func (q *QLearningBiddingStrategy) EncodeHand(hand []game.Card, currentBid int) int {
 	aces := 0
 	tens := 0
 	jacks := 0
@@ -162,89 +238,42 @@ func EvaluateHand(hand []game.Card, currentBid int) int {
 		}
 	}
 
-	// Calculate how many games can be played at current bid level
+	// Calculate best game value (highest value we can declare)
 	cards := game.Cards(hand)
-	gamesPlayable := cards.CountGamesPlayable(currentBid)
+	bestGameValue := 0
 
-	return EncodeHandState(aces, tens, jacks, maxSuitCount, gamesPlayable)
-}
-
-// EvaluateHandWithSkat counts high cards INCLUDING skat (for game choice)
-func EvaluateHandWithSkat(hand []game.Card) int {
-	aces := 0
-	tens := 0
-	jacks := 0
-	suitCounts := make(map[game.Suit]int)
-
-	for _, card := range hand {
-		if card.Rank == game.Jack {
-			jacks++
-		}
-		if card.Rank == game.Ace {
-			aces++
-		}
-		if card.Rank == game.Ten {
-			tens++
-		}
-		suitCounts[card.Suit]++
+	// Check Grand
+	grandValue := cards.GameValue(game.ModeGrand, game.NoSuit)
+	if grandValue > bestGameValue {
+		bestGameValue = grandValue
 	}
 
-	maxSuitCount := 0
-	for _, count := range suitCounts {
-		if count > maxSuitCount {
-			maxSuitCount = count
+	// Check each suit
+	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+		suitValue := cards.GameValue(game.ModeSuit, suit)
+		if suitValue > bestGameValue {
+			bestGameValue = suitValue
 		}
 	}
 
-	// For game choice, we don't have a bid context, so use 0 for gamesPlayable
-	return EncodeHandState(aces, tens, jacks, maxSuitCount, 0)
-}
+	// Calculate safety margin (how much buffer we have above the current bid)
+	// Negative means we're overbidding, positive means we have room
+	safetyMargin := bestGameValue - currentBid
 
-// Game action encoding functions
-
-// EncodeGameAction encodes game mode + suit choice into a single integer
-// Grand: 0, Suit Clubs: 1, Suit Spades: 2, Suit Hearts: 3, Suit Diamonds: 4
-func EncodeGameAction(mode game.GameMode, suit game.Suit) int {
-	if mode == game.ModeGrand {
-		return 0
+	// Bucket safety margin into ranges: -60+ (0), -50 to -41 (1), ..., 50+ (11)
+	// This gives us 12 buckets centered around 0
+	safetyMarginBucket := (safetyMargin + 60) / 10
+	if safetyMarginBucket < 0 {
+		safetyMarginBucket = 0
+	} else if safetyMarginBucket > 11 {
+		safetyMarginBucket = 11
 	}
-	return int(suit) + 1 // Clubs=1, Spades=2, Hearts=3, Diamonds=4
-}
 
-// DecodeGameAction decodes an integer action into game mode and suit
-func DecodeGameAction(action int) (game.GameMode, game.Suit) {
-	if action == 0 {
-		return game.ModeGrand, game.Clubs // Suit doesn't matter for Grand
-	}
-	return game.ModeSuit, game.Suit(action - 1)
-}
-
-// QLearningBiddingStrategy uses Q-learning for bidding decisions
-type QLearningBiddingStrategy struct {
-	qTable            *QTable
-	epsilon           *ExplorationSchedule
-	heuristicFallback *HeuristicBiddingStrategy
-
-	// Track current episode for training
-	currentHandScore int
-	currentBid       int
-}
-
-// NewQLearningBiddingStrategy creates a new Q-learning bidding strategy
-func NewQLearningBiddingStrategy(epsilon float64) *QLearningBiddingStrategy {
-	return &QLearningBiddingStrategy{
-		qTable:            NewQTable(0.1, 0.9),
-		epsilon:           NewExplorationSchedule(epsilon, 0.01, 0.995),
-		heuristicFallback: &HeuristicBiddingStrategy{},
-	}
-}
-
-func (q *QLearningBiddingStrategy) GetName() string {
-	return "QLearningBidding"
+	return aces*3300 + tens*660 + jacks*132 + maxSuitCount*12 + safetyMarginBucket
 }
 
 func (q *QLearningBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Card, currentBid int) bool {
-	handScore := EvaluateHand(hand, currentBid)
+	handScore := q.EncodeHand(hand, currentBid)
 	q.currentHandScore = handScore
 
 	// Get next bid value
@@ -253,6 +282,9 @@ func (q *QLearningBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Car
 		q.currentBid = 0
 		return false
 	}
+
+	// Track metrics: check if this state exists in Q-table
+	q.metrics.Track(handScore, q.qTable.table)
 
 	qPass := q.qTable.Get(handScore, 0)
 	qAccept := q.qTable.Get(handScore, nextBid)
@@ -287,41 +319,58 @@ func (q *QLearningBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Car
 
 // Training methods
 
-// OnGameEnd updates Q-values based on game outcome
-func (q *QLearningBiddingStrategy) OnGameEnd(playerResult game.PlayerResultState) {
+// CalculateReward calculates the reward for a bidding decision based on game outcome
+func (q *QLearningBiddingStrategy) CalculateReward(playerResult game.PlayerResultState) float64 {
 	reward := 0.0
 
 	if playerResult.IsDeclarer {
 		if playerResult.IsWinner {
-			safetyMargin := float64(playerResult.PlayerPoints-61) / 60.0
-			reward = 1.0 + safetyMargin*0.5
-		} else {
-			if playerResult.PlayerPoints >= 55 {
-				reward = -0.3
-			} else if playerResult.PlayerPoints >= 45 {
-				reward = -0.6
+			// Reward based on game value won
+			if playerResult.PlayerPoints >= 60 {
+				reward = 1.5 // High value win
+			} else if playerResult.PlayerPoints >= 40 {
+				reward = 1.2 // Medium value win
 			} else {
-				reward = -1.0
+				reward = 1.0 // Low value win
 			}
-			// Extra penalty for overbidding badly
-			if q.currentBid > 30 && playerResult.PlayerPoints < 40 {
-				reward -= 0.5
+		} else {
+			// Penalty based on game value lost (negative PlayerPoints)
+			if playerResult.PlayerPoints >= -40 {
+				reward = -0.6 // Small loss
+			} else if playerResult.PlayerPoints >= -80 {
+				reward = -1.2 // Medium loss
+			} else {
+				reward = -2.0 // Big loss (overbid, doubled penalty)
+			}
+
+			// Extra penalty for high bids that fail (overbid indicator)
+			if q.currentBid > 40 && playerResult.PlayerPoints <= -80 {
+				reward -= 1.0 // Overbid with doubled penalty
 			}
 		}
 	} else {
 		if q.currentBid == 0 {
-			// Agent passed
+			// Agent passed - reward based on whether defenders won
+			// PlayerPoints is always 0 for defenders, so use IsWinner instead
 			if playerResult.IsWinner {
-				reward = -0.1 // Missed opportunity
+				// Defenders won, passing was correct
+				reward = 0.2
 			} else {
-				reward = 0.1 // Correctly passed
+				// Declarer won, might have missed opportunity to bid
+				reward = -0.1
 			}
 		} else {
-			// Lost bidding war
+			// Lost bidding war - small penalty
 			reward = -0.05
 		}
 	}
 
+	return reward
+}
+
+// OnGameEnd updates Q-values based on game outcome
+func (q *QLearningBiddingStrategy) OnGameEnd(playerResult game.PlayerResultState) {
+	reward := q.CalculateReward(playerResult)
 	q.qTable.Update(q.currentHandScore, q.currentBid, reward)
 }
 
@@ -358,6 +407,31 @@ func (q *QLearningBiddingStrategy) SetQTable(table map[int]map[int]float64) {
 	q.qTable.SetTable(table)
 }
 
+// ShareQTable shares the Q-table reference with another strategy
+func (q *QLearningBiddingStrategy) ShareQTable(other *QLearningBiddingStrategy) {
+	other.qTable = q.qTable
+}
+
+// GetMetrics returns metrics about unseen states
+func (q *QLearningBiddingStrategy) GetMetrics() (unseenStates, totalBids int) {
+	return q.metrics.Get()
+}
+
+// ResetMetrics resets the metrics counters
+func (q *QLearningBiddingStrategy) ResetMetrics() {
+	q.metrics.Reset()
+}
+
+// EnableMetrics turns on metrics collection
+func (q *QLearningBiddingStrategy) EnableMetrics() {
+	q.metrics.Enable()
+}
+
+// DisableMetrics turns off metrics collection
+func (q *QLearningBiddingStrategy) DisableMetrics() {
+	q.metrics.Disable()
+}
+
 // QLearningGameChoiceStrategy uses Q-learning for game choice
 type QLearningGameChoiceStrategy struct {
 	qTable            *QTable
@@ -368,6 +442,9 @@ type QLearningGameChoiceStrategy struct {
 	currentHandState  int
 	currentGameChoice int
 	currentBidValue   int
+
+	// Metrics tracking (disabled by default)
+	metrics StrategyMetrics
 }
 
 // NewQLearningGameChoiceStrategy creates a new Q-learning game choice strategy
@@ -383,8 +460,43 @@ func (q *QLearningGameChoiceStrategy) GetName() string {
 	return "QLearningGameChoice"
 }
 
+// EncodeHand returns a state encoding for the given hand (after picking up skat)
+// State space: 8×8×8×8×5×9 = 23,040 theoretical states
+// Practical: C(11,3) × 5 × 9 = 7,425 states
+func (q *QLearningGameChoiceStrategy) EncodeHand(hand []game.Card) int {
+	// Track suit lengths and total high cards
+	suitLengths := make(map[game.Suit]int)
+	jackCount := 0
+	totalHighCards := 0 // Count Aces + Tens across all suits
+
+	for _, card := range hand {
+		if card.Rank == game.Jack {
+			jackCount++
+		} else {
+			// Count non-jack cards in each suit
+			suitLengths[card.Suit]++
+			if card.Rank == game.Ace || card.Rank == game.Ten {
+				totalHighCards++
+			}
+		}
+	}
+
+	// Get length for each suit (0-7, since jacks are counted separately)
+	clubsLength := suitLengths[game.Clubs]
+	spadesLength := suitLengths[game.Spades]
+	heartsLength := suitLengths[game.Hearts]
+	diamondsLength := suitLengths[game.Diamonds]
+
+	// totalHighCards ranges from 0-8 (4 aces + 4 tens)
+	if totalHighCards > 8 {
+		totalHighCards = 8
+	}
+
+	return clubsLength*2880 + spadesLength*360 + heartsLength*45 + diamondsLength*5 + jackCount*9 + totalHighCards
+}
+
 func (q *QLearningGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int) (game.GameMode, game.Suit) {
-	handState := EvaluateHandWithSkat(hand)
+	handState := q.EncodeHand(hand)
 	q.currentHandState = handState
 	q.currentBidValue = bidValue
 
@@ -394,13 +506,13 @@ func (q *QLearningGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int)
 
 	// Check Grand (action 0)
 	if cards.GameValue(game.ModeGrand, game.NoSuit) >= bidValue {
-		validActions = append(validActions, 0)
+		validActions = append(validActions, EncodeGameAction(game.ModeGrand, game.NoSuit))
 	}
 
 	// Check each suit (actions 1-4)
 	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
 		if cards.GameValue(game.ModeSuit, suit) >= bidValue {
-			validActions = append(validActions, int(suit)+1)
+			validActions = append(validActions, EncodeGameAction(game.ModeSuit, suit))
 		}
 	}
 
@@ -414,6 +526,9 @@ func (q *QLearningGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int)
 	var mode game.GameMode
 	var suit game.Suit
 
+	// Track metrics: check if this state exists in Q-table
+	q.metrics.Track(handState, q.qTable.table)
+
 	if rand.Float64() < q.epsilon.Get() {
 		// Explore: choose random VALID game
 		action := validActions[rand.Intn(len(validActions))]
@@ -423,19 +538,25 @@ func (q *QLearningGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int)
 		// Exploit: choose best Q-value among VALID actions
 		bestAction := validActions[0]
 		bestQ := q.qTable.Get(handState, validActions[0])
+		allZero := true
 
-		for _, action := range validActions[1:] {
+		for _, action := range validActions {
 			qVal := q.qTable.Get(handState, action)
+			if qVal != 0.0 {
+				allZero = false
+			}
 			if qVal > bestQ {
 				bestQ = qVal
 				bestAction = action
 			}
 		}
 
-		// If all Q-values are zero (untrained), use heuristic
-		if bestQ == 0.0 {
-			mode, suit = q.heuristicFallback.ChooseGame(hand, bidValue)
-			q.currentGameChoice = EncodeGameAction(mode, suit)
+		// If all Q-values are zero (untrained), explore randomly instead of using heuristic
+		// This ensures we learn about all game types, not just Grand
+		if allZero {
+			action := validActions[rand.Intn(len(validActions))]
+			mode, suit = DecodeGameAction(action)
+			q.currentGameChoice = action
 		} else {
 			mode, suit = DecodeGameAction(bestAction)
 			q.currentGameChoice = bestAction
@@ -451,24 +572,38 @@ func (q *QLearningGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode g
 
 // Training methods
 
-// OnGameChoiceEnd updates Q-values for game choice based on outcome
-func (q *QLearningGameChoiceStrategy) OnGameChoiceEnd(playerResult game.PlayerResultState) {
+// CalculateReward calculates the reward for a game choice based on outcome
+func (q *QLearningGameChoiceStrategy) CalculateReward(playerResult game.PlayerResultState) float64 {
 	reward := 0.0
 
 	if playerResult.IsWinner {
-		// Reward proportional to how well we won
-		safetyMargin := float64(playerResult.PlayerPoints-61) / 60.0
-		reward = 1.0 + safetyMargin*0.3
-	} else {
-		// Penalty proportional to how badly we lost
-		if playerResult.PlayerPoints >= 55 {
-			reward = -0.4 // Close loss
-		} else if playerResult.PlayerPoints >= 45 {
-			reward = -0.7
+		// Reward proportional to game value won
+		// Higher value games (48, 60+) get bigger rewards
+		if playerResult.PlayerPoints >= 60 {
+			reward = 1.3 // High value win
+		} else if playerResult.PlayerPoints >= 40 {
+			reward = 1.1 // Medium value win
 		} else {
-			reward = -1.0 // Bad loss
+			reward = 1.0 // Low value win
+		}
+	} else {
+		// Penalty proportional to game value lost
+		// PlayerPoints is negative when losing (the penalty paid)
+		if playerResult.PlayerPoints >= -40 {
+			reward = -0.5 // Small loss
+		} else if playerResult.PlayerPoints >= -80 {
+			reward = -0.8 // Medium loss
+		} else {
+			reward = -1.2 // Big loss (overbid, doubled penalty)
 		}
 	}
+
+	return reward
+}
+
+// OnGameChoiceEnd updates Q-values for game choice based on outcome
+func (q *QLearningGameChoiceStrategy) OnGameChoiceEnd(playerResult game.PlayerResultState) {
+	reward := q.CalculateReward(playerResult)
 	q.qTable.Update(q.currentHandState, q.currentGameChoice, reward)
 }
 
@@ -503,4 +638,29 @@ func (q *QLearningGameChoiceStrategy) GetQTable() map[int]map[int]float64 {
 // SetQTable sets the underlying Q-table (for deserialization)
 func (q *QLearningGameChoiceStrategy) SetQTable(table map[int]map[int]float64) {
 	q.qTable.SetTable(table)
+}
+
+// GetMetrics returns metrics about unseen states
+func (q *QLearningGameChoiceStrategy) GetMetrics() (unseenStates, totalChoices int) {
+	return q.metrics.Get()
+}
+
+// ResetMetrics resets the metrics counters
+func (q *QLearningGameChoiceStrategy) ResetMetrics() {
+	q.metrics.Reset()
+}
+
+// EnableMetrics turns on metrics collection
+func (q *QLearningGameChoiceStrategy) EnableMetrics() {
+	q.metrics.Enable()
+}
+
+// DisableMetrics turns off metrics collection
+func (q *QLearningGameChoiceStrategy) DisableMetrics() {
+	q.metrics.Disable()
+}
+
+// ShareQTable shares the Q-table reference with another strategy
+func (q *QLearningGameChoiceStrategy) ShareQTable(other *QLearningGameChoiceStrategy) {
+	other.qTable = q.qTable
 }

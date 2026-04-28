@@ -1,5 +1,7 @@
 package game
 
+import "math/rand"
+
 // Suit represents a card suit
 type Suit int
 
@@ -62,6 +64,12 @@ func NewDeck() Cards {
 		}
 	}
 	return deck
+}
+
+func (c Cards) Shuffle() {
+	rand.Shuffle(len(c), func(i, j int) {
+		c[i], c[j] = c[j], c[i]
+	})
 }
 
 // GameValue calculates the game value for a hand given a mode and trump suit
@@ -156,4 +164,30 @@ func (c Cards) CountGamesPlayable(gameValue int) int {
 	}
 
 	return count
+}
+
+func (c Cards) GetRemainingCards() Cards {
+	allCards := Cards{}
+	suits := []Suit{Clubs, Spades, Hearts, Diamonds}
+	ranks := []Rank{Seven, Eight, Nine, Ten, Jack, Queen, King, Ace}
+
+	for _, suit := range suits {
+		for _, rank := range ranks {
+			allCards = append(allCards, Card{Suit: suit, Rank: rank})
+		}
+	}
+
+	handMap := make(map[Card]bool)
+	for _, card := range c {
+		handMap[card] = true
+	}
+
+	remaining := []Card{}
+	for _, card := range allCards {
+		if !handMap[card] {
+			remaining = append(remaining, card)
+		}
+	}
+
+	return remaining
 }

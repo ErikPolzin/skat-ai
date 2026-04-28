@@ -2,7 +2,6 @@ package game
 
 import (
 	"fmt"
-	"math/rand"
 	"skat/logger"
 	"time"
 
@@ -242,35 +241,22 @@ func (gs *GameState) Deal() (string, error) {
 	if gs.Phase != PhaseDealing {
 		return "", fmt.Errorf("not in dealing phase")
 	}
-
 	// Actually deal the cards
 	deck := NewDeck()
 	// Shuffle
-	rand.Shuffle(len(deck), func(i, j int) {
-		deck[i], deck[j] = deck[j], deck[i]
-	})
-
-	// Deal: 3-4-3 pattern to each player, then skat
-	idx := 0
-	for round := 0; round < 3; round++ {
-		for p := 0; p < 3; p++ {
-			count := 3
-			if round == 1 {
-				count = 4
-			}
-			for i := 0; i < count; i++ {
-				gs.Players[p].Hand = append(gs.Players[p].Hand, deck[idx])
-				idx++
-			}
-		}
-	}
+	deck.Shuffle()
+	gs.Players[0].Hand = make(Cards, 10)
+	gs.Players[1].Hand = make(Cards, 10)
+	gs.Players[2].Hand = make(Cards, 10)
+	copy(gs.Players[0].Hand, deck[0:10])
+	copy(gs.Players[1].Hand, deck[10:20])
+	copy(gs.Players[2].Hand, deck[20:30])
 	// Skat (2 cards)
 	gs.Skat[0] = deck[30]
 	gs.Skat[1] = deck[31]
-
 	// Move to bidding phase
 	gs.Phase = PhaseBidding
-	gs.CurrentPlayer = 2 // Speaker starts bidding
+	gs.CurrentPlayer = Speaker // Speaker starts bidding
 	gs.UpdateCurrentPlayerDeadline()
 	return "Dealt cards", nil
 }

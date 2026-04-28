@@ -340,6 +340,14 @@ func runEvaluation(testType string, games int) {
 		fmt.Println(strings.Repeat("=", 50))
 		testExampleGameChoiceHands(testAgent)
 	}
+
+	if strings.Contains(testDescription, "play") {
+		// Run game-play test with known winning games
+		fmt.Println("\n" + strings.Repeat("=", 50))
+		fmt.Println("EXAMPLE GAME PLAY RESULTS")
+		fmt.Println(strings.Repeat("=", 50))
+		runGamePlayTest(testAgent)
+	}
 }
 
 func testExampleBiddingHands(testAgent *agent.SkatAgent) {
@@ -791,4 +799,112 @@ func createCombinedAgent() *agent.SkatAgent {
 		qGameChoice,
 		&agent.HeuristicCardPlayStrategy{},
 	)
+}
+
+// runGamePlayTest tests that agents win known games with correct suit choices
+func runGamePlayTest(testAgent *agent.SkatAgent) {
+	testHands := []struct {
+		name        string
+		handStr     string
+		bestMode    game.GameMode
+		bestSuit    game.Suit
+		description string
+	}{
+		{
+			name:        "Strong Clubs Hand",
+			handStr:     "J.♣-A.♣-10.♣-K.♣-Q.♣-9.♣-8.♣-A.♠-10.♥-K.♦",
+			bestMode:    game.ModeSuit,
+			bestSuit:    game.Clubs,
+			description: "7 Clubs trumps - should win with Clubs, lose with others",
+		},
+		{
+			name:        "Strong Diamonds Hand",
+			handStr:     "J.♣-J.♠-A.♦-10.♦-K.♦-Q.♦-9.♦-8.♦-A.♥-10.♠",
+			bestMode:    game.ModeSuit,
+			bestSuit:    game.Diamonds,
+			description: "8 Diamonds trumps - should win with Diamonds, lose with others",
+		},
+		{
+			name:        "Strong Grand Hand",
+			handStr:     "J.♣-J.♠-J.♥-J.♦-A.♠-A.♥-A.♦-10.♣-10.♠-10.♥",
+			bestMode:    game.ModeGrand,
+			bestSuit:    game.Clubs, // Doesn't matter for Grand
+			description: "All 4 Jacks + 3 Aces - ideal for Grand",
+		},
+		{
+			name:        "Medium Hearts Hand",
+			handStr:     "J.♣-J.♠-A.♥-10.♥-K.♥-A.♦-K.♠-Q.♠-9.♣-8.♦",
+			bestMode:    game.ModeSuit,
+			bestSuit:    game.Hearts,
+			description: "2 Jacks + 3 Hearts with A+10 - 5 trumps for Hearts, should win Hearts but struggle with Grand/others",
+		},
+	}
+
+	numGames := 100
+
+	for _, testHand := range testHands {
+		hand, err := game.ParseCards(testHand.handStr)
+		if err != nil {
+			fmt.Printf("Error parsing hand: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("\n%s: %s\n", testHand.name, testHand.handStr)
+		fmt.Printf("%s\n", testHand.description)
+		fmt.Println()
+
+		// Test Grand
+		wins, totalPoints, gamesPlayed := playGamesWithMode(testAgent, hand, game.ModeGrand, game.Clubs, numGames)
+		winRate := float64(wins) / float64(gamesPlayed) * 100
+		avgPoints := float64(totalPoints) / float64(gamesPlayed)
+
+		marker := " "
+		if testHand.bestMode == game.ModeGrand {
+			marker = "✓"
+		}
+		fmt.Printf("  %s Grand   : %3d wins (%.0f%%), avg %+.1f points (%d games)\n", marker, wins, winRate, avgPoints, gamesPlayed)
+
+		// Test all suits
+		suits := []game.Suit{game.Clubs, game.Spades, game.Hearts, game.Diamonds}
+		for _, suit := range suits {
+			wins, totalPoints, gamesPlayed := playGamesWithMode(testAgent, hand, game.ModeSuit, suit, numGames)
+			winRate := float64(wins) / float64(gamesPlayed) * 100
+			avgPoints := float64(totalPoints) / float64(gamesPlayed)
+
+			marker := " "
+			if testHand.bestMode == game.ModeSuit && suit == testHand.bestSuit {
+				marker = "✓"
+			}
+
+			fmt.Printf("  %s %-8s: %3d wins (%.0f%%), avg %+.1f points\n",
+				marker, suit.String(), wins, winRate, avgPoints)
+		}
+	}
+}
+
+func playGamesWithMode(testAgent *agent.SkatAgent, declarerHand game.Cards, mode game.GameMode, trumpSuit game.Suit, numGames int) (wins, totalPoints, gamesPlayed int) {
+	agent1 := agent.NewHeuristicAgent("Player 2")
+	agent2 := agent.NewHeuristicAgent("Player 3")
+
+	for i := 0; i < numGames; i++ {
+		g := game.NewGame()
+		g = g.WithTestPlayers()
+		g = g.WithPlayerHand(game.Speaker, declarerHand)
+		g = g.WithDeclarer(game.Speaker, 0)
+		g = g.WithSkatPickedUp(false)
+		g = g.WithGame(mode, trumpSuit)
+
+		training.PlayGameToCompletion(g, [3]*agent.SkatAgent{testAgent, agent1, agent2})
+
+		if g.Phase == game.PhaseComplete {
+			gamesPlayed++
+			result := g.Result()
+			totalPoints += result.Value
+			if result.DeclarerWon {
+				wins++
+			}
+		}
+	}
+
+	return
 }

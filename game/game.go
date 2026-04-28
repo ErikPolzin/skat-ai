@@ -190,7 +190,7 @@ func (gs *GameState) PlayerCount() int {
 }
 
 // GetValidMoves returns all legal moves for the current player
-func (gs *GameState) GetValidMoves() []Card {
+func (gs *GameState) GetValidMoves() Cards {
 	if gs.Phase != PhasePlaying {
 		return nil
 	}
@@ -198,14 +198,14 @@ func (gs *GameState) GetValidMoves() []Card {
 	player := gs.Players[gs.CurrentPlayer]
 	if len(gs.Trick) == 0 {
 		// Lead player can play any card
-		return append([]Card{}, player.Hand...)
+		return append(Cards{}, player.Hand...)
 	}
 
 	// Must follow suit if possible
 	leadCard := gs.Trick[0]
 	leadSuit := gs.effectiveSuit(leadCard)
 
-	var valid []Card
+	var valid Cards
 	for _, card := range player.Hand {
 		if gs.effectiveSuit(card) == leadSuit {
 			valid = append(valid, card)
@@ -214,7 +214,7 @@ func (gs *GameState) GetValidMoves() []Card {
 
 	// If can't follow suit, can play anything
 	if len(valid) == 0 {
-		return append([]Card{}, player.Hand...)
+		return append(Cards{}, player.Hand...)
 	}
 	return valid
 }

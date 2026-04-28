@@ -9,33 +9,12 @@ import (
 	"sync/atomic"
 )
 
-// initializeGameWithDeal creates a new game state and deals cards
-func initializeGameWithDeal() *game.GameState {
-	g := game.NewGame()
-
-	// Initialize players for training
-	for i := 0; i < 3; i++ {
-		g.Players[i] = &game.PlayerState{
-			ID:      fmt.Sprintf("player-%d", i),
-			Name:    fmt.Sprintf("Player %d", i),
-			Hand:    []game.Card{},
-			IsAgent: true,
-		}
-	}
-
-	// Set phase to dealing so Deal() works
-	g.Phase = game.PhaseDealing
-
-	if _, err := g.Deal(); err != nil {
-		panic(fmt.Sprintf("Deal error: %v", err))
-	}
-	return g
-}
-
 // PlayFullGame plays a complete game from deal to finish using the provided agents
 // Returns the declarer position and player points
 func PlayFullGame(agent1, agent2, agent3 *agent.SkatAgent) *game.GameState {
-	g := initializeGameWithDeal()
+	g := game.NewGame()
+	g = g.WithTestPlayers()
+	g = g.WithCardsDealt()
 	PlayGameToCompletion(g, [3]*agent.SkatAgent{agent1, agent2, agent3})
 	return g
 }
@@ -46,17 +25,29 @@ func PlayGameToCompletion(g *game.GameState, agents [3]*agent.SkatAgent) {
 	for g.Phase == game.PhaseBidding {
 		currentAgent := agents[g.CurrentPlayer]
 		accept := currentAgent.Bid(g)
-		g.Bid(accept)
+		_, err := g.Bid(accept)
+		if err != nil {
+			panic(fmt.Sprintf("Bid error: %v", err))
+		}
 	}
 
 	// Skat exchange and game choice
 	if g.Phase == game.PhaseSkatExchange && g.Declarer != nil {
 		declarerAgent := agents[*g.Declarer]
-		g.SkatDecision(true)
+		_, err := g.SkatDecision(true)
+		if err != nil {
+			panic(fmt.Sprintf("SkatDecision error: %v", err))
+		}
 		mode, trumpSuit := declarerAgent.ChooseGame(g)
 		card1, card2 := declarerAgent.ChooseSkatDiscard(g.Players[*g.Declarer].Hand, mode, trumpSuit)
-		g.Discard(card1, card2)
-		g.DeclareGame(mode, trumpSuit, false, false) // No announcements in training
+		_, err = g.Discard(card1, card2)
+		if err != nil {
+			panic(fmt.Sprintf("Discard error: %v", err))
+		}
+		_, err = g.DeclareGame(mode, trumpSuit, false, false) // No announcements in training
+		if err != nil {
+			panic(fmt.Sprintf("DeclareGame error: %v", err))
+		}
 	}
 
 	// Playing phase
@@ -76,6 +67,10 @@ func PlayGameToCompletion(g *game.GameState, agents [3]*agent.SkatAgent) {
 				panic(fmt.Sprintf("ResolveTrick error: %v", err))
 			}
 		}
+	}
+
+	if g.Phase != game.PhaseComplete {
+		panic(fmt.Sprintf("Tried to play game to completion but phase is: %s", g.Phase))
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"sync"
 
 	"skat/agent/strategies/encoding"
@@ -153,6 +154,8 @@ func (s *DeepQLearningCardPlayStrategy) SelectMove(gs *game.GameState, validMove
 	if err := net.vm.RunAll(); err != nil {
 		// Ensure VM is reset even on error for next inference
 		net.vm.Reset()
+		// Log warning - this shouldn't happen during normal operation
+		fmt.Fprintf(os.Stderr, "WARNING: DQN inference error: %v (falling back to first valid move)\n", err)
 		// Fallback to first valid move on error
 		return validMoves[0]
 	}
@@ -179,6 +182,12 @@ func (s *DeepQLearningCardPlayStrategy) SelectMove(gs *game.GameState, validMove
 // SetExploration sets epsilon for exploration
 func (s *DeepQLearningCardPlayStrategy) SetExploration(epsilon float32) {
 	s.epsilon = epsilon
+}
+
+// UpdateWeights replaces the network weights with new ones
+func (s *DeepQLearningCardPlayStrategy) UpdateWeights(declarerWeights, defenderWeights CardPlayNetworkWeights) {
+	s.declarerNet = createNetworkInstance(declarerWeights)
+	s.defenderNet = createNetworkInstance(defenderWeights)
 }
 
 // Clone creates a copy of the strategy

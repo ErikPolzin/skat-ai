@@ -106,7 +106,7 @@ func TestFullGameExperienceCollection(t *testing.T) {
 		initialDeclSize, initialDefSize := trainer.GetBufferSizes()
 
 		// Play one game
-		playGameAndCollectExperiences(agents, trainer)
+		playGameAndCollectExperiences(agents, trainer, 0)
 
 		finalDeclSize, finalDefSize := trainer.GetBufferSizes()
 

@@ -22,28 +22,27 @@ import (
 // Key aspects of the training approach:
 //
 // 1. Separate Networks for Declarer and Defender:
-//    - Declarer network: learns to maximize declarer's score (needs 61+ points to win)
-//    - Defender network: learns to prevent declarer from reaching 61 points
-//    - Each player uses the appropriate network based on their role
+//   - Declarer network: learns to maximize declarer's score (needs 61+ points to win)
+//   - Defender network: learns to prevent declarer from reaching 61 points
+//   - Each player uses the appropriate network based on their role
 //
 // 2. Self-Play Dynamics:
-//    - All 3 players use DQN agents with the same networks
-//    - Declarer uses the declarer network, both defenders use the defender network
-//    - Networks are synced every N episodes to incorporate latest learning
-//    - Epsilon-greedy exploration ensures diverse experiences
+//   - All 3 players use DQN agents with the same networks
+//   - Declarer uses the declarer network, both defenders use the defender network
+//   - Networks are synced every N episodes to incorporate latest learning
+//   - Epsilon-greedy exploration ensures diverse experiences
 //
 // 3. Experience Collection:
-//    - All 3 players' experiences are collected from every game
-//    - Rewards are assigned based on trick outcomes (positive if your team won)
-//    - Terminal rewards based on game outcome (declarer wins if score >= 61)
-//    - Separate replay buffers for declarer and defender experiences
+//   - All 3 players' experiences are collected from every game
+//   - Rewards are assigned based on trick outcomes (positive if your team won)
+//   - Terminal rewards based on game outcome (declarer wins if score >= 61)
+//   - Separate replay buffers for declarer and defender experiences
 //
 // 4. Why This Works for Skat:
-//    - Asymmetric game: declarer plays alone vs 2 defenders
-//    - Self-play provides balanced training data for both roles
-//    - Networks improve together: better defenders -> harder games for declarer -> better declarer
-//    - Converges to Nash equilibrium where neither side can improve unilaterally
-//
+//   - Asymmetric game: declarer plays alone vs 2 defenders
+//   - Self-play provides balanced training data for both roles
+//   - Networks improve together: better defenders -> harder games for declarer -> better declarer
+//   - Converges to Nash equilibrium where neither side can improve unilaterally
 func main() {
 	// Parse flags
 	episodes := flag.Int("episodes", 100000, "Number of training episodes")
@@ -81,7 +80,7 @@ func main() {
 	fmt.Printf("  Gamma: %.3f\n", *gamma)
 	fmt.Printf("  Learning Rate: %.5f\n", *lr)
 	fmt.Printf("  L2 Regularization: %.5f\n", *l2Reg)
-	fmt.Printf("  Epsilon: %.2f -> %.2f (decay: %.4f)\n", *epsilonStart, *epsilonEnd, *epsilonDecay)
+	fmt.Printf("  Epsilon: %.2f -> %.2f (decay: %.6f)\n", *epsilonStart, *epsilonEnd, *epsilonDecay)
 	fmt.Printf("  Training Steps: %d per episode\n", *trainSteps)
 	fmt.Printf("  Evaluation: every %d episodes\n", *evalEvery)
 	fmt.Printf("  Save: every %d episodes\n", *saveEvery)
@@ -102,6 +101,8 @@ func main() {
 	}
 
 	trainer.SetEpsilon(float32(*epsilonStart))
+	trainer.SetEpsilonDecay(float32(*epsilonDecay))
+	trainer.SetEpsilonMin(float32(*epsilonEnd))
 
 	// Training loop
 	fmt.Println("Starting self-play training...")
@@ -114,41 +115,59 @@ func main() {
 	// - Sweet spot: 10-100 episodes depending on learning rate
 	syncEvery := 10
 
-	// Create initial DQN agents with random weights
-	var dqnAgents [3]*agent.SkatAgent
-	updateDQNAgents := func() {
+	// Create DQN strategy with initial random weights
+	declWeights, defWeights := trainer.GetOnlineWeights()
+	dqnStrategy := strategies.NewDeepQLearningCardPlayStrategyFromWeightMaps(declWeights, defWeights)
+	dqnStrategy.SetExploration(trainer.GetEpsilon())
+
+	// Use heuristics for bidding and game choice (not training these yet)
+	weightedBidding := strategies.NewWeightedHeuristicBiddingStrategy()
+	weightedBidding.SetBiddingThreshold(0.65)
+
+	// Create single DQN agent (reuse same instance to preserve metrics)
+	dqnAgent := agent.NewAgentWithStrategies(
+		"DQN",
+		weightedBidding,                      // Heuristic bidding
+		&agent.HeuristicGameChoiceStrategy{}, // Heuristic game choice
+		dqnStrategy,                          // DQN card play
+	)
+	dqnAgent.EnableMetrics()
+
+	// Function to update the DQN strategy with latest weights
+	updateDQNWeights := func() {
 		// Get current weights from the online networks
 		declWeights, defWeights := trainer.GetOnlineWeights()
 
-		// Create a shared strategy with current weights
-		// All 3 agents share the same strategy instance (same networks)
-		dqnStrategy := strategies.NewDeepQLearningCardPlayStrategyFromWeightMaps(declWeights, defWeights)
+		// Update the strategy's weights
+		dqnStrategy.UpdateWeights(declWeights, defWeights)
 		dqnStrategy.SetExploration(trainer.GetEpsilon())
-
-		// Use heuristics for bidding and game choice (not training these yet)
-		weightedBidding := strategies.NewWeightedHeuristicBiddingStrategy()
-		weightedBidding.SetBiddingThreshold(0.65)
-
-		for i := 0; i < 3; i++ {
-			dqnAgents[i] = agent.NewAgentWithStrategies(
-				fmt.Sprintf("DQN-%d", i),
-				weightedBidding,                      // Heuristic bidding
-				&agent.HeuristicGameChoiceStrategy{}, // Heuristic game choice
-				dqnStrategy,                          // DQN card play (shared)
-			)
-		}
 	}
-	updateDQNAgents() // Initialize with random weights
+
+	// Create heuristic agents for mixed training
+	heuristicAgents := [3]*agent.SkatAgent{
+		agent.NewHeuristicAgent("Heuristic-0"),
+		agent.NewHeuristicAgent("Heuristic-1"),
+		agent.NewHeuristicAgent("Heuristic-2"),
+	}
 
 	for episode := 1; episode <= *episodes; episode++ {
 		// Periodically sync agents with latest network weights
-		// This ensures agents play against the latest version of themselves
+		// This ensures agents play with the latest trained version
 		if episode%syncEvery == 0 {
-			updateDQNAgents()
+			updateDQNWeights()
 		}
 
-		// Play a self-play game and collect experiences from ALL players
-		playGameAndCollectExperiences(dqnAgents, trainer)
+		// 100% vs heuristic (no self-play)
+		// DQN plays against heuristics to learn from strong opponents
+		// Rotate DQN position to ensure it plays as both declarer and defender
+		var gameAgents [3]*agent.SkatAgent
+		dqnPos := episode % 3
+		gameAgents[dqnPos] = dqnAgent
+		gameAgents[(dqnPos+1)%3] = heuristicAgents[(dqnPos+1)%3]
+		gameAgents[(dqnPos+2)%3] = heuristicAgents[(dqnPos+2)%3]
+
+		// Play game and collect experiences from DQN agent only
+		playGameAndCollectExperiences(gameAgents, trainer, dqnPos)
 
 		// Perform training steps if we have enough data
 		for step := 0; step < *trainSteps; step++ {
@@ -167,8 +186,29 @@ func main() {
 		// Show progress every 10 episodes
 		if episode%10 == 0 {
 			declBufSize, defBufSize := trainer.GetBufferSizes()
-			fmt.Printf("  [Ep %4d/%d] Eps=%.3f Buf=(%d,%d)\n",
-				episode, *episodes, trainer.GetEpsilon(), declBufSize, defBufSize)
+
+			// Get metrics from single DQN agent
+			metrics := dqnAgent.GetMetrics()
+
+			// Calculate declarer win rate
+			declWinRate := 0.0
+			if metrics.Games > 0 {
+				declWinRate = float64(metrics.Wins) / float64(metrics.Games) * 100
+			}
+
+			// Calculate defender win rate
+			defWinRate := 0.0
+			if metrics.DefenderGames > 0 {
+				defWinRate = float64(metrics.DefenderWins) / float64(metrics.DefenderGames) * 100
+			}
+
+			fmt.Printf("  [Ep %4d/%d] Eps=%.3f Buf=(%d,%d) Decl=%.1f%% (%d/%d) Def=%.1f%% (%d/%d)\n",
+				episode, *episodes, trainer.GetEpsilon(), declBufSize, defBufSize,
+				declWinRate, metrics.Wins, metrics.Games,
+				defWinRate, metrics.DefenderWins, metrics.DefenderGames)
+
+			// Reset metrics for next window
+			dqnAgent.ResetMetrics()
 		}
 
 		// Evaluate periodically
@@ -284,7 +324,7 @@ type GameExperience struct {
 }
 
 // playGameAndCollectExperiences plays a self-play game and collects DQN experiences from all players
-func playGameAndCollectExperiences(agents [3]*agent.SkatAgent, trainer *dqn.DQNCardPlayTrainer) {
+func playGameAndCollectExperiences(agents [3]*agent.SkatAgent, trainer *dqn.DQNCardPlayTrainer, dqnPos int) {
 	// Create and play game
 	g := game.NewGame()
 	g = g.WithTestPlayers()
@@ -321,8 +361,8 @@ func playGameAndCollectExperiences(agents [3]*agent.SkatAgent, trainer *dqn.DQNC
 	}
 
 	// Card play phase - collect experiences for ALL players
-	var trickExperiences [3]*GameExperience      // Pending experiences for current trick
-	var previousTrickExps [3]*GameExperience     // Previous trick's experiences (need NextState filled)
+	var trickExperiences [3]*GameExperience  // Pending experiences for current trick
+	var previousTrickExps [3]*GameExperience // Previous trick's experiences (need NextState filled)
 
 	for g.Phase == game.PhasePlaying {
 		validMoves := g.GetValidMoves()
@@ -390,18 +430,8 @@ func playGameAndCollectExperiences(agents [3]*agent.SkatAgent, trainer *dqn.DQNC
 						// Game ended - mark as terminal
 						trickExperiences[i].Experience.Done = true
 
-						// Terminal reward: simple win/loss bonus added to final trick reward
-						// This preserves the importance of point collection (via trick rewards)
-						// while giving a clear signal about the game outcome
-						declarerWon := g.DeclarerScore >= 61
-						terminalBonus := float32(-3.0)
-						if (playerIsDeclarer && declarerWon) || (!playerIsDeclarer && !declarerWon) {
-							terminalBonus = 3.0
-						}
-
-						// Add terminal bonus to trick reward for final trick
-						// Final trick gets: trick_reward (±0.5) + terminal_bonus (±3.0)
-						trickExperiences[i].Experience.Reward += terminalBonus
+						// No terminal bonus - maximizing trick rewards naturally maximizes game wins
+						// The agent should learn that collecting points in tricks leads to winning games
 
 						// Store complete terminal experience immediately
 						trainer.StoreExperience(trickExperiences[i].Experience, trickExperiences[i].IsDeclarer)
@@ -414,6 +444,14 @@ func playGameAndCollectExperiences(agents [3]*agent.SkatAgent, trainer *dqn.DQNC
 
 			// Clear trick experiences for next trick
 			trickExperiences = [3]*GameExperience{}
+		}
+	}
+
+	// Record game results for DQN agent only (for metrics tracking)
+	if g.Phase == game.PhaseComplete && g.Declarer != nil {
+		playerResults := g.PlayerResults()
+		if playerResults != nil {
+			agents[dqnPos].RecordGameResult(g, playerResults[dqnPos])
 		}
 	}
 }
@@ -443,7 +481,7 @@ func computeTrickReward(scoresBefore, scoresAfter [2]int) map[bool]float32 {
 		rewards[false] = -scaled // Defenders get negative reward
 	} else {
 		rewards[true] = -scaled // Declarer gets negative reward
-		rewards[false] = scaled  // Defenders get positive reward
+		rewards[false] = scaled // Defenders get positive reward
 	}
 
 	return rewards

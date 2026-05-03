@@ -208,20 +208,43 @@ func NewRandomAgent(name string) *SkatAgent {
 	}
 }
 
+// HybridAgentConfig holds configuration for creating hybrid agents
+type HybridAgentConfig struct {
+	BiddingType      string
+	BiddingThreshold float64                 // For weighted heuristic bidding
+	BiddingQTable    map[int]map[int]float64 // For Q-learning bidding
+
+	GameChoiceType   string
+	GameChoiceQTable map[int]map[int]float64 // For Q-learning game choice
+
+	CardPlayType    string
+	MCTSSimulations int    // For MCTS card play
+	DQNDeclarerPath string // For DQN card play
+	DQNDefenderPath string // For DQN card play
+}
+
 // NewHybridAgent creates an agent with mixed strategies (for experimentation)
-func NewHybridAgent(name string, biddingType, gameChoiceType, cardPlayType string, simulations int) *SkatAgent {
+func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	agent := &SkatAgent{name: name}
 
 	// Configure bidding strategy
-	switch biddingType {
+	switch config.BiddingType {
 	case "heuristic":
 		agent.biddingStrategy = &HeuristicBiddingStrategy{}
 	case "weighted":
 		weighted := strategies.NewWeightedHeuristicBiddingStrategy()
-		weighted.SetBiddingThreshold(0.65)
+		threshold := config.BiddingThreshold
+		if threshold == 0 {
+			threshold = 0.65 // Default threshold
+		}
+		weighted.SetBiddingThreshold(threshold)
 		agent.biddingStrategy = weighted
 	case "qlearning":
-		agent.biddingStrategy = NewQLearningBiddingStrategy(0.15)
+		ql := NewQLearningBiddingStrategy(0.0) // No exploration for evaluation
+		if config.BiddingQTable != nil {
+			ql.SetQTable(config.BiddingQTable)
+		}
+		agent.biddingStrategy = ql
 	case "random":
 		agent.biddingStrategy = &RandomBiddingStrategy{}
 	default:
@@ -232,11 +255,15 @@ func NewHybridAgent(name string, biddingType, gameChoiceType, cardPlayType strin
 	}
 
 	// Configure game choice strategy
-	switch gameChoiceType {
+	switch config.GameChoiceType {
 	case "heuristic":
 		agent.gameChoiceStrategy = &HeuristicGameChoiceStrategy{}
 	case "qlearning":
-		agent.gameChoiceStrategy = NewQLearningGameChoiceStrategy(0.15)
+		ql := NewQLearningGameChoiceStrategy(0.0) // No exploration for evaluation
+		if config.GameChoiceQTable != nil {
+			ql.SetQTable(config.GameChoiceQTable)
+		}
+		agent.gameChoiceStrategy = ql
 	case "random":
 		agent.gameChoiceStrategy = &RandomGameChoiceStrategy{}
 	default:
@@ -244,18 +271,32 @@ func NewHybridAgent(name string, biddingType, gameChoiceType, cardPlayType strin
 	}
 
 	// Configure card play strategy
-	switch cardPlayType {
+	switch config.CardPlayType {
 	case "heuristic":
 		agent.cardPlayStrategy = NewHeuristicCardPlayStrategy()
 	case "mcts":
+		simulations := config.MCTSSimulations
+		if simulations == 0 {
+			simulations = 500 // Default simulations
+		}
 		agent.cardPlayStrategy = NewMCTSCardPlayStrategyWithParams(simulations, 1.41, 10)
+	case "dqn":
+		if config.DQNDeclarerPath == "" || config.DQNDefenderPath == "" {
+			return nil, fmt.Errorf("DQN card play requires both declarer and defender weight paths")
+		}
+		dqn, err := strategies.NewDeepQLearningCardPlayStrategyFromWeights(config.DQNDeclarerPath, config.DQNDefenderPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load DQN weights: %w", err)
+		}
+		dqn.SetExploration(0.0) // No exploration for evaluation
+		agent.cardPlayStrategy = dqn
 	case "random":
 		agent.cardPlayStrategy = &RandomCardPlayStrategy{}
 	default:
 		agent.cardPlayStrategy = NewHeuristicCardPlayStrategy()
 	}
 
-	return agent
+	return agent, nil
 }
 
 // Utility methods

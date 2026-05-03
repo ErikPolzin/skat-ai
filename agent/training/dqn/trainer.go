@@ -593,6 +593,14 @@ func (t *DQNCardPlayTrainer) SetEpsilon(eps float32) {
 	t.epsilon = eps
 }
 
+func (t *DQNCardPlayTrainer) SetEpsilonDecay(decay float32) {
+	t.epsilonDecay = decay
+}
+
+func (t *DQNCardPlayTrainer) SetEpsilonMin(min float32) {
+	t.epsilonMin = min
+}
+
 // GetBufferSizes returns sizes of declarer and defender buffers
 func (t *DQNCardPlayTrainer) GetBufferSizes() (int, int) {
 	return t.declarerBuffer.Size(), t.defenderBuffer.Size()

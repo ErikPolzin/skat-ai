@@ -1,4 +1,5 @@
 .claude/
+.data/
 bin/
 *.gob
 .env

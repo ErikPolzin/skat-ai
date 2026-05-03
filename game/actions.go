@@ -162,7 +162,10 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 				// Phase 1: Speaker is bidding against Listener
 				// Speaker names a value (either first bid or raise after Listener held)
 				gs.BidValue = gs.getNextBidValue()
-				// Turn passes to Listener to respond
+				if gs.BidValue == 0 {
+					// No higher bid available - force pass
+					gs.SpeakerPassed = true
+				}
 				gs.CurrentPlayer = Listener
 			} else {
 				// Phase 2: Speaker responds to Dealer by holding
@@ -182,6 +185,10 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		case Dealer:
 			// Phase 2: Dealer bids (names a value) against the Phase 1 winner
 			gs.BidValue = gs.getNextBidValue()
+			if gs.BidValue == 0 {
+				// No higher bid available - force pass
+				gs.DealerPassed = true
+			}
 			// Turn passes to Phase 1 winner to respond (hold or pass)
 			if !gs.ListenerPassed {
 				gs.CurrentPlayer = Listener

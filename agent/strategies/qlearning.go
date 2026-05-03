@@ -44,15 +44,39 @@ func (qt *QTable) Set(state, action int, value float64) {
 	qt.table[state][action] = value
 }
 
-// Update applies Q-learning update rule
-func (qt *QTable) Update(state, action int, reward float64) {
+// Update applies Q-learning update rule with temporal difference
+func (qt *QTable) Update(state, action int, reward float64, nextState int, validNextActions []int) {
 	qt.mu.Lock()
 	defer qt.mu.Unlock()
 	if qt.table[state] == nil {
 		qt.table[state] = make(map[int]float64)
 	}
+
+	// Find max Q-value for next state
+	maxNextQ := 0.0
+	if len(validNextActions) > 0 {
+		maxNextQ = qt.getMaxQLocked(nextState, validNextActions)
+	}
+
+	// Q-learning update: Q(s,a) = Q(s,a) + α[r + γ*max(Q(s',a')) - Q(s,a)]
 	oldQ := qt.table[state][action]
-	qt.table[state][action] = oldQ + qt.alpha*(reward-oldQ)
+	target := reward + qt.gamma*maxNextQ
+	qt.table[state][action] = oldQ + qt.alpha*(target-oldQ)
+}
+
+// getMaxQLocked returns the maximum Q-value for given state and valid actions (caller must hold lock)
+func (qt *QTable) getMaxQLocked(state int, validActions []int) float64 {
+	if qt.table[state] == nil || len(validActions) == 0 {
+		return 0.0
+	}
+
+	maxQ := qt.table[state][validActions[0]]
+	for _, action := range validActions[1:] {
+		if q := qt.table[state][action]; q > maxQ {
+			maxQ = q
+		}
+	}
+	return maxQ
 }
 
 // Size returns the total number of state-action pairs learned
@@ -189,9 +213,17 @@ type QLearningBiddingStrategy struct {
 	epsilon           *ExplorationSchedule
 	heuristicFallback *HeuristicBiddingStrategy
 
-	// Track current episode for training
+	// Track current episode for training (per-goroutine, protected by mutex)
+	mu               sync.Mutex
 	currentHandScore int
 	currentBid       int
+	currentHand      []game.Card
+
+	// Store all state-action pairs from the bidding phase
+	biddingHistory []struct {
+		state  int
+		action int
+	}
 
 	// Metrics tracking (disabled by default)
 	metrics StrategyMetrics
@@ -201,7 +233,7 @@ type QLearningBiddingStrategy struct {
 func NewQLearningBiddingStrategy(epsilon float64) *QLearningBiddingStrategy {
 	return &QLearningBiddingStrategy{
 		qTable:            NewQTable(0.1, 0.9),
-		epsilon:           NewExplorationSchedule(epsilon, 0.01, 0.995),
+		epsilon:           NewExplorationSchedule(epsilon, 0.01, 0.99999994),
 		heuristicFallback: &HeuristicBiddingStrategy{},
 	}
 }
@@ -275,12 +307,23 @@ func (q *QLearningBiddingStrategy) EncodeHand(hand []game.Card, currentBid int) 
 
 func (q *QLearningBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Card, currentBid int) bool {
 	handScore := q.EncodeHand(hand, currentBid)
+
+	q.mu.Lock()
 	q.currentHandScore = handScore
+	q.currentHand = hand
+	q.mu.Unlock()
 
 	// Get next bid value
 	nextBid := gs.GetNextBidValue()
 	if nextBid == 0 {
+		q.mu.Lock()
 		q.currentBid = 0
+		// Store the final "pass" decision
+		q.biddingHistory = append(q.biddingHistory, struct {
+			state  int
+			action int
+		}{handScore, 0})
+		q.mu.Unlock()
 		return false
 	}
 
@@ -309,11 +352,19 @@ func (q *QLearningBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Car
 		}
 	}
 
+	q.mu.Lock()
 	if accept {
 		q.currentBid = nextBid
 	} else {
 		q.currentBid = 0
 	}
+
+	// Store this state-action pair in the history
+	q.biddingHistory = append(q.biddingHistory, struct {
+		state  int
+		action int
+	}{handScore, q.currentBid})
+	q.mu.Unlock()
 
 	return accept
 }
@@ -321,32 +372,48 @@ func (q *QLearningBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Car
 // Training methods
 
 // CalculateReward calculates the reward for a bidding decision based on game outcome
-func (q *QLearningBiddingStrategy) CalculateReward(playerResult game.PlayerResultState) float64 {
+func (q *QLearningBiddingStrategy) CalculateReward(playerResult game.PlayerResultState, actualGameValue int) float64 {
 	reward := 0.0
 
 	if playerResult.IsDeclarer {
 		if playerResult.IsOverbid {
-			reward = -5.0
+			// Strong penalty for overbidding, but not devastating
+			overbidAmount := q.currentBid - actualGameValue
+			reward = -5.0 - float64(overbidAmount)/20.0
 		} else {
-			// Use actual PlayerPoints scaled to reasonable range
-			// PlayerPoints range: typically -240 to +120
-			// Scale to reward range roughly -4.0 to +2.0
-			reward = float64(playerResult.PlayerPoints) / 60.0
+			// Large bonus for winning as declarer to incentivize bidding
+			if playerResult.IsWinner {
+				// Base reward for winning
+				baseReward := 8.0
+
+				// Efficiency bonus: reward winning with margin
+				marginBonus := float64(playerResult.PlayerPoints) / 60.0 // 0 to ~2.0
+				if marginBonus > 2.0 {
+					marginBonus = 2.0
+				}
+
+				reward = baseReward + marginBonus
+			} else {
+				// Moderate penalty for losing (not too harsh or agent won't bid)
+				// PlayerPoints when losing is negative
+				penalty := float64(playerResult.PlayerPoints) / 80.0 // -0.6 to -3.0
+				reward = penalty
+			}
 		}
 	} else {
 		if q.currentBid == 0 {
-			// Agent passed - reward based on whether defenders won
-			// PlayerPoints is always 0 for defenders, so use IsWinner instead
+			// Agent passed - small penalty to discourage always passing
+			// This makes passing have negative expected value
 			if playerResult.IsWinner {
-				// Defenders won, passing was correct
-				reward = 1.0
+				// Defenders won, but passing should still be slightly negative
+				reward = -0.2
 			} else {
-				// Declarer won, might have missed opportunity to bid
-				reward = -0.1
+				// Declarer won, larger penalty for missing opportunity
+				reward = -0.5
 			}
 		} else {
-			// Lost bidding war - small penalty
-			reward = -0.05
+			// Lost bidding war - very small penalty
+			reward = -0.1
 		}
 	}
 
@@ -354,9 +421,26 @@ func (q *QLearningBiddingStrategy) CalculateReward(playerResult game.PlayerResul
 }
 
 // OnGameEnd updates Q-values based on game outcome
-func (q *QLearningBiddingStrategy) OnGameEnd(playerResult game.PlayerResultState) {
-	reward := q.CalculateReward(playerResult)
-	q.qTable.Update(q.currentHandScore, q.currentBid, reward)
+func (q *QLearningBiddingStrategy) OnGameEnd(playerResult game.PlayerResultState, mode game.GameMode, trumpSuit game.Suit) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	// Calculate actual game value for this hand
+	cards := game.Cards(q.currentHand)
+	actualGameValue := cards.GameValue(mode, trumpSuit)
+
+	reward := q.CalculateReward(playerResult, actualGameValue)
+
+	// Update Q-values for ALL bidding decisions in this episode
+	// Work backwards from the final decision to propagate reward
+	for i := len(q.biddingHistory) - 1; i >= 0; i-- {
+		pair := q.biddingHistory[i]
+		// Terminal state (game ended), so no next state actions
+		q.qTable.Update(pair.state, pair.action, reward, 0, nil)
+	}
+
+	// Clear history for next episode
+	q.biddingHistory = q.biddingHistory[:0]
 }
 
 // DecayEpsilon reduces exploration over time
@@ -427,6 +511,8 @@ type QLearningGameChoiceStrategy struct {
 	currentHandState  int
 	currentGameChoice int
 	currentBidValue   int
+	lastState         int
+	lastAction        int
 
 	// Metrics tracking (disabled by default)
 	metrics StrategyMetrics
@@ -436,7 +522,7 @@ type QLearningGameChoiceStrategy struct {
 func NewQLearningGameChoiceStrategy(epsilon float64) *QLearningGameChoiceStrategy {
 	return &QLearningGameChoiceStrategy{
 		qTable:            NewQTable(0.1, 0.9),
-		epsilon:           NewExplorationSchedule(epsilon, 0.01, 0.995),
+		epsilon:           NewExplorationSchedule(epsilon, 0.01, 0.999994),
 		heuristicFallback: &HeuristicGameChoiceStrategy{},
 	}
 }
@@ -548,6 +634,10 @@ func (q *QLearningGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int)
 		}
 	}
 
+	// Store state and action for TD learning
+	q.lastState = handState
+	q.lastAction = q.currentGameChoice
+
 	return mode, suit
 }
 
@@ -559,20 +649,43 @@ func (q *QLearningGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode g
 
 // CalculateReward calculates the reward for a game choice based on outcome
 func (q *QLearningGameChoiceStrategy) CalculateReward(playerResult game.PlayerResultState) float64 {
-	// Was overbid, nothing we could do
+	// Penalize choosing games that lead to overbids
 	if playerResult.IsDeclarer && playerResult.IsOverbid {
-		return 0.0
+		return -5.0
 	}
-	// Use actual PlayerPoints scaled to reasonable range
-	// PlayerPoints range: typically -240 to +120
-	// Scale to reward range roughly -4.0 to +2.0
-	return float64(playerResult.PlayerPoints) / 60.0
+
+	// Diversity bonus: incentivize choosing suit games to counteract Grand bias
+	// Grand = 0, Suit = 1-4
+	diversityBonus := 0.0
+	if q.currentGameChoice > 0 {
+		diversityBonus = 1.0 // Increased bonus for choosing suit games
+	}
+
+	// Use win/loss with small point bonus to avoid Grand bias
+	// Scale rewards to match bidding strategy (winning ~8-10, losing ~-1 to -3)
+	if playerResult.IsWinner {
+		// Base reward for winning
+		baseReward := 8.0
+		// Margin bonus (max +2.0)
+		marginBonus := float64(playerResult.PlayerPoints) / 60.0
+		if marginBonus > 2.0 {
+			marginBonus = 2.0
+		}
+		return baseReward + marginBonus + diversityBonus
+	} else {
+		// Penalty for losing, scaled by how badly
+		// PlayerPoints when losing is negative, typically -48 to -240
+		basePenalty := float64(playerResult.PlayerPoints) / 80.0 // -0.6 to -3.0
+		// Still give diversity bonus even when losing (encourages exploration)
+		return basePenalty + diversityBonus
+	}
 }
 
 // OnGameChoiceEnd updates Q-values for game choice based on outcome
 func (q *QLearningGameChoiceStrategy) OnGameChoiceEnd(playerResult game.PlayerResultState) {
 	reward := q.CalculateReward(playerResult)
-	q.qTable.Update(q.currentHandState, q.currentGameChoice, reward)
+	// Terminal state (game ended), so no next state actions
+	q.qTable.Update(q.lastState, q.lastAction, reward, 0, nil)
 }
 
 // DecayEpsilon reduces exploration over time

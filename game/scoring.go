@@ -226,8 +226,18 @@ func (gs *GameState) CalculatePlayerPoints(pos GamePosition) int {
 func (gs *GameState) isWinner(pos GamePosition) bool {
 	if gs.ForfeitedPlayer != nil {
 		return pos != *gs.ForfeitedPlayer
-	} else if gs.Declarer != nil && pos == *gs.Declarer && gs.Result().DeclarerWon {
-		return true
 	}
-	return false
+
+	if gs.Declarer == nil {
+		return false
+	}
+
+	result := gs.Result()
+	if pos == *gs.Declarer {
+		// Declarer wins if they won the game
+		return result.DeclarerWon
+	} else {
+		// Defenders win if declarer lost
+		return !result.DeclarerWon
+	}
 }

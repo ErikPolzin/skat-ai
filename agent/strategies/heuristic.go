@@ -14,27 +14,26 @@ func (h *HeuristicBiddingStrategy) GetName() string {
 func (h *HeuristicBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Card, currentBid int) bool {
 	cards := game.Cards(hand)
 
-	// Calculate maximum achievable game value across all game types
-	maxValue := 0
+	// Use the game choice strategy to determine which game we'd actually play
+	// This ensures bidding is based on realistic game choice, not theoretical maximum
+	gameChoiceStrategy := &HeuristicGameChoiceStrategy{}
 
-	// Check Grand
-	grandValue := cards.GameValue(game.ModeGrand, game.NoSuit)
-	if grandValue > maxValue {
-		maxValue = grandValue
+	// Get the next bid value to estimate what we'd need to declare
+	nextBid := gs.GetNextBidValue()
+	if nextBid == 0 {
+		return false
 	}
 
-	// Check all suit games
-	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
-		suitValue := cards.GameValue(game.ModeSuit, suit)
-		if suitValue > maxValue {
-			maxValue = suitValue
-		}
-	}
+	// Determine which game we would choose at this bid level
+	mode, suit := gameChoiceStrategy.ChooseGame(hand, nextBid)
 
-	// Bid if we can meet the current bid with some safety margin
-	// Use 1.2x margin to account for uncertainty
-	safetyMargin := 1.2
-	return float64(maxValue) >= float64(currentBid)*safetyMargin
+	// Get the game value for our chosen game
+	gameValue := cards.GameValue(mode, suit)
+
+	// Bid if our chosen game can meet the bid with small safety margin
+	// Only need slight buffer to avoid overbids
+	safetyMargin := 1.05 // Just 5% safety margin
+	return float64(gameValue) >= float64(nextBid)*safetyMargin
 }
 
 // HeuristicGameChoiceStrategy chooses game based on hand strength heuristics
@@ -173,30 +172,54 @@ func (h *HeuristicGameChoiceStrategy) evaluateGrandStrength(cards game.Cards) fl
 			// Higher value for higher jacks
 			switch card.Suit {
 			case game.Clubs:
-				score += 20
-			case game.Spades:
 				score += 15
+			case game.Spades:
+				score += 12
 			case game.Hearts:
-				score += 10
+				score += 9
 			case game.Diamonds:
-				score += 5
+				score += 6
 			}
 		}
 	}
 
-	// Strong bonus for having multiple jacks
-	score += float64(jackCount * jackCount * 5)
+	// Grand is the hardest game type - only choose with excellent hands
+	// Need 3+ jacks OR 4 jacks for viability
+	if jackCount < 3 {
+		return -150.0 // Massive penalty - Grand nearly impossible with <3 jacks
+	}
 
-	// Count Aces (strong in Grand)
+	// Base score starts low - Grand must prove itself
+	score = 0.0
+
+	// Bonus for jacks
+	score += float64(jackCount * 12)
+
+	// Count Aces and estimate tricks
 	aceCount := 0
+	tenCount := 0
 	for _, card := range cards {
 		if card.Rank == game.Ace {
 			aceCount++
-			score += 10
+			score += 18
+		}
+		if card.Rank == game.Ten {
+			tenCount++
 		}
 	}
 
-	// Bonus for having Ace-10 combinations
+	// Grand requires MANY winners - 6+ jacks+aces to be safe
+	totalWinners := jackCount + aceCount
+	if totalWinners < 6 {
+		score -= float64((6 - totalWinners) * 30) // Heavy penalty
+	} else if totalWinners == 7 {
+		score += 40 // Excellent
+	} else if totalWinners == 8 {
+		score += 60 // Perfect Grand hand
+	}
+
+	// Bonus for having Ace-10 combinations (protected tens)
+	aceTenPairs := 0
 	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
 		hasAce, hasTen := false, false
 		for _, card := range cards {
@@ -210,8 +233,16 @@ func (h *HeuristicGameChoiceStrategy) evaluateGrandStrength(cards game.Cards) fl
 			}
 		}
 		if hasAce && hasTen {
-			score += 8
+			score += 20
+			aceTenPairs++
 		}
+	}
+
+	// Grand needs balanced distribution
+	if aceTenPairs >= 3 {
+		score += 30 // Excellent for Grand
+	} else if aceTenPairs < 2 {
+		score -= 20 // Risky - unprotected tens or missing aces
 	}
 
 	return score
@@ -224,6 +255,7 @@ func (h *HeuristicGameChoiceStrategy) evaluateSuitStrength(cards game.Cards, tru
 	// Count trumps (Jacks + trump suit)
 	trumpCount := 0
 	trumpPoints := 0
+	hasTopTrumps := false
 
 	for _, card := range cards {
 		isTrump := card.Rank == game.Jack || card.Suit == trumpSuit
@@ -235,27 +267,41 @@ func (h *HeuristicGameChoiceStrategy) evaluateSuitStrength(cards game.Cards, tru
 			if card.Rank == game.Jack {
 				switch card.Suit {
 				case game.Clubs:
-					score += 15
-				case game.Spades:
 					score += 12
+					hasTopTrumps = true
+				case game.Spades:
+					score += 10
+					hasTopTrumps = true
 				case game.Hearts:
-					score += 9
+					score += 8
 				case game.Diamonds:
 					score += 6
 				}
 			} else if card.Rank == game.Ace {
-				score += 8
+				score += 10
+				hasTopTrumps = true
 			} else if card.Rank == game.Ten {
-				score += 5
+				score += 8
 			}
 		}
 	}
 
-	// Strong bonus for trump length (need control)
-	score += float64(trumpCount * trumpCount * 3)
-	score += float64(trumpPoints)
+	// Trump length is critical - need at least 5 for safety
+	if trumpCount < 5 {
+		score -= float64((5 - trumpCount) * 10) // Penalty for short trumps
+	}
+
+	// Strong bonus for trump length with better scaling
+	score += float64(trumpCount * trumpCount * 4)
+	score += float64(trumpPoints) * 0.8
+
+	// Bonus for having top trump control
+	if hasTopTrumps {
+		score += 15
+	}
 
 	// Evaluate side suits
+	sideAces := 0
 	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
 		if suit == trumpSuit {
 			continue
@@ -273,26 +319,34 @@ func (h *HeuristicGameChoiceStrategy) evaluateSuitStrength(cards game.Cards, tru
 		for _, card := range suitCards {
 			if card.Rank == game.Ace {
 				hasAce = true
+				sideAces++
 			}
 			if card.Rank == game.Ten {
 				hasTen = true
 			}
 		}
 		if hasAce && hasTen {
-			score += 10
+			score += 15 // Very valuable
 		} else if hasAce {
-			score += 5
+			score += 8
 		}
 
 		// Bonus for void suits (can trump in)
 		if len(suitCards) == 0 {
-			score += 12
+			score += 18
 		}
-		// Small bonus for short suits
+		// Good bonus for short suits (easier to trump)
 		if len(suitCards) == 1 {
-			score += 6
+			score += 10
+		}
+		// Small bonus for doubleton
+		if len(suitCards) == 2 {
+			score += 4
 		}
 	}
+
+	// Bonus for side suit aces (tricks outside trumps)
+	score += float64(sideAces * 5)
 
 	return score
 }
@@ -325,8 +379,16 @@ func (h *HeuristicGameChoiceStrategy) evaluateDiscardScore(card game.Card, nonTr
 		score -= 20
 	}
 
-	// Prefer discarding from longer suits (helps create voids)
-	score += float64(suitCounts[card.Suit] * 5)
+	// Prefer discarding from SHORTER suits to create voids faster
+	// Invert the logic: fewer cards in suit = higher discard priority
+	if suitCounts[card.Suit] <= 2 {
+		score += 20 // High priority to create voids
+	} else if suitCounts[card.Suit] == 3 {
+		score += 10
+	} else {
+		// Longer suits are kept for flexibility
+		score -= float64((suitCounts[card.Suit] - 3) * 5)
+	}
 
 	// Low value cards are generally good to discard
 	if card.Value() == 0 {
@@ -505,12 +567,38 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 		}
 
 		// If opponents are out of trumps (or very few), focus on cashing winners
-		if remainingOpponentTrumps <= 1 && hasTrump {
-			// Don't waste time drawing last trump if we can cash winners
-			// Fall through to longest suit strategy
+		// Lead from SHORT suits to set up ruffs or cash winners before they're gone
+		if remainingOpponentTrumps <= 1 {
+			// Opponents have few/no trumps - cash our winners from short suits
+			suitLengths := make(map[game.Suit]int)
+			for _, move := range validMoves {
+				if !h.isTrump(gs, move) {
+					suitLengths[move.Suit]++
+				}
+			}
+
+			// Find shortest suit with high cards (to cash winners)
+			shortestSuit := game.NoSuit
+			minLength := 10
+			for suit, length := range suitLengths {
+				if length < minLength && length > 0 {
+					minLength = length
+					shortestSuit = suit
+				}
+			}
+
+			// Lead high card from shortest suit
+			if shortestSuit != game.NoSuit {
+				for i := len(validMoves) - 1; i >= 0; i-- {
+					if validMoves[i].Suit == shortestSuit && !h.isTrump(gs, validMoves[i]) {
+						return validMoves[i]
+					}
+				}
+			}
 		}
 
-		// Otherwise, lead from our longest side suit
+		// Default declarer strategy: lead from SHORT side suits
+		// This allows declarer to ruff later rounds of that suit
 		suitLengths := make(map[game.Suit]int)
 		for _, move := range validMoves {
 			if !h.isTrump(gs, move) {
@@ -518,25 +606,32 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 			}
 		}
 
-		longestSuit := game.NoSuit
-		maxLength := 0
+		shortestSuit := game.NoSuit
+		minLength := 10
 		for suit, length := range suitLengths {
-			if length > maxLength {
-				maxLength = length
-				longestSuit = suit
+			if length < minLength && length > 0 {
+				minLength = length
+				shortestSuit = suit
 			}
 		}
 
-		// Lead from longest suit (high card first)
-		if longestSuit != game.NoSuit {
+		// Lead from shortest suit (high card first to cash winners)
+		if shortestSuit != game.NoSuit {
 			for i := len(validMoves) - 1; i >= 0; i-- {
-				if validMoves[i].Suit == longestSuit {
+				if validMoves[i].Suit == shortestSuit {
 					return validMoves[i]
 				}
 			}
 		}
 
-		// Fallback: lead highest card
+		// Fallback: lead highest non-trump card
+		for i := len(validMoves) - 1; i >= 0; i-- {
+			if !h.isTrump(gs, validMoves[i]) {
+				return validMoves[i]
+			}
+		}
+
+		// All cards are trump - lead highest
 		return validMoves[len(validMoves)-1]
 	}
 

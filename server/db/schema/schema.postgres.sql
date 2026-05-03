@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS games (
     overbid BOOLEAN DEFAULT FALSE,
     current_player_deadline TIMESTAMP,
     forfeited_player INTEGER,
+    cards_played TEXT DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE

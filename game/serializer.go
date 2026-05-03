@@ -99,6 +99,37 @@ func ParseSkatCards(s string) (SkatCards, error) {
 	}
 }
 
+// SerializeCardsPlayed converts [][]Card to a string representation
+// Format: trick1_card1-card2-card3|trick2_card1-card2-card3|...
+func SerializeCardsPlayed(cardsPlayed [][]Card) string {
+	if len(cardsPlayed) == 0 {
+		return ""
+	}
+	tricks := []string{}
+	for _, trick := range cardsPlayed {
+		trickCards := Cards(trick)
+		tricks = append(tricks, trickCards.String())
+	}
+	return strings.Join(tricks, "|")
+}
+
+// ParseCardsPlayed converts a string back to [][]Card
+func ParseCardsPlayed(s string) ([][]Card, error) {
+	if len(s) == 0 {
+		return nil, nil
+	}
+	tricks := strings.Split(s, "|")
+	cardsPlayed := [][]Card{}
+	for _, trickStr := range tricks {
+		trick, err := ParseCards(trickStr)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse trick: %w", err)
+		}
+		cardsPlayed = append(cardsPlayed, trick)
+	}
+	return cardsPlayed, nil
+}
+
 // GameInfo represents game state information for the API
 type GameInfo struct {
 	State       *GameState  `json:"state"`

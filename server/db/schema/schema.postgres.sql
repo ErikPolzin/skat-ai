@@ -10,9 +10,15 @@ CREATE TABLE IF NOT EXISTS profiles (
 
 -- Insert initial agent profiles
 INSERT INTO profiles (id, name, is_agent, profile_icon, is_online) VALUES
+    -- Heuristic agents
     ('550e8400-e29b-41d4-a716-446655440001', 'Bill', TRUE, '/res/profile_icons/bill.svg', TRUE),
     ('550e8400-e29b-41d4-a716-446655440002', 'Dave', TRUE, '/res/profile_icons/dave.svg', TRUE),
-    ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', TRUE, '/res/profile_icons/lisa.svg', TRUE)
+    -- MCTS agents
+    ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', TRUE, '/res/profile_icons/lisa.svg', TRUE),
+    ('550e8400-e29b-41d4-a716-446655440004', 'Max', TRUE, '/res/profile_icons/bill.svg', TRUE),
+    -- Neural agents
+    ('550e8400-e29b-41d4-a716-446655440005', 'Emma', TRUE, '/res/profile_icons/dave.svg', TRUE),
+    ('550e8400-e29b-41d4-a716-446655440006', 'Sam', TRUE, '/res/profile_icons/lisa.svg', TRUE)
 ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS game_sessions (
@@ -99,3 +105,31 @@ CREATE TABLE IF NOT EXISTS player_ratings (
     last_updated TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS agent_configs (
+    profile_id VARCHAR(255) PRIMARY KEY,
+    bidding_type VARCHAR(50) NOT NULL DEFAULT 'weighted',
+    bidding_threshold DOUBLE PRECISION DEFAULT 0.65,
+    game_choice_type VARCHAR(50) NOT NULL DEFAULT 'heuristic',
+    card_play_type VARCHAR(50) NOT NULL DEFAULT 'heuristic',
+    mcts_simulations INT DEFAULT 500,
+    declarer_weights_path VARCHAR(255),
+    defender_weights_path VARCHAR(255),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
+-- Insert initial agent configs for agent profiles
+INSERT INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, mcts_simulations, declarer_weights_path, defender_weights_path)
+VALUES
+    -- Heuristic agents (Bill, Dave)
+    ('550e8400-e29b-41d4-a716-446655440001', 'weighted', 0.65, 'heuristic', 'heuristic', NULL, NULL, NULL),
+    ('550e8400-e29b-41d4-a716-446655440002', 'weighted', 0.70, 'heuristic', 'heuristic', NULL, NULL, NULL),
+    -- MCTS agents (Lisa, Max)
+    ('550e8400-e29b-41d4-a716-446655440003', 'weighted', 0.65, 'heuristic', 'mcts', 500, NULL, NULL),
+    ('550e8400-e29b-41d4-a716-446655440004', 'weighted', 0.65, 'heuristic', 'mcts', 1000, NULL, NULL),
+    -- Neural agents (Emma, Sam) - paths need to be configured with trained models
+    ('550e8400-e29b-41d4-a716-446655440005', 'weighted', 0.65, 'heuristic', 'dqn', NULL, '.data/dqn_declarer.weights', '.data/dqn_defender.weights'),
+    ('550e8400-e29b-41d4-a716-446655440006', 'weighted', 0.70, 'heuristic', 'dqn', NULL, '.data/dqn_declarer.weights', '.data/dqn_defender.weights')
+ON CONFLICT (profile_id) DO NOTHING;

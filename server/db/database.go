@@ -31,4 +31,8 @@ type Database interface {
 	GetPlayerRating(profileID string) (*PlayerRating, error)
 	SavePlayerRating(rating PlayerRating) error
 	GetLeaderboard(limit int) ([]PlayerRating, error)
+	// Agent config methods
+	GetAgentConfig(profileID string) (*AgentConfig, error)
+	SaveAgentConfig(config AgentConfig) error
+	DeleteAgentConfig(profileID string) error
 }

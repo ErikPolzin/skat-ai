@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"skat/agent"
 	"skat/logger"
 	"skat/server/db"
 
@@ -26,10 +27,47 @@ type Server struct {
 }
 
 func NewServer(database db.Database) *Server {
-	return &Server{
+	server := &Server{
 		db:      database,
 		clients: NewClientManager(database),
 	}
+
+	// Set up agent config loader
+	agent.SetAgentConfigLoader(func(profileID string) (*agent.AgentConfigData, error) {
+		config, err := database.GetAgentConfig(profileID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert db.AgentConfig to agent.AgentConfigData
+		mctsSimulations := 0
+		if config.MCTSSimulations != nil {
+			mctsSimulations = *config.MCTSSimulations
+		}
+
+		declarerWeightsPath := ""
+		if config.DeclarerWeightsPath != nil {
+			declarerWeightsPath = *config.DeclarerWeightsPath
+		}
+
+		defenderWeightsPath := ""
+		if config.DefenderWeightsPath != nil {
+			defenderWeightsPath = *config.DefenderWeightsPath
+		}
+
+		return &agent.AgentConfigData{
+			ProfileID:           config.ProfileID,
+			BiddingType:         config.BiddingType,
+			BiddingThreshold:    config.BiddingThreshold,
+			GameChoiceType:      config.GameChoiceType,
+			CardPlayType:        config.CardPlayType,
+			MCTSSimulations:     mctsSimulations,
+			DeclarerWeightsPath: declarerWeightsPath,
+			DefenderWeightsPath: defenderWeightsPath,
+		}, nil
+	})
+
+	return server
 }
 
 // IsCloudRun returns true if running on Google Cloud Run

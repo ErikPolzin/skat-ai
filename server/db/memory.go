@@ -13,6 +13,7 @@ type MemoryDatabase struct {
 	games         map[string]*game.GameState
 	playerResults map[string][]game.PlayerResultState
 	ratings       map[string]*PlayerRating
+	agentConfigs  map[string]*AgentConfig
 	mu            sync.RWMutex
 }
 
@@ -23,6 +24,7 @@ func NewMemoryDatabase() *MemoryDatabase {
 		games:         make(map[string]*game.GameState),
 		playerResults: make(map[string][]game.PlayerResultState),
 		ratings:       make(map[string]*PlayerRating),
+		agentConfigs:  make(map[string]*AgentConfig),
 	}
 }
 
@@ -386,4 +388,31 @@ func (d *MemoryDatabase) GetLeaderboard(limit int) ([]PlayerRating, error) {
 	}
 
 	return ratings, nil
+}
+
+func (d *MemoryDatabase) GetAgentConfig(profileID string) (*AgentConfig, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	config, ok := d.agentConfigs[profileID]
+	if !ok {
+		return nil, fmt.Errorf("agent config not found for profile %s", profileID)
+	}
+	return config, nil
+}
+
+func (d *MemoryDatabase) SaveAgentConfig(config AgentConfig) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.agentConfigs[config.ProfileID] = &config
+	return nil
+}
+
+func (d *MemoryDatabase) DeleteAgentConfig(profileID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	delete(d.agentConfigs, profileID)
+	return nil
 }

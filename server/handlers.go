@@ -66,6 +66,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/players/{id}/active_games", s.handleGetActiveGames).Methods("GET")
 	api.HandleFunc("/players/{id}/rating", s.handleGetPlayerRating).Methods("GET")
 	api.HandleFunc("/leaderboard", s.handleGetLeaderboard).Methods("GET")
+	api.HandleFunc("/agents", s.handleListAgents).Methods("GET")
 
 	// Serve React build files (must be last - catch-all)
 	spa := http.FileServer(http.Dir("./frontend/build"))
@@ -455,41 +456,73 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	gameID := vars["id"]
 
+	var req struct {
+		AgentID string `json:"agent_id,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	gs, err := s.db.GetGameByID(gameID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	// Get all available agent profiles from database
-	allAgentProfiles, err := s.db.ListAgentProfiles()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	var agentProfile db.ProfileEntry
 
-	// Filter out agents already in the game
-	var availableProfiles []db.ProfileEntry
-	for _, profile := range allAgentProfiles {
-		inUse := false
+	if req.AgentID != "" {
+		// Add specific agent
+		profile, err := s.db.GetProfile(req.AgentID)
+		if err != nil {
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		if !profile.IsAgent {
+			http.Error(w, "profile is not an agent", http.StatusBadRequest)
+			return
+		}
+		// Check if agent is already in the game
 		for _, player := range gs.Players {
-			if player != nil && player.ID == profile.ID {
-				inUse = true
-				break
+			if player != nil && player.ID == req.AgentID {
+				http.Error(w, "agent already in game", http.StatusBadRequest)
+				return
 			}
 		}
-		if !inUse {
-			availableProfiles = append(availableProfiles, profile)
+		agentProfile = *profile
+	} else {
+		// Get all available agent profiles from database
+		allAgentProfiles, err := s.db.ListAgentProfiles()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-	}
 
-	if len(availableProfiles) == 0 {
-		http.Error(w, "no available agents", http.StatusBadRequest)
-		return
-	}
+		// Filter out agents already in the game
+		var availableProfiles []db.ProfileEntry
+		for _, profile := range allAgentProfiles {
+			inUse := false
+			for _, player := range gs.Players {
+				if player != nil && player.ID == profile.ID {
+					inUse = true
+					break
+				}
+			}
+			if !inUse {
+				availableProfiles = append(availableProfiles, profile)
+			}
+		}
 
-	// Pick a random available agent
-	agentProfile := availableProfiles[rand.Int()%len(availableProfiles)]
+		if len(availableProfiles) == 0 {
+			http.Error(w, "no available agents", http.StatusBadRequest)
+			return
+		}
+
+		// Pick a random available agent
+		agentProfile = availableProfiles[rand.Int()%len(availableProfiles)]
+	}
 
 	response, err := gs.AddPlayer(&game.PlayerState{
 		ID:          agentProfile.ID,
@@ -1129,4 +1162,52 @@ func (s *Server) handleGetLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(leaderboard)
+}
+
+// handleListAgents returns all available agent profiles with their configurations
+func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
+	agents, err := s.db.ListAgentProfiles()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	type AgentInfo struct {
+		ID               string  `json:"id"`
+		Name             string  `json:"name"`
+		ProfileIcon      string  `json:"profile_icon"`
+		BiddingType      string  `json:"bidding_type"`
+		BiddingThreshold float64 `json:"bidding_threshold"`
+		GameChoiceType   string  `json:"game_choice_type"`
+		CardPlayType     string  `json:"card_play_type"`
+		MCTSSimulations  int     `json:"mcts_simulations,omitempty"`
+	}
+
+	agentInfos := make([]AgentInfo, 0)
+	for _, agent := range agents {
+		config, err := s.db.GetAgentConfig(agent.ID)
+		if err != nil {
+			logger.Warning("Failed to get agent config", "agent_id", agent.ID, "error", err)
+			continue
+		}
+
+		mctsSimulations := 0
+		if config.MCTSSimulations != nil {
+			mctsSimulations = *config.MCTSSimulations
+		}
+
+		agentInfos = append(agentInfos, AgentInfo{
+			ID:               agent.ID,
+			Name:             agent.Name,
+			ProfileIcon:      agent.ProfileIcon,
+			BiddingType:      config.BiddingType,
+			BiddingThreshold: config.BiddingThreshold,
+			GameChoiceType:   config.GameChoiceType,
+			CardPlayType:     config.CardPlayType,
+			MCTSSimulations:  mctsSimulations,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(agentInfos)
 }

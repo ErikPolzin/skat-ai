@@ -64,7 +64,12 @@ func (d *TursoDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	var profile ProfileEntry
 	var isAgent, isOnline int
 	err := d.DB.QueryRow(`
-		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE id = ?
+		SELECT p.id, p.name,
+		       CASE WHEN ac.profile_id IS NOT NULL THEN 1 ELSE 0 END as is_agent,
+		       p.profile_icon, p.is_online
+		FROM profiles p
+		LEFT JOIN agent_configs ac ON p.id = ac.profile_id
+		WHERE p.id = ?
 	`, profileID).Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
@@ -78,7 +83,12 @@ func (d *TursoDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
 	var profile ProfileEntry
 	var isAgent, isOnline int
 	err := d.DB.QueryRow(`
-		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE name = ?
+		SELECT p.id, p.name,
+		       CASE WHEN ac.profile_id IS NOT NULL THEN 1 ELSE 0 END as is_agent,
+		       p.profile_icon, p.is_online
+		FROM profiles p
+		LEFT JOIN agent_configs ac ON p.id = ac.profile_id
+		WHERE p.name = ?
 	`, name).Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
@@ -635,7 +645,9 @@ func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.Pla
 
 func (d *TursoDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	rows, err := d.DB.Query(`
-		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE is_agent = 1
+		SELECT p.id, p.name, 1 as is_agent, p.profile_icon, p.is_online
+		FROM profiles p
+		INNER JOIN agent_configs ac ON p.id = ac.profile_id
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agent profiles: %w", err)
@@ -846,4 +858,63 @@ func (d *TursoDatabase) GetLeaderboard(limit int) ([]PlayerRating, error) {
 		ratings = append(ratings, rating)
 	}
 	return ratings, nil
+}
+
+func (d *TursoDatabase) GetAgentConfig(profileID string) (*AgentConfig, error) {
+	var config AgentConfig
+	err := d.DB.QueryRow(`
+		SELECT profile_id, bidding_type, bidding_threshold,
+		       game_choice_type,
+		       card_play_type, mcts_simulations, declarer_weights_path, defender_weights_path,
+		       created_at, updated_at
+		FROM agent_configs
+		WHERE profile_id = ?
+	`, profileID).Scan(
+		&config.ProfileID, &config.BiddingType, &config.BiddingThreshold,
+		&config.GameChoiceType,
+		&config.CardPlayType, &config.MCTSSimulations, &config.DeclarerWeightsPath, &config.DefenderWeightsPath,
+		&config.CreatedAt, &config.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("agent config not found for profile %s", profileID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent config: %w", err)
+	}
+	return &config, nil
+}
+
+func (d *TursoDatabase) SaveAgentConfig(config AgentConfig) error {
+	_, err := d.DB.Exec(`
+		INSERT INTO agent_configs (
+			profile_id, bidding_type, bidding_threshold,
+			game_choice_type,
+			card_play_type, mcts_simulations, declarer_weights_path, defender_weights_path,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (profile_id) DO UPDATE SET
+			bidding_type = excluded.bidding_type,
+			bidding_threshold = excluded.bidding_threshold,
+			game_choice_type = excluded.game_choice_type,
+			card_play_type = excluded.card_play_type,
+			mcts_simulations = excluded.mcts_simulations,
+			declarer_weights_path = excluded.declarer_weights_path,
+			defender_weights_path = excluded.defender_weights_path,
+			updated_at = excluded.updated_at
+	`, config.ProfileID, config.BiddingType, config.BiddingThreshold,
+		config.GameChoiceType,
+		config.CardPlayType, config.MCTSSimulations, config.DeclarerWeightsPath, config.DefenderWeightsPath,
+		config.CreatedAt, config.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to save agent config: %w", err)
+	}
+	return nil
+}
+
+func (d *TursoDatabase) DeleteAgentConfig(profileID string) error {
+	_, err := d.DB.Exec(`DELETE FROM agent_configs WHERE profile_id = ?`, profileID)
+	if err != nil {
+		return fmt.Errorf("failed to delete agent config: %w", err)
+	}
+	return nil
 }

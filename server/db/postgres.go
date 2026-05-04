@@ -58,7 +58,12 @@ func (d *PgDatabase) InitSchema() error {
 func (d *PgDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	var profile ProfileEntry
 	err := d.DB.QueryRow(`
-		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE id = $1
+		SELECT p.id, p.name,
+		       CASE WHEN ac.profile_id IS NOT NULL THEN TRUE ELSE FALSE END as is_agent,
+		       p.profile_icon, p.is_online
+		FROM profiles p
+		LEFT JOIN agent_configs ac ON p.id = ac.profile_id
+		WHERE p.id = $1
 	`, profileID).Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
@@ -69,7 +74,12 @@ func (d *PgDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 func (d *PgDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
 	var profile ProfileEntry
 	err := d.DB.QueryRow(`
-		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE name = $1
+		SELECT p.id, p.name,
+		       CASE WHEN ac.profile_id IS NOT NULL THEN TRUE ELSE FALSE END as is_agent,
+		       p.profile_icon, p.is_online
+		FROM profiles p
+		LEFT JOIN agent_configs ac ON p.id = ac.profile_id
+		WHERE p.name = $1
 	`, name).Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
@@ -579,7 +589,9 @@ func (d *PgDatabase) GetFormattedSessionResults(sessionID string) ([]game.Sessio
 
 func (d *PgDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	rows, err := d.DB.Query(`
-		SELECT id, name, is_agent, profile_icon, is_online FROM profiles WHERE is_agent = TRUE
+		SELECT p.id, p.name, TRUE as is_agent, p.profile_icon, p.is_online
+		FROM profiles p
+		INNER JOIN agent_configs ac ON p.id = ac.profile_id
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agent profiles: %w", err)
@@ -780,4 +792,63 @@ func (d *PgDatabase) GetLeaderboard(limit int) ([]PlayerRating, error) {
 		ratings = append(ratings, rating)
 	}
 	return ratings, nil
+}
+
+func (d *PgDatabase) GetAgentConfig(profileID string) (*AgentConfig, error) {
+	var config AgentConfig
+	err := d.DB.QueryRow(`
+		SELECT profile_id, bidding_type, bidding_threshold,
+		       game_choice_type,
+		       card_play_type, mcts_simulations, declarer_weights_path, defender_weights_path,
+		       created_at, updated_at
+		FROM agent_configs
+		WHERE profile_id = $1
+	`, profileID).Scan(
+		&config.ProfileID, &config.BiddingType, &config.BiddingThreshold,
+		&config.GameChoiceType,
+		&config.CardPlayType, &config.MCTSSimulations, &config.DeclarerWeightsPath, &config.DefenderWeightsPath,
+		&config.CreatedAt, &config.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("agent config not found for profile %s", profileID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent config: %w", err)
+	}
+	return &config, nil
+}
+
+func (d *PgDatabase) SaveAgentConfig(config AgentConfig) error {
+	_, err := d.DB.Exec(`
+		INSERT INTO agent_configs (
+			profile_id, bidding_type, bidding_threshold,
+			game_choice_type,
+			card_play_type, mcts_simulations, declarer_weights_path, defender_weights_path,
+			created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (profile_id) DO UPDATE SET
+			bidding_type = $2,
+			bidding_threshold = $3,
+			game_choice_type = $4,
+			card_play_type = $5,
+			mcts_simulations = $6,
+			declarer_weights_path = $7,
+			defender_weights_path = $8,
+			updated_at = $10
+	`, config.ProfileID, config.BiddingType, config.BiddingThreshold,
+		config.GameChoiceType,
+		config.CardPlayType, config.MCTSSimulations, config.DeclarerWeightsPath, config.DefenderWeightsPath,
+		config.CreatedAt, config.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to save agent config: %w", err)
+	}
+	return nil
+}
+
+func (d *PgDatabase) DeleteAgentConfig(profileID string) error {
+	_, err := d.DB.Exec(`DELETE FROM agent_configs WHERE profile_id = $1`, profileID)
+	if err != nil {
+		return fmt.Errorf("failed to delete agent config: %w", err)
+	}
+	return nil
 }

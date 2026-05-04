@@ -287,10 +287,10 @@ export function useGame(
     setMessages([]);
   }, []);
 
-  const addAgent = async () => {
+  const addAgent = async (agentId?: string) => {
     if (!state.id) return;
     try {
-      await addAIAgent(state.id);
+      await addAIAgent(state.id, agentId);
     } catch (error) {
       console.error("Failed to add AI agent:", error);
     }

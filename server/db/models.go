@@ -57,3 +57,19 @@ type PlayerRating struct {
 	PeakRating  int
 	LastUpdated time.Time
 }
+
+type AgentConfig struct {
+	ProfileID string
+	// Bidding strategy configuration
+	BiddingType      string
+	BiddingThreshold float64 // For weighted heuristic bidding
+	// Game choice strategy configuration
+	GameChoiceType string
+	// Card play strategy configuration
+	CardPlayType        string
+	MCTSSimulations     *int    // For MCTS card play (nullable)
+	DeclarerWeightsPath *string // Path to neural network declarer weights (nullable)
+	DefenderWeightsPath *string // Path to neural network defender weights (nullable)
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}

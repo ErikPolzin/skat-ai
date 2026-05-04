@@ -1,20 +1,40 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Typography,
   Button,
   Paper,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemAvatar,
+  Avatar,
+  ListItemText,
+  Chip,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
-import { leaveGame } from "../api/games";
+import { leaveGame, getAvailableAgents, type AgentInfo } from "../api/games";
 
 export function GameLobbyWaiting() {
   const game = useGameContext();
   const navigate = useNavigate();
   const [isLeaving, setIsLeaving] = useState(false);
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const playersNeeded = 3 - game.playerCount;
+
+  useEffect(() => {
+    const loadAgents = async () => {
+      const availableAgents = await getAvailableAgents();
+      setAgents(availableAgents);
+    };
+    loadAgents();
+  }, []);
 
   const handleLeaveGame = async () => {
     if (!game.player?.id || !game.gameId) return;
@@ -28,6 +48,30 @@ export function GameLobbyWaiting() {
       setIsLeaving(false);
     }
   };
+
+  const handleOpenDialog = () => {
+    setDialogOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
+  };
+
+  const handleSelectAgent = (agentId: string) => {
+    game.addAgent(agentId);
+    handleCloseDialog();
+  };
+
+  const getAgentTypeLabel = (agent: AgentInfo): string => {
+    if (agent.card_play_type === "dqn") return "Neural";
+    if (agent.card_play_type === "mcts") return "MCTS";
+    return "Heuristic";
+  };
+
+  // Filter out agents that are already in the game
+  const availableAgents = agents.filter(
+    (agent) => !game.players.some((player) => player?.id === agent.id),
+  );
 
   return (
     <Box
@@ -126,7 +170,7 @@ export function GameLobbyWaiting() {
             {playersNeeded > 1 ? "s" : ""}...
           </Typography>
           <Box sx={{ display: "flex", gap: 2, justifyContent: "center" }}>
-            <Button variant="contained" onClick={() => game.addAgent()}>
+            <Button variant="contained" onClick={handleOpenDialog}>
               Add AI Player
             </Button>
             <Button
@@ -139,6 +183,49 @@ export function GameLobbyWaiting() {
               {isLeaving ? "Leaving..." : "Leave Game"}
             </Button>
           </Box>
+
+          <Dialog
+            open={dialogOpen}
+            onClose={handleCloseDialog}
+            maxWidth="xs"
+            fullWidth
+          >
+            <DialogTitle>Select AI Player</DialogTitle>
+            <DialogContent sx={{ p: 0 }}>
+              <List>
+                {availableAgents.map((agent) => (
+                  <ListItem key={agent.id} disablePadding>
+                    <ListItemButton onClick={() => handleSelectAgent(agent.id)}>
+                      <ListItemAvatar>
+                        <Avatar src={agent.profile_icon || undefined}>
+                          {agent.name.charAt(0)}
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={agent.name}
+                        secondary={
+                          <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
+                            <Chip
+                              label={getAgentTypeLabel(agent)}
+                              size="small"
+                              color={
+                                agent.card_play_type === "dqn"
+                                  ? "primary"
+                                  : agent.card_play_type === "mcts"
+                                    ? "secondary"
+                                    : "default"
+                              }
+                              sx={{ height: 20, fontSize: "0.7rem" }}
+                            />
+                          </Box>
+                        }
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                ))}
+              </List>
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </Box>

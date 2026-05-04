@@ -178,10 +178,14 @@ export async function joinGame(
   return response.json();
 }
 
-export async function addAIAgent(gameId: string): Promise<void> {
+export async function addAIAgent(
+  gameId: string,
+  agentId?: string,
+): Promise<void> {
   const response = await fetch(`${getApiUrl()}/api/games/${gameId}/agents`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: agentId ? JSON.stringify({ agent_id: agentId }) : undefined,
   });
 
   if (!response.ok) {
@@ -474,6 +478,29 @@ export async function getLeaderboard(
 
   if (!response.ok) {
     console.error("Failed to fetch leaderboard");
+    return [];
+  }
+
+  const data = await response.json();
+  return data || [];
+}
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  profile_icon: string;
+  bidding_type: string;
+  bidding_threshold: number;
+  game_choice_type: string;
+  card_play_type: string;
+  mcts_simulations?: number;
+}
+
+export async function getAvailableAgents(): Promise<AgentInfo[]> {
+  const response = await fetch(`${getApiUrl()}/api/agents`);
+
+  if (!response.ok) {
+    console.error("Failed to fetch agents");
     return [];
   }
 

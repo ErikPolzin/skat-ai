@@ -1,8 +1,7 @@
 package agent
 
 import (
-	"context"
-	"os"
+	"fmt"
 	"skat/game"
 	"skat/logger"
 	"sync"
@@ -10,107 +9,116 @@ import (
 
 type Action func() (string, error)
 
+// AgentConfigLoader is a function type that loads agent configuration for a player
+type AgentConfigLoader func(profileID string) (*AgentConfigData, error)
+
+// AgentConfigData holds the configuration data for an agent (matches db.AgentConfig)
+type AgentConfigData struct {
+	ProfileID           string
+	BiddingType         string
+	BiddingThreshold    float64
+	GameChoiceType      string
+	CardPlayType        string
+	MCTSSimulations     int
+	DeclarerWeightsPath string
+	DefenderWeightsPath string
+}
+
 var (
-	// Shared agent instance with loaded Q-table
-	sharedAgent     *SkatAgent
-	sharedAgentOnce sync.Once
+	// Agent cache for reusing agent instances
+	agentCache     = make(map[string]*SkatAgent)
+	agentCacheMu   sync.RWMutex
+	configLoader   AgentConfigLoader
+	configLoaderMu sync.RWMutex
 )
 
-// getAgentForPlayer creates an agent instance based on the player's agent type
+// SetAgentConfigLoader sets the function used to load agent configurations
+func SetAgentConfigLoader(loader AgentConfigLoader) {
+	configLoaderMu.Lock()
+	defer configLoaderMu.Unlock()
+	configLoader = loader
+}
+
+// BuildAgentFromConfig creates a SkatAgent from configuration data
+func BuildAgentFromConfig(config *AgentConfigData) (*SkatAgent, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+
+	hybridConfig := HybridAgentConfig{
+		BiddingType:      config.BiddingType,
+		BiddingThreshold: config.BiddingThreshold,
+		GameChoiceType:   config.GameChoiceType,
+		CardPlayType:     config.CardPlayType,
+		MCTSSimulations:  config.MCTSSimulations,
+		DQNDeclarerPath:  config.DeclarerWeightsPath,
+		DQNDefenderPath:  config.DefenderWeightsPath,
+	}
+
+	return NewHybridAgent(config.ProfileID, hybridConfig)
+}
+
+// getAgentForPlayer creates an agent instance based on the player's configuration
 func getAgentForPlayer(player *game.PlayerState) *SkatAgent {
 	if !player.IsAgent {
 		return nil
 	}
 
-	// Initialize shared agent once
-	sharedAgentOnce.Do(func() {
-		sharedAgent = NewHeuristicAgent("SkatAgent")
+	// Check cache first
+	agentCacheMu.RLock()
+	if cached, ok := agentCache[player.ID]; ok {
+		agentCacheMu.RUnlock()
+		return cached
+	}
+	agentCacheMu.RUnlock()
 
-		// Log current working directory for debugging
-		if cwd, err := os.Getwd(); err == nil {
-			logger.Debug("Agent loading Q-table from working directory", "cwd", cwd)
-		}
+	// Load config using the configured loader
+	configLoaderMu.RLock()
+	loader := configLoader
+	configLoaderMu.RUnlock()
 
-		// Try to load from GCS first (production), then local file (development)
-		gcsBucket := os.Getenv("GCS_BUCKET")
-		gcsPath := os.Getenv("GCS_QTABLE_PATH")
-		if gcsPath == "" {
-			gcsPath = "qtables/bidding_qtable.gob"
-		}
+	if loader == nil {
+		logger.Warning("No agent config loader set, using default heuristic agent")
+		agent := NewHeuristicAgent(player.Name)
+		agentCacheMu.Lock()
+		agentCache[player.ID] = agent
+		agentCacheMu.Unlock()
+		return agent
+	}
 
-		if gcsBucket != "" {
-			// Load from GCS (production)
-			logger.Info("Loading bidding Q-table from GCS", "bucket", gcsBucket, "path", gcsPath)
-			ctx := context.Background()
-			if qStrat, ok := sharedAgent.GetBiddingStrategy().(*QLearningBiddingStrategy); ok {
-				data, err := LoadQTableDataFromGCS(ctx, gcsBucket, gcsPath, true)
-				if err != nil {
-					logger.Error("Could not load bidding Q-table from GCS", "error", err)
-					logger.Warning("Agent will use untrained bidding behavior with heuristics")
-				} else {
-					qStrat.SetQTable(data.QTable)
-					qStrat.SetEpsilon(0.0) // Disable exploration in production
-					logger.Info("Loaded bidding Q-table from GCS", "states", qStrat.GetQTableSize())
-				}
-			}
+	config, err := loader(player.ID)
+	if err != nil {
+		logger.Error("Failed to load agent config", "playerID", player.ID, "error", err)
+		logger.Warning("Using default heuristic agent")
+		agent := NewHeuristicAgent(player.Name)
+		agentCacheMu.Lock()
+		agentCache[player.ID] = agent
+		agentCacheMu.Unlock()
+		return agent
+	}
 
-			// Load game choice Q-table from GCS
-			gameChoicePath := os.Getenv("GCS_GAME_CHOICE_PATH")
-			if gameChoicePath == "" {
-				gameChoicePath = "qtables/game_choice_qtable.gob"
-			}
-			logger.Info("Loading game choice Q-table from GCS", "bucket", gcsBucket, "path", gameChoicePath)
-			if qStrat, ok := sharedAgent.GetGameChoiceStrategy().(*QLearningGameChoiceStrategy); ok {
-				data, err := LoadQTableDataFromGCS(ctx, gcsBucket, gameChoicePath, true)
-				if err != nil {
-					logger.Error("Could not load game choice Q-table from GCS", "error", err)
-					logger.Warning("Agent will use heuristic game choice")
-				} else {
-					qStrat.SetQTable(data.QTable)
-					qStrat.SetEpsilon(0.0) // Disable exploration in production
-					logger.Info("Loaded game choice Q-table from GCS")
-				}
-			}
-		} else {
-			// Load from local file (development)
-			qtablePath := "bidding_qtable.gob"
-			if path := os.Getenv("QTABLE_BINARY_PATH"); path != "" {
-				qtablePath = path
-			}
-			logger.Info("Loading bidding Q-table from local file", "path", qtablePath)
-			if qStrat, ok := sharedAgent.GetBiddingStrategy().(*QLearningBiddingStrategy); ok {
-				data, err := LoadQTableData(qtablePath, true)
-				if err != nil {
-					logger.Error("Could not load bidding Q-table from local file", "path", qtablePath, "error", err)
-					logger.Warning("Agent will use untrained bidding behavior with heuristics")
-				} else {
-					qStrat.SetQTable(data.QTable)
-					qStrat.SetEpsilon(0.0) // Disable exploration in production
-					logger.Info("Loaded bidding Q-table from local file", "path", qtablePath, "states", qStrat.GetQTableSize())
-				}
-			}
+	agent, err := BuildAgentFromConfig(config)
+	if err != nil {
+		logger.Error("Failed to build agent from config", "playerID", player.ID, "error", err)
+		logger.Warning("Using default heuristic agent")
+		agent = NewHeuristicAgent(player.Name)
+	} else {
+		logger.Info("Built agent from config", "playerID", player.ID, "bidding", config.BiddingType, "cardPlay", config.CardPlayType)
+	}
 
-			// Load game choice Q-table from local file
-			gameChoicePath := "game_choice_qtable.gob"
-			if path := os.Getenv("GAME_CHOICE_QTABLE_PATH"); path != "" {
-				gameChoicePath = path
-			}
-			logger.Info("Loading game choice Q-table from local file", "path", gameChoicePath)
-			if qStrat, ok := sharedAgent.GetGameChoiceStrategy().(*QLearningGameChoiceStrategy); ok {
-				data, err := LoadQTableData(gameChoicePath, true)
-				if err != nil {
-					logger.Error("Could not load game choice Q-table from local file", "path", gameChoicePath, "error", err)
-					logger.Warning("Agent will use heuristic game choice")
-				} else {
-					qStrat.SetQTable(data.QTable)
-					qStrat.SetEpsilon(0.0) // Disable exploration in production
-					logger.Info("Loaded game choice Q-table from local file")
-				}
-			}
-		}
-	})
+	// Cache the agent
+	agentCacheMu.Lock()
+	agentCache[player.ID] = agent
+	agentCacheMu.Unlock()
 
-	return sharedAgent
+	return agent
+}
+
+// ClearAgentCache clears the agent cache (useful for testing or hot-reloading configs)
+func ClearAgentCache() {
+	agentCacheMu.Lock()
+	defer agentCacheMu.Unlock()
+	agentCache = make(map[string]*SkatAgent)
 }
 
 // gameLoop manages the game flow

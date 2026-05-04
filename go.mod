@@ -12,6 +12,8 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/rs/cors v1.11.1
 	github.com/tursodatabase/libsql-client-go v0.0.0-20251219100830-236aa1ff8acc
+	gorgonia.org/gorgonia v0.9.18
+	gorgonia.org/tensor v0.9.24
 )
 
 require (
@@ -79,8 +81,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gorgonia.org/cu v0.9.4 // indirect
 	gorgonia.org/dawson v1.2.0 // indirect
-	gorgonia.org/gorgonia v0.9.18 // indirect
-	gorgonia.org/tensor v0.9.24 // indirect
 	gorgonia.org/vecf32 v0.9.0 // indirect
 	gorgonia.org/vecf64 v0.9.0 // indirect
 )

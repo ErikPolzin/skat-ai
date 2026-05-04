@@ -10,8 +10,8 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the server binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o /server ./cmd/server
+# Build the server binary with environment variable to allow unsafe package
+RUN CGO_ENABLED=0 GOOS=linux ASSUME_NO_MOVING_GC_UNSAFE_RISK_IT_WITH=go1.25 go build -o /server ./cmd/server
 
 # Runtime stage
 FROM alpine:latest

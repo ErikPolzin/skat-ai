@@ -32,8 +32,15 @@ func NewServer(database db.Database) *Server {
 		clients: NewClientManager(database),
 	}
 
-	// Set up agent config loader
-	agent.SetAgentConfigLoader(func(profileID string) (*agent.AgentConfigData, error) {
+	// Set up agent config loader with error recovery
+	agent.SetAgentConfigLoader(func(profileID string) (result *agent.AgentConfigData, err error) {
+		// Recover from panics in config loading
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic loading agent config for %s: %v", profileID, r)
+			}
+		}()
+
 		config, err := database.GetAgentConfig(profileID)
 		if err != nil {
 			return nil, err

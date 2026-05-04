@@ -4,9 +4,9 @@ import (
 	"skat/game"
 )
 
-// DQNCardPlayEncoding represents the DQN network input for card play
+// NeuralCardPlayEncoding represents the DQN network input for card play
 // Total: 114 active features (simplified, removed redundant heuristics)
-type DQNCardPlayEncoding struct {
+type NeuralCardPlayEncoding struct {
 	// Card presence (96 features)
 	MyHand      [32]float32 // Binary: cards in my hand
 	TrickCards  [32]float32 // Binary: cards in current trick
@@ -28,7 +28,7 @@ type DQNCardPlayEncoding struct {
 }
 
 // ToStateArray converts encoding to state array (114 features, no valid mask)
-func (e *DQNCardPlayEncoding) ToSlice() [114]float32 {
+func (e *NeuralCardPlayEncoding) ToSlice() [114]float32 {
 	result := [114]float32{}
 	idx := 0
 
@@ -64,12 +64,12 @@ func (e *DQNCardPlayEncoding) ToSlice() [114]float32 {
 }
 
 // GetValidMask returns the valid moves mask
-func (e *DQNCardPlayEncoding) GetValidMask() [32]float32 {
+func (e *NeuralCardPlayEncoding) GetValidMask() [32]float32 {
 	return e.ValidMovesMask
 }
 
 // ToNetworkInput returns the complete network input (114 state + 32 mask = 146)
-func (e *DQNCardPlayEncoding) ToNetworkInput() [146]float32 {
+func (e *NeuralCardPlayEncoding) ToNetworkInput() [146]float32 {
 	result := [146]float32{}
 	state := e.ToSlice()
 	copy(result[0:114], state[:])
@@ -77,8 +77,8 @@ func (e *DQNCardPlayEncoding) ToNetworkInput() [146]float32 {
 	return result
 }
 
-func EncodeDQNCardPlay(gs *game.GameState, myPosition game.GamePosition, validMoves []game.Card) DQNCardPlayEncoding {
-	var encoding DQNCardPlayEncoding
+func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, validMoves []game.Card) NeuralCardPlayEncoding {
+	var encoding NeuralCardPlayEncoding
 
 	myHand := gs.Players[myPosition].Hand
 

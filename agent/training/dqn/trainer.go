@@ -174,7 +174,7 @@ func NewDQNCardPlayTrainer(
 	epsilon float32,
 	epsilonDecay float32,
 	epsilonMin float32,
-	strategy *strategies.DeepQLearningCardPlayStrategy,
+	strategy *strategies.NeuralCardPlayStrategy,
 ) (*DQNCardPlayTrainer, error) {
 	trainer := &DQNCardPlayTrainer{
 		declarerBuffer: NewDQNReplayBuffer(bufferSize),
@@ -226,7 +226,7 @@ func NewDQNCardPlayTrainer(
 	return trainer, nil
 }
 
-func (t *DQNCardPlayTrainer) createDQNModel(strategy *strategies.DeepQLearningCardPlayStrategy, trainable bool) (*DQNCardPlayModel, error) {
+func (t *DQNCardPlayTrainer) createDQNModel(strategy *strategies.NeuralCardPlayStrategy, trainable bool) (*DQNCardPlayModel, error) {
 	g := gorgonia.NewGraph()
 
 	// Always create fresh weights - we have separate networks per role
@@ -646,6 +646,6 @@ func (t *DQNCardPlayTrainer) GetOnlineWeights() (declarerWeights, defenderWeight
 // Returns 114 active features + valid mask
 func EncodeStateToDQN(gs *game.GameState, myPosition game.GamePosition, validMoves []game.Card) ([114]float32, [32]float32) {
 	// Use the simplified DQN encoding
-	dqnEnc := encoding.EncodeDQNCardPlay(gs, myPosition, validMoves)
+	dqnEnc := encoding.EncodeNeuralCardPlay(gs, myPosition, validMoves)
 	return dqnEnc.ToSlice(), dqnEnc.GetValidMask()
 }

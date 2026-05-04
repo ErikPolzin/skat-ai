@@ -29,29 +29,30 @@ type NetworkInstance struct {
 	inferenceMu sync.Mutex
 }
 
-// DeepQLearningCardPlayStrategy implements DQN inference for card play
+// NeuralCardPlayStrategy implements neural network inference for card play
 // Uses separate networks for declarer and defender roles
-type DeepQLearningCardPlayStrategy struct {
+// Can be trained via imitation learning or reinforcement learning (DQN)
+type NeuralCardPlayStrategy struct {
 	declarerNet *NetworkInstance
 	defenderNet *NetworkInstance
 	epsilon float32
 }
 
 // GetName returns strategy name
-func (s *DeepQLearningCardPlayStrategy) GetName() string {
-	return "Deep Q-Learning Card Play"
+func (s *NeuralCardPlayStrategy) GetName() string {
+	return "Neural Card Play"
 }
 
-// NewDeepQLearningCardPlayStrategy creates a new DQN strategy with fresh initialized weights
-func NewDeepQLearningCardPlayStrategy() *DeepQLearningCardPlayStrategy {
-	return &DeepQLearningCardPlayStrategy{
+// NewNeuralCardPlayStrategy creates a new neural strategy with fresh initialized weights
+func NewNeuralCardPlayStrategy() *NeuralCardPlayStrategy {
+	return &NeuralCardPlayStrategy{
 		declarerNet: createNetworkInstance(nil),
 		defenderNet: createNetworkInstance(nil),
 	}
 }
 
-// NewDeepQLearningCardPlayStrategyFromWeights loads both declarer and defender networks from files
-func NewDeepQLearningCardPlayStrategyFromWeights(declarerPath, defenderPath string) (*DeepQLearningCardPlayStrategy, error) {
+// NewNeuralCardPlayStrategyFromWeights loads both declarer and defender networks from files
+func NewNeuralCardPlayStrategyFromWeights(declarerPath, defenderPath string) (*NeuralCardPlayStrategy, error) {
 	// Create graphs for loading weights
 	declarerGraph := gorgonia.NewGraph()
 	defenderGraph := gorgonia.NewGraph()
@@ -66,15 +67,15 @@ func NewDeepQLearningCardPlayStrategyFromWeights(declarerPath, defenderPath stri
 		return nil, fmt.Errorf("failed to load defender weights: %w", err)
 	}
 
-	return &DeepQLearningCardPlayStrategy{
+	return &NeuralCardPlayStrategy{
 		declarerNet: createNetworkInstance(declarerWeights),
 		defenderNet: createNetworkInstance(defenderWeights),
 	}, nil
 }
 
-// NewDeepQLearningCardPlayStrategyFromWeightMaps creates a strategy from existing weight maps (for self-play)
-func NewDeepQLearningCardPlayStrategyFromWeightMaps(declarerWeights, defenderWeights CardPlayNetworkWeights) *DeepQLearningCardPlayStrategy {
-	return &DeepQLearningCardPlayStrategy{
+// NewNeuralCardPlayStrategyFromWeightMaps creates a strategy from existing weight maps (for self-play)
+func NewNeuralCardPlayStrategyFromWeightMaps(declarerWeights, defenderWeights CardPlayNetworkWeights) *NeuralCardPlayStrategy {
+	return &NeuralCardPlayStrategy{
 		declarerNet: createNetworkInstance(declarerWeights),
 		defenderNet: createNetworkInstance(defenderWeights),
 	}
@@ -113,7 +114,7 @@ func createNetworkInstance(weights CardPlayNetworkWeights) *NetworkInstance {
 }
 
 // SelectMove chooses a card using the appropriate network (declarer or defender)
-func (s *DeepQLearningCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []game.Card) game.Card {
+func (s *NeuralCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []game.Card) game.Card {
 	if len(validMoves) == 1 {
 		return validMoves[0]
 	}
@@ -138,7 +139,7 @@ func (s *DeepQLearningCardPlayStrategy) SelectMove(gs *game.GameState, validMove
 	myPosition := gs.CurrentPlayer
 
 	// Encode game state (114 state + 32 mask = 146)
-	enc := encoding.EncodeDQNCardPlay(gs, myPosition, validMoves)
+	enc := encoding.EncodeNeuralCardPlay(gs, myPosition, validMoves)
 	inputData := enc.ToNetworkInput()
 
 	// Mutex required: Gorgonia's VM spawns internal goroutines that aren't thread-safe
@@ -180,19 +181,19 @@ func (s *DeepQLearningCardPlayStrategy) SelectMove(gs *game.GameState, validMove
 }
 
 // SetExploration sets epsilon for exploration
-func (s *DeepQLearningCardPlayStrategy) SetExploration(epsilon float32) {
+func (s *NeuralCardPlayStrategy) SetExploration(epsilon float32) {
 	s.epsilon = epsilon
 }
 
 // UpdateWeights replaces the network weights with new ones
-func (s *DeepQLearningCardPlayStrategy) UpdateWeights(declarerWeights, defenderWeights CardPlayNetworkWeights) {
+func (s *NeuralCardPlayStrategy) UpdateWeights(declarerWeights, defenderWeights CardPlayNetworkWeights) {
 	s.declarerNet = createNetworkInstance(declarerWeights)
 	s.defenderNet = createNetworkInstance(defenderWeights)
 }
 
 // Clone creates a copy of the strategy
-func (s *DeepQLearningCardPlayStrategy) Clone() *DeepQLearningCardPlayStrategy {
-	return &DeepQLearningCardPlayStrategy{
+func (s *NeuralCardPlayStrategy) Clone() *NeuralCardPlayStrategy {
+	return &NeuralCardPlayStrategy{
 		declarerNet: createNetworkInstance(s.declarerNet.weights),
 		defenderNet: createNetworkInstance(s.defenderNet.weights),
 		epsilon:     s.epsilon,
@@ -200,17 +201,17 @@ func (s *DeepQLearningCardPlayStrategy) Clone() *DeepQLearningCardPlayStrategy {
 }
 
 // OnTrickComplete is a no-op for DQN (state is encoded per-move)
-func (s *DeepQLearningCardPlayStrategy) OnTrickComplete(trick []game.Card) {
+func (s *NeuralCardPlayStrategy) OnTrickComplete(trick []game.Card) {
 	// No state to update
 }
 
 // Reset is a no-op for DQN (stateless)
-func (s *DeepQLearningCardPlayStrategy) Reset() {
+func (s *NeuralCardPlayStrategy) Reset() {
 	// No state to reset
 }
 
 // ============================================================================
-// DeepQLearningCardPlayStrategy implementation
+// NeuralCardPlayStrategy implementation
 // ============================================================================
 
 // initWeight creates and initializes a weight node with Xavier initialization

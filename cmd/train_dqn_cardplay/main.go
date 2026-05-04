@@ -47,8 +47,8 @@ func main() {
 	episodes := flag.Int("episodes", 10000, "Number of training episodes")
 	bufferSize := flag.Int("buffer", 20000, "Replay buffer size")
 	batchSize := flag.Int("batch", 256, "Batch size")
-	gamma := flag.Float64("gamma", 0.95, "Discount factor")
-	lr := flag.Float64("lr", 0.0001, "Learning rate")
+	gamma := flag.Float64("gamma", 0.7, "Discount factor")
+	lr := flag.Float64("lr", 0.0003, "Learning rate")
 	l2Reg := flag.Float64("l2", 0.0001, "L2 regularization")
 	epsilonStart := flag.Float64("epsilon-start", 1.0, "Starting epsilon for exploration")
 	epsilonEnd := flag.Float64("epsilon-end", 0.1, "Ending epsilon for exploration")
@@ -58,7 +58,7 @@ func main() {
 	evalGames := flag.Int("eval-games", 200, "Number of games per evaluation")
 	saveEvery := flag.Int("save-every", 5000, "Save model every N episodes")
 	outputWeights := flag.String("output", ".data/models/dqn_cardplay.weights", "Output weights file")
-	trainingSplit := flag.String("split", "70/20/10", "Training split: heuristic/mixed/selfplay (e.g., 70/20/10)")
+	trainingSplit := flag.String("split", "40/30/30", "Training split: heuristic/mixed/selfplay (e.g., 70/20/10)")
 
 	flag.Parse()
 
@@ -84,9 +84,10 @@ func main() {
 	fmt.Printf("  Training Split: %d%% heuristic / %d%% mixed / %d%% self-play\n", heuristicPct, mixedPct, selfPlayPct)
 	fmt.Printf("  Evaluation: every %d episodes\n", *evalEvery)
 	fmt.Printf("  Save: every %d episodes\n", *saveEvery)
-	fmt.Printf("  Output: %s\n\n", *outputWeights)
+	fmt.Printf("  Output: %s\n", *outputWeights)
+	fmt.Println()
 
-	// Create DQN trainer (nil strategy = fresh random initialization)
+	// Create DQN trainer (nil strategy = fresh random initialization, or use loaded weights)
 	trainer, err := dqn.NewDQNCardPlayTrainer(
 		*bufferSize,
 		*batchSize,
@@ -116,7 +117,7 @@ func main() {
 
 	// Create DQN strategy with initial random weights
 	declWeights, defWeights := trainer.GetOnlineWeights()
-	dqnStrategy := strategies.NewDeepQLearningCardPlayStrategyFromWeightMaps(declWeights, defWeights)
+	dqnStrategy := strategies.NewNeuralCardPlayStrategyFromWeightMaps(declWeights, defWeights)
 	dqnStrategy.SetExploration(trainer.GetEpsilon())
 
 	// Use heuristics for bidding and game choice (not training these yet)
@@ -212,7 +213,7 @@ func main() {
 
 			// Create DQN test agent with current weights (no exploration)
 			declWeights, defWeights := trainer.GetOnlineWeights()
-			testStrategy := strategies.NewDeepQLearningCardPlayStrategyFromWeightMaps(declWeights, defWeights)
+			testStrategy := strategies.NewNeuralCardPlayStrategyFromWeightMaps(declWeights, defWeights)
 			testStrategy.SetExploration(0.0) // Pure exploitation for evaluation
 
 			weightedBidding := strategies.NewWeightedHeuristicBiddingStrategy()
@@ -484,13 +485,12 @@ func computeTrickReward(scoresBefore, scoresAfter [2]int) map[bool]float32 {
 	declarerWonTrick := declarerPoints > 0
 	trickValue := declarerPoints + defenderPoints
 
-	// Normalize trick value to roughly [-1, 1]
+	// Normalize trick value to roughly [-0.5, 0.5]
+	// Moderate rewards for stable learning
+	// Typical trick: 10-15 points -> 0.17-0.25 reward
+	// Max trick: 30 points -> 0.5 reward
 	normalized := float32(trickValue) / 30.0 // Max trick value ~30
-
-	// Scale up rewards to provide stronger learning signal
-	// Typical trick: 10-15 points -> 0.67-1.0 reward
-	// Max trick: 30 points -> 2.0 reward
-	scaled := normalized * 2.0
+	scaled := normalized * 0.5
 
 	// Assign rewards: positive if your team won, negative if opponent won
 	if declarerWonTrick {

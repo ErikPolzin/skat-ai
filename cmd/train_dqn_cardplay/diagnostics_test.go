@@ -49,7 +49,7 @@ func TestEpsilonSchedule(t *testing.T) {
 // TestNetworkOutputVariance checks if network outputs are too uniform
 func TestNetworkOutputVariance(t *testing.T) {
 	t.Run("fresh network has varied outputs", func(t *testing.T) {
-		strategy := strategies.NewDeepQLearningCardPlayStrategy()
+		strategy := strategies.NewNeuralCardPlayStrategy()
 		strategy.SetExploration(0.0) // No epsilon
 
 		// Create a test game

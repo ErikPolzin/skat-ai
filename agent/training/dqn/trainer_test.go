@@ -352,7 +352,7 @@ func TestWeightSaveLoad(t *testing.T) {
 		}
 
 		// Load into a strategy
-		strategy, err := strategies.NewDeepQLearningCardPlayStrategyFromWeights(declPath, defPath)
+		strategy, err := strategies.NewNeuralCardPlayStrategyFromWeights(declPath, defPath)
 		if err != nil {
 			t.Errorf("Failed to load weights: %v", err)
 		}

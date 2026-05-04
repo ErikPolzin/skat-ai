@@ -147,7 +147,7 @@ func (sa *SkatAgent) Clone() *SkatAgent {
 	clone.gameChoiceStrategy = sa.gameChoiceStrategy
 
 	// Clone card play strategy if neural (to avoid mutex contention on VM)
-	if neuralCard, ok := sa.cardPlayStrategy.(*strategies.DeepQLearningCardPlayStrategy); ok {
+	if neuralCard, ok := sa.cardPlayStrategy.(*strategies.NeuralCardPlayStrategy); ok {
 		clone.cardPlayStrategy = neuralCard.Clone()
 	} else {
 		clone.cardPlayStrategy = sa.cardPlayStrategy // Share strategy if not cloneable
@@ -297,7 +297,7 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 		if config.DQNDeclarerPath == "" || config.DQNDefenderPath == "" {
 			return nil, fmt.Errorf("DQN card play requires both declarer and defender weight paths")
 		}
-		dqn, err := strategies.NewDeepQLearningCardPlayStrategyFromWeights(config.DQNDeclarerPath, config.DQNDefenderPath)
+		dqn, err := strategies.NewNeuralCardPlayStrategyFromWeights(config.DQNDeclarerPath, config.DQNDefenderPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load DQN weights: %w", err)
 		}

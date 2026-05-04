@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	agentType := flag.String("agent-type", "qlearning", "Agent type: qlearning, dqn, weighted, mcts, or heuristic")
+	agentType := flag.String("agent-type", "qlearning", "Agent type: qlearning, neural, weighted, mcts, or heuristic")
 	component := flag.String("component", "bidding", "Component to test: bidding, game-choice, card-play, or combined")
 	games := flag.Int("games", 500, "Number of evaluation games")
 	biddingWeights := flag.String("bidding-weights", ".data/models/bidding_choice_weights.bin", "Path to bidding neural network weights")
@@ -26,9 +26,9 @@ func main() {
 
 func runEvaluation(agentType, component string, games int, biddingWeights, cardplayWeights string, threshold float64) {
 	// Validate agent type
-	if agentType != "qlearning" && agentType != "dqn" && agentType != "weighted" && agentType != "heuristic" && agentType != "mcts" {
+	if agentType != "qlearning" && agentType != "neural" && agentType != "weighted" && agentType != "heuristic" && agentType != "mcts" {
 		fmt.Printf("Unknown agent type: %s\n", agentType)
-		fmt.Println("Valid options: qlearning, dqn, weighted, heuristic, mcts")
+		fmt.Println("Valid options: qlearning, neural, weighted, heuristic, mcts")
 		os.Exit(1)
 	}
 
@@ -430,7 +430,7 @@ func printEvaluationHeader(agentType, component string, threshold float64) {
 			fmt.Println("MCTS Card Play Strategy Evaluation")
 			fmt.Println("====================================")
 		}
-	case "dqn":
+	case "neural":
 		if component == "card-play" {
 			fmt.Println("Neural Card Play Strategy Evaluation")
 			fmt.Println("======================================")
@@ -481,9 +481,9 @@ func buildAgentConfig(agentType, component string, threshold float64, cardplayWe
 			config.MCTSSimulations = 500
 		}
 
-	case "dqn":
+	case "neural":
 		if component == "card-play" || component == "combined" {
-			config.CardPlayType = "dqn"
+			config.CardPlayType = "neural"
 			config.DQNDeclarerPath = cardplayWeights + ".declarer"
 			config.DQNDefenderPath = cardplayWeights + ".defender"
 		}
@@ -514,7 +514,7 @@ func buildAgentDescription(agentType, component string, threshold float64) strin
 		if component == "card-play" {
 			return "Weighted bidding + Heuristic game choice + MCTS card play"
 		}
-	case "dqn":
+	case "neural":
 		if component == "card-play" {
 			return "Weighted bidding + Heuristic game choice + DQN card play"
 		}

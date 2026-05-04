@@ -84,9 +84,9 @@ func NewDeepQLearningCardPlayStrategyFromWeightMaps(declarerWeights, defenderWei
 func createNetworkInstance(weights CardPlayNetworkWeights) *NetworkInstance {
 	g := gorgonia.NewGraph()
 
-	// Input node (1 x 162 for single inference)
+	// Input node (1 x 146 for single inference)
 	input := gorgonia.NewMatrix(g, tensor.Float32,
-		gorgonia.WithShape(1, 162),
+		gorgonia.WithShape(1, 146),
 		gorgonia.WithName("input"))
 
 	// Create or use provided weights
@@ -137,7 +137,7 @@ func (s *DeepQLearningCardPlayStrategy) SelectMove(gs *game.GameState, validMove
 	// Get current player position
 	myPosition := gs.CurrentPlayer
 
-	// Encode game state (130 state + 32 mask = 162)
+	// Encode game state (114 state + 32 mask = 146)
 	enc := encoding.EncodeDQNCardPlay(gs, myPosition, validMoves)
 	inputData := enc.ToNetworkInput()
 
@@ -146,7 +146,7 @@ func (s *DeepQLearningCardPlayStrategy) SelectMove(gs *game.GameState, validMove
 	defer net.inferenceMu.Unlock()
 
 	// Set input tensor
-	inputTensor := tensor.New(tensor.WithBacking(inputData[:]), tensor.WithShape(1, 162))
+	inputTensor := tensor.New(tensor.WithBacking(inputData[:]), tensor.WithShape(1, 146))
 	gorgonia.Let(net.input, inputTensor)
 
 	// Run forward pass
@@ -160,18 +160,18 @@ func (s *DeepQLearningCardPlayStrategy) SelectMove(gs *game.GameState, validMove
 		return validMoves[0]
 	}
 
-	// Get policy probabilities (already softmaxed in graph)
-	policyProbs := net.policy.Value().Data().([]float32)
+	// Get Q-values (raw advantage values from policy head)
+	qValues := net.policy.Value().Data().([]float32)
 
-	// Apply valid moves mask and select best move
+	// Select best valid move by Q-value (argmax over valid actions)
 	bestCard := validMoves[0]
-	bestScore := float32(-1e9)
+	bestQ := float32(-1e9)
 
 	for _, card := range validMoves {
 		cardIdx := encoding.CardToIndex(card)
-		score := policyProbs[cardIdx]
-		if score > bestScore {
-			bestScore = score
+		q := qValues[cardIdx]
+		if q > bestQ {
+			bestQ = q
 			bestCard = card
 		}
 	}
@@ -245,35 +245,33 @@ func initWeight(g *gorgonia.ExprGraph, shape tensor.Shape, name string) *gorgoni
 // and initializes them with Xavier initialization.
 //
 // Architecture (Dueling DQN style):
-//   Input (162) -> Shared trunk (256 -> 256 -> 128) -> Two heads:
-//     - Policy head (128 -> 64 -> 32): For DQN, outputs advantage A(s,a)
-//     - Value head (128 -> 64 -> 1): For DQN, outputs state value V(s)
+//   Input (146) -> Shared trunk (384 -> 384 -> 256) -> Two heads:
+//     - Advantage head (256 -> 128 -> 32): Outputs advantage A(s,a) for each action
+//     - Value head (256 -> 1): Outputs state value V(s)
 //
-// The "policy" naming is historical but works perfectly as the advantage head in Dueling DQN.
+// Medium capacity (~270k params) - sweet spot between old 256 (157k) and large 512 (490k).
 func NewCardPlayNetworkNodes(g *gorgonia.ExprGraph) CardPlayNetworkWeights {
 	weights := make(CardPlayNetworkWeights)
 
-	// Shared layers (162 -> 256 -> 256 -> 128)
-	weights["shared.0.weight"] = initWeight(g, tensor.Shape{256, 162}, "shared.0.weight")
-	weights["shared.0.bias"] = initWeight(g, tensor.Shape{256}, "shared.0.bias")
-	weights["shared.2.weight"] = initWeight(g, tensor.Shape{256, 256}, "shared.2.weight")
-	weights["shared.2.bias"] = initWeight(g, tensor.Shape{256}, "shared.2.bias")
-	weights["shared.4.weight"] = initWeight(g, tensor.Shape{128, 256}, "shared.4.weight")
-	weights["shared.4.bias"] = initWeight(g, tensor.Shape{128}, "shared.4.bias")
+	// Shared layers (146 -> 384 -> 384 -> 256)
+	weights["shared.0.weight"] = initWeight(g, tensor.Shape{384, 146}, "shared.0.weight")
+	weights["shared.0.bias"] = initWeight(g, tensor.Shape{384}, "shared.0.bias")
+	weights["shared.2.weight"] = initWeight(g, tensor.Shape{384, 384}, "shared.2.weight")
+	weights["shared.2.bias"] = initWeight(g, tensor.Shape{384}, "shared.2.bias")
+	weights["shared.4.weight"] = initWeight(g, tensor.Shape{256, 384}, "shared.4.weight")
+	weights["shared.4.bias"] = initWeight(g, tensor.Shape{256}, "shared.4.bias")
 
-	// Policy/Advantage head (128 -> 64 -> 32)
+	// Advantage head (256 -> 128 -> 32)
 	// For DQN: outputs advantage A(s,a) for each of 32 possible cards
-	weights["policy.0.weight"] = initWeight(g, tensor.Shape{64, 128}, "policy.0.weight")
-	weights["policy.0.bias"] = initWeight(g, tensor.Shape{64}, "policy.0.bias")
-	weights["policy.2.weight"] = initWeight(g, tensor.Shape{32, 64}, "policy.2.weight")
+	weights["policy.0.weight"] = initWeight(g, tensor.Shape{128, 256}, "policy.0.weight")
+	weights["policy.0.bias"] = initWeight(g, tensor.Shape{128}, "policy.0.bias")
+	weights["policy.2.weight"] = initWeight(g, tensor.Shape{32, 128}, "policy.2.weight")
 	weights["policy.2.bias"] = initWeight(g, tensor.Shape{32}, "policy.2.bias")
 
-	// Value head (128 -> 64 -> 1)
+	// Value head (256 -> 1) - simplified, no hidden layer needed
 	// For DQN: outputs state value V(s)
-	weights["value.0.weight"] = initWeight(g, tensor.Shape{64, 128}, "value.0.weight")
-	weights["value.0.bias"] = initWeight(g, tensor.Shape{64}, "value.0.bias")
-	weights["value.2.weight"] = initWeight(g, tensor.Shape{1, 64}, "value.2.weight")
-	weights["value.2.bias"] = initWeight(g, tensor.Shape{1}, "value.2.bias")
+	weights["value.0.weight"] = initWeight(g, tensor.Shape{1, 256}, "value.0.weight")
+	weights["value.0.bias"] = initWeight(g, tensor.Shape{1}, "value.0.bias")
 
 	return weights
 }
@@ -298,7 +296,7 @@ func softmaxActivation(x *gorgonia.Node) *gorgonia.Node {
 
 // buildCardPlayLogits builds card play network returning logits (for training)
 func buildCardPlayLogits(x *gorgonia.Node, w CardPlayNetworkWeights, dropout float64) (*gorgonia.Node, *gorgonia.Node) {
-	// Shared trunk (162 -> 256 -> 256 -> 128)
+	// Shared trunk (146 -> 384 -> 384 -> 256)
 	h1 := linearLayer(x, w["shared.0.weight"], w["shared.0.bias"])
 	h1 = reluActivation(h1)
 	if dropout > 0 {
@@ -317,7 +315,7 @@ func buildCardPlayLogits(x *gorgonia.Node, w CardPlayNetworkWeights, dropout flo
 		h3 = gorgonia.Must(gorgonia.Dropout(h3, dropout))
 	}
 
-	// Policy head (128 -> 64 -> 32) - return logits
+	// Advantage head (256 -> 128 -> 32) - return logits
 	p1 := linearLayer(h3, w["policy.0.weight"], w["policy.0.bias"])
 	p1 = reluActivation(p1)
 	if dropout > 0 {
@@ -325,13 +323,8 @@ func buildCardPlayLogits(x *gorgonia.Node, w CardPlayNetworkWeights, dropout flo
 	}
 	policyLogits := linearLayer(p1, w["policy.2.weight"], w["policy.2.bias"])
 
-	// Value head (128 -> 64 -> 1) - return raw value (no tanh)
-	v1 := linearLayer(h3, w["value.0.weight"], w["value.0.bias"])
-	v1 = reluActivation(v1)
-	if dropout > 0 {
-		v1 = gorgonia.Must(gorgonia.Dropout(v1, dropout))
-	}
-	valueLogits := linearLayer(v1, w["value.2.weight"], w["value.2.bias"])
+	// Value head (256 -> 1) - simplified, single layer
+	valueLogits := linearLayer(h3, w["value.0.weight"], w["value.0.bias"])
 
 	return policyLogits, valueLogits
 }
@@ -340,11 +333,11 @@ func buildCardPlayLogits(x *gorgonia.Node, w CardPlayNetworkWeights, dropout flo
 func buildCardPlayNetwork(x *gorgonia.Node, w CardPlayNetworkWeights) (*gorgonia.Node, *gorgonia.Node) {
 	policyLogits, valueLogits := buildCardPlayLogits(x, w, 0)
 
-	// Apply softmax to policy and tanh to value for inference
-	policyProbs := softmaxActivation(policyLogits)
-	valueOut := gorgonia.Must(gorgonia.Tanh(valueLogits))
-
-	return policyProbs, valueOut
+	// For DQN: return raw Q-values (advantage logits), not softmaxed probabilities
+	// The Dueling DQN architecture combines these in the trainer, and inference
+	// selects argmax over raw Q-values, not probabilities
+	// NOTE: valueLogits are used in Dueling DQN combination in trainer
+	return policyLogits, valueLogits
 }
 
 
@@ -401,12 +394,11 @@ func (w CardPlayNetworkWeights) ToSlice() []*gorgonia.Node {
 		w["shared.0.weight"], w["shared.0.bias"],
 		w["shared.2.weight"], w["shared.2.bias"],
 		w["shared.4.weight"], w["shared.4.bias"],
-		// Policy head
+		// Advantage head
 		w["policy.0.weight"], w["policy.0.bias"],
 		w["policy.2.weight"], w["policy.2.bias"],
-		// Value head
+		// Value head (simplified, only 1 layer)
 		w["value.0.weight"], w["value.0.bias"],
-		w["value.2.weight"], w["value.2.bias"],
 	}
 }
 

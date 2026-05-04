@@ -79,8 +79,9 @@ func collectTrainingData(episodes int) []weighted.BiddingExample {
 			append([]game.Card{}, g.Players[2].Hand...),
 		}
 
-		// Play the game
-		training.PlayGameToCompletion(g, nil, nil, [3]*agent.SkatAgent{agent1, agent2, agent3})
+		// Play the game with three-way config
+		config := training.NewThreeWayConfig(agent1, agent2, agent3, i)
+		training.PlayGameToCompletion(g, config)
 
 		// Collect training examples from declarers only
 		if g.Declarer != nil && g.Phase == game.PhaseComplete {

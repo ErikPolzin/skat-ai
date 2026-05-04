@@ -12,8 +12,7 @@ import (
 
 // TestEpsilonSchedule checks if epsilon decay is appropriate
 func TestEpsilonSchedule(t *testing.T) {
-	trainer, _ := dqn.NewDQNCardPlayTrainer(10000, 256, 0.95, 0.0005, 0.0001, nil)
-	trainer.SetEpsilon(1.0)
+	trainer, _ := dqn.NewDQNCardPlayTrainer(10000, 256, 0.95, 0.0005, 0.0001, 1.0, 0.995, 0.1, nil)
 
 	// Track when epsilon reaches milestones
 	episodes := []int{100, 250, 500, 1000, 2000, 5000}

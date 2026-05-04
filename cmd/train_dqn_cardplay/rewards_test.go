@@ -91,22 +91,19 @@ func TestComputeTrickReward(t *testing.T) {
 // TestFullGameExperienceCollection tests collecting experiences from a complete game
 func TestFullGameExperienceCollection(t *testing.T) {
 	t.Run("game collects experiences for all players", func(t *testing.T) {
-		trainer, err := dqn.NewDQNCardPlayTrainer(10000, 256, 0.95, 0.001, 0.0001, nil)
+		trainer, err := dqn.NewDQNCardPlayTrainer(10000, 256, 0.95, 0.001, 0.0001, 1.0, 0.995, 0.1, nil)
 		if err != nil {
 			t.Fatalf("Failed to create trainer: %v", err)
 		}
 
 		// Create simple agents
-		agents := [3]*agent.SkatAgent{
-			agent.NewHeuristicAgent("P0"),
-			agent.NewHeuristicAgent("P1"),
-			agent.NewHeuristicAgent("P2"),
-		}
+		dqnAgent := agent.NewHeuristicAgent("DQN")
+		heuristicAgent := agent.NewHeuristicAgent("Heuristic")
 
 		initialDeclSize, initialDefSize := trainer.GetBufferSizes()
 
 		// Play one game
-		playGameAndCollectExperiences(agents, trainer, 0)
+		playGameAndCollectExperiences(dqnAgent, heuristicAgent, trainer, 0)
 
 		finalDeclSize, finalDefSize := trainer.GetBufferSizes()
 

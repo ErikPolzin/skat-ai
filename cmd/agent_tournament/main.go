@@ -29,12 +29,12 @@ type TournamentResult struct {
 
 // AgentRanking holds ELO rating and statistics for an agent
 type AgentRanking struct {
-	Name          string
-	ELO           float64
-	Wins          int
-	Losses        int
-	TotalGames    int
-	AvgPoints     float64
+	Name           string
+	ELO            float64
+	Wins           int
+	Losses         int
+	TotalGames     int
+	AvgPoints      float64
 	DeclarerWinPct float64
 	DefenderWinPct float64
 }
@@ -112,11 +112,11 @@ func defineAgents(qtablePath, dqnPath string) []AgentDefinition {
 		{
 			Name: "MCTS-500",
 			Config: agent.HybridAgentConfig{
-				BiddingType:     "weighted",
+				BiddingType:      "weighted",
 				BiddingThreshold: 0.65,
-				GameChoiceType:  "heuristic",
-				CardPlayType:    "mcts",
-				MCTSSimulations: 500,
+				GameChoiceType:   "heuristic",
+				CardPlayType:     "mcts",
+				MCTSSimulations:  500,
 			},
 		},
 	}
@@ -241,7 +241,8 @@ func runMatchup(def1, def2 AgentDefinition, numGames int) TournamentResult {
 	agent2.EnableMetrics()
 
 	// Run evaluation
-	stats := training.EvaluateAgents(agent1, agent2, numGames)
+	config := training.NewTestAgainstTwoConfig(agent1, agent2, 0)
+	stats := training.EvaluateAgents(config, numGames)
 
 	return TournamentResult{
 		Agent1Name: def1.Name,

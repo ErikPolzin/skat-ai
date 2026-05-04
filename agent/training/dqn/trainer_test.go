@@ -81,7 +81,7 @@ func TestReplayBufferSampling(t *testing.T) {
 
 // TestExperienceStorage tests that experiences are stored in correct buffers
 func TestExperienceStorage(t *testing.T) {
-	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, nil)
+	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, 1.0, 0.995, 0.1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create trainer: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestExperienceStorage(t *testing.T) {
 
 // TestEpsilonDecay tests epsilon-greedy exploration decay
 func TestEpsilonDecay(t *testing.T) {
-	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, nil)
+	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, 1.0, 0.995, 0.1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create trainer: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestRewardCalculation(t *testing.T) {
 
 // TestNetworkWeightSync tests that target networks update correctly
 func TestNetworkWeightSync(t *testing.T) {
-	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, nil)
+	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, 1.0, 0.995, 0.1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create trainer: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestNetworkWeightSync(t *testing.T) {
 
 // TestWeightSaveLoad tests that weights can be saved and loaded
 func TestWeightSaveLoad(t *testing.T) {
-	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, nil)
+	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, 1.0, 0.995, 0.1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create trainer: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestWeightSaveLoad(t *testing.T) {
 
 // TestTrainingStepDoesNotPanic tests that training steps execute without panic
 func TestTrainingStepDoesNotPanic(t *testing.T) {
-	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, nil)
+	trainer, err := NewDQNCardPlayTrainer(1000, 32, 0.95, 0.001, 0.0001, 1.0, 0.995, 0.1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create trainer: %v", err)
 	}

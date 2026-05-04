@@ -9,49 +9,191 @@ import (
 	"sync/atomic"
 )
 
+type BiddingConfiguration int
+
+const (
+	TestAgainstTwoAgents BiddingConfiguration = iota
+	FiftyFiftySplit
+	ThreeWay
+)
+
+// AgentConfig specifies how agents should be positioned during a game
+type AgentConfig struct {
+	// For TestAgainstTwoAgents and FiftyFiftySplit modes
+	TestAgent     *agent.SkatAgent
+	BaselineAgent *agent.SkatAgent
+
+	// For ThreeWay mode
+	Agent1 *agent.SkatAgent
+	Agent2 *agent.SkatAgent
+	Agent3 *agent.SkatAgent
+
+	// Configuration mode
+	Mode BiddingConfiguration
+
+	// Game number for rotation/alternation
+	GameNum int
+}
+
+// NewTestAgainstTwoConfig creates a config for testing one agent against two baseline agents
+func NewTestAgainstTwoConfig(testAgent, baselineAgent *agent.SkatAgent, gameNum int) AgentConfig {
+	return AgentConfig{
+		TestAgent:     testAgent,
+		BaselineAgent: baselineAgent,
+		Mode:          TestAgainstTwoAgents,
+		GameNum:       gameNum,
+	}
+}
+
+// NewFiftyFiftySplitConfig creates a config for 50/50 declarer/defender split
+func NewFiftyFiftySplitConfig(testAgent, baselineAgent *agent.SkatAgent, gameNum int) AgentConfig {
+	return AgentConfig{
+		TestAgent:     testAgent,
+		BaselineAgent: baselineAgent,
+		Mode:          FiftyFiftySplit,
+		GameNum:       gameNum,
+	}
+}
+
+// NewThreeWayConfig creates a config for three different agents
+func NewThreeWayConfig(agent1, agent2, agent3 *agent.SkatAgent, gameNum int) AgentConfig {
+	return AgentConfig{
+		Agent1:  agent1,
+		Agent2:  agent2,
+		Agent3:  agent3,
+		Mode:    ThreeWay,
+		GameNum: gameNum,
+	}
+}
+
+// CloneAll creates a new AgentConfig with all agents cloned
+func (c AgentConfig) CloneAll() AgentConfig {
+	cloned := AgentConfig{
+		Mode:    c.Mode,
+		GameNum: c.GameNum,
+	}
+
+	switch c.Mode {
+	case TestAgainstTwoAgents, FiftyFiftySplit:
+		if c.TestAgent != nil {
+			cloned.TestAgent = c.TestAgent.Clone()
+		}
+		if c.BaselineAgent != nil {
+			cloned.BaselineAgent = c.BaselineAgent.Clone()
+		}
+	case ThreeWay:
+		if c.Agent1 != nil {
+			cloned.Agent1 = c.Agent1.Clone()
+		}
+		if c.Agent2 != nil {
+			cloned.Agent2 = c.Agent2.Clone()
+		}
+		if c.Agent3 != nil {
+			cloned.Agent3 = c.Agent3.Clone()
+		}
+	}
+
+	return cloned
+}
+
+// EnableMetrics enables metrics collection on all agents in the config
+func (c AgentConfig) EnableMetrics() {
+	switch c.Mode {
+	case TestAgainstTwoAgents, FiftyFiftySplit:
+		if c.TestAgent != nil {
+			c.TestAgent.EnableMetrics()
+		}
+		if c.BaselineAgent != nil {
+			c.BaselineAgent.EnableMetrics()
+		}
+	case ThreeWay:
+		if c.Agent1 != nil {
+			c.Agent1.EnableMetrics()
+		}
+		if c.Agent2 != nil {
+			c.Agent2.EnableMetrics()
+		}
+		if c.Agent3 != nil {
+			c.Agent3.EnableMetrics()
+		}
+	}
+}
+
+// MergeMetrics merges metrics from another config into this config
+func (c AgentConfig) MergeMetrics(other AgentConfig) {
+	switch c.Mode {
+	case TestAgainstTwoAgents, FiftyFiftySplit:
+		if c.TestAgent != nil && other.TestAgent != nil {
+			c.TestAgent.MergeMetrics(other.TestAgent.GetMetrics())
+		}
+		if c.BaselineAgent != nil && other.BaselineAgent != nil {
+			c.BaselineAgent.MergeMetrics(other.BaselineAgent.GetMetrics())
+		}
+	case ThreeWay:
+		if c.Agent1 != nil && other.Agent1 != nil {
+			c.Agent1.MergeMetrics(other.Agent1.GetMetrics())
+		}
+		if c.Agent2 != nil && other.Agent2 != nil {
+			c.Agent2.MergeMetrics(other.Agent2.GetMetrics())
+		}
+		if c.Agent3 != nil && other.Agent3 != nil {
+			c.Agent3.MergeMetrics(other.Agent3.GetMetrics())
+		}
+	}
+}
+
 // PlayFullGame plays a complete game from deal to finish.
-// The game is played with proper agent positioning:
-// - During bidding, test agent is at testPos, baseline agents at other positions
-// - If baseline becomes declarer, agents are repositioned so test agents defend
-// This ensures test and baseline agents are never on the same team.
-func PlayFullGame(testAgent, baselineAgent *agent.SkatAgent, testPos int) *game.GameState {
+// The game is played with proper agent positioning based on the AgentConfig.
+func PlayFullGame(config AgentConfig) *game.GameState {
 	g := game.NewGame()
 	g = g.WithTestPlayers()
 	g = g.WithCardsDealt()
-
-	var agents [3]*agent.SkatAgent
-	agents[testPos] = testAgent
-	agents[(testPos+1)%3] = baselineAgent.Clone()
-	agents[(testPos+2)%3] = baselineAgent.Clone()
-
-	playGameToCompletionInternal(g, testAgent, baselineAgent, agents)
+	PlayGameToCompletion(g, config)
 	return g
 }
 
 // PlayGameWithMode plays a game with a pre-configured declarer, hand, and game mode.
-// This is useful for testing specific scenarios. The test agent is the declarer.
-func PlayGameWithMode(testAgent, baselineAgent *agent.SkatAgent, declarerHand game.Cards, mode game.GameMode, trumpSuit game.Suit) *game.GameState {
+// This is useful for testing specific scenarios.
+func PlayGameWithMode(config AgentConfig, declarerHand game.Cards, mode game.GameMode, trumpSuit game.Suit) *game.GameState {
 	g := game.NewGame()
 	g = g.WithTestPlayers()
 	g = g.WithPlayerHand(game.Speaker, declarerHand)
 	g = g.WithDeclarer(game.Speaker, 0)
 	g = g.WithSkatPickedUp(false)
 	g = g.WithGame(mode, trumpSuit)
-
-	playGameToCompletionInternal(g, testAgent, baselineAgent, [3]*agent.SkatAgent{testAgent, baselineAgent, baselineAgent})
+	PlayGameToCompletion(g, config)
 	return g
 }
 
-// PlayGameToCompletion plays out a game ensuring test and baseline agents are never teammates.
-// If testAgent and baselineAgent are both non-nil, agents are repositioned after bidding if needed.
-// If either is nil, the provided agents array is used as-is without repositioning.
-func PlayGameToCompletion(g *game.GameState, testAgent, baselineAgent *agent.SkatAgent, agents [3]*agent.SkatAgent) {
-	playGameToCompletionInternal(g, testAgent, baselineAgent, agents)
-}
+// PlayGameToCompletion plays out a game with the specified agent configuration.
+func PlayGameToCompletion(g *game.GameState, config AgentConfig) {
+	// Initialize agents array based on configuration
+	agents := make([]*agent.SkatAgent, 3)
+	testPos := config.GameNum % 3
 
-// playGameToCompletionInternal is the internal implementation that handles agent repositioning.
-// If testAgent and baselineAgent are provided, it ensures they're never on the same team.
-func playGameToCompletionInternal(g *game.GameState, testAgent, baselineAgent *agent.SkatAgent, agents [3]*agent.SkatAgent) {
+	switch config.Mode {
+	case TestAgainstTwoAgents:
+		// Test agent bids against two baseline agents, rotated by gameNum
+		agents[testPos] = config.TestAgent
+		agents[(testPos+1)%3] = config.BaselineAgent
+		agents[(testPos+2)%3] = config.BaselineAgent.CachedClone()
+	case FiftyFiftySplit:
+		// All three test agents bid (no baseline during bidding)
+		agents[0] = config.TestAgent
+		agents[1] = config.TestAgent.CachedClone()
+		agents[2] = config.TestAgent.CachedClone().CachedClone()
+	case ThreeWay:
+		// Three different agents
+		agents[0] = config.Agent1
+		agents[1] = config.Agent2
+		agents[2] = config.Agent3
+	}
+
+	// Reset stateful strategies on all agents for a fresh game
+	for _, a := range agents {
+		a.OnGameStart()
+	}
+
 	// Bidding phase
 	for g.Phase == game.PhaseBidding {
 		currentAgent := agents[g.CurrentPlayer]
@@ -62,15 +204,32 @@ func playGameToCompletionInternal(g *game.GameState, testAgent, baselineAgent *a
 		}
 	}
 
-	// After bidding, check if we need to reposition agents
-	// If baseline became declarer, we need 2 test agents as defenders
-	// Only do this if testAgent and baselineAgent are provided (not nil)
-	if testAgent != nil && baselineAgent != nil && g.Phase == game.PhaseSkatExchange && g.Declarer != nil {
+	// After bidding, set up agents for cardplay based on configuration
+	if g.Phase == game.PhaseSkatExchange && g.Declarer != nil {
 		declarerPos := int(*g.Declarer)
-		if agents[declarerPos] == baselineAgent {
-			// Baseline is declarer - need to swap in test agents as defenders
-			agents[(declarerPos+1)%3] = testAgent
-			agents[(declarerPos+2)%3] = testAgent.Clone()
+
+		switch config.Mode {
+		case TestAgainstTwoAgents:
+			// If baseline became declarer, swap in test agents as defenders
+			if agents[declarerPos] == config.BaselineAgent || agents[declarerPos] == config.BaselineAgent.CachedClone() {
+				agents[(declarerPos+1)%3] = config.TestAgent
+				agents[(declarerPos+2)%3] = config.TestAgent.CachedClone()
+			}
+		case FiftyFiftySplit:
+			// Alternate based on gameNum: even games = test as declarer, odd games = baseline as declarer
+			if config.GameNum%2 == 0 {
+				// Want test agent as declarer - fill defenders with baseline
+				agents[declarerPos] = config.TestAgent
+				agents[(declarerPos+1)%3] = config.BaselineAgent
+				agents[(declarerPos+2)%3] = config.BaselineAgent.CachedClone()
+			} else {
+				// Want baseline as declarer, test as defender
+				agents[declarerPos] = config.BaselineAgent
+				agents[(declarerPos+1)%3] = config.TestAgent
+				agents[(declarerPos+2)%3] = config.TestAgent.CachedClone()
+			}
+		case ThreeWay:
+			// No repositioning needed - agents stay as they are
 		}
 	}
 
@@ -117,27 +276,34 @@ func playGameToCompletionInternal(g *game.GameState, testAgent, baselineAgent *a
 	}
 
 	// Record metrics if agents have them enabled
-	if testAgent != nil && baselineAgent != nil && g.Declarer != nil && !(g.SpeakerPassed && g.ListenerPassed && g.DealerPassed) {
+	if g.Declarer != nil && !(g.SpeakerPassed && g.ListenerPassed && g.DealerPassed) {
 		playerResults := g.PlayerResults()
 		if playerResults != nil {
-			// Count how many positions have test vs baseline agents
-			testCount := 0
-			baselineCount := 0
-			for pos := 0; pos < 3; pos++ {
-				if agents[pos] == testAgent {
-					testCount++
-				} else {
-					baselineCount++
+			// Record metrics based on configuration mode
+			switch config.Mode {
+			case TestAgainstTwoAgents, FiftyFiftySplit:
+				if config.TestAgent != nil && config.BaselineAgent != nil {
+					for pos := 0; pos < 3; pos++ {
+						agent := agents[pos]
+						// Check if this is the test agent or a clone of it
+						if agent == config.TestAgent || agent == config.TestAgent.CachedClone() || agent == config.TestAgent.CachedClone().CachedClone() {
+							config.TestAgent.RecordGameResult(g, playerResults[pos])
+						} else {
+							// This is a baseline agent or clone
+							config.BaselineAgent.RecordGameResult(g, playerResults[pos])
+						}
+					}
 				}
-			}
-
-			// Record metrics based on who is at each position
-			for pos := 0; pos < 3; pos++ {
-				if agents[pos] == testAgent {
-					testAgent.RecordGameResult(g, playerResults[pos])
-				} else {
-					// This is a baseline agent or clone
-					baselineAgent.RecordGameResult(g, playerResults[pos])
+			case ThreeWay:
+				// Record for each agent separately
+				if config.Agent1 != nil {
+					config.Agent1.RecordGameResult(g, playerResults[0])
+				}
+				if config.Agent2 != nil {
+					config.Agent2.RecordGameResult(g, playerResults[1])
+				}
+				if config.Agent3 != nil {
+					config.Agent3.RecordGameResult(g, playerResults[2])
 				}
 			}
 		}
@@ -170,15 +336,14 @@ type EvaluationStats struct {
 	BaselineNullWins   int64
 }
 
-// EvaluateAgents runs evaluation games in parallel comparing test agent against baseline.
-// Each game is played once, with agents properly positioned based on who becomes declarer.
+// EvaluateAgents runs evaluation games in parallel with the specified agent configuration.
+// Each game is played once, with agents properly positioned based on configuration.
 // Agents collect their own metrics internally.
-func EvaluateAgents(testAgent, baselineAgent *agent.SkatAgent, games int) *EvaluationStats {
+func EvaluateAgents(config AgentConfig, games int) *EvaluationStats {
 	numWorkers := runtime.GOMAXPROCS(0)
 
-	// Enable metrics on agents if not already enabled
-	testAgent.EnableMetrics()
-	baselineAgent.EnableMetrics()
+	// Enable metrics on all agents
+	config.EnableMetrics()
 
 	var passedGamesAtomic atomic.Int64
 
@@ -196,18 +361,16 @@ func EvaluateAgents(testAgent, baselineAgent *agent.SkatAgent, games int) *Evalu
 		go func() {
 			defer wg.Done()
 
-			// Clone agents for this worker to avoid mutex contention on neural networks
-			localTestAgent := testAgent.Clone()
-			localTestAgent.EnableMetrics()
-			localBaselineAgent := baselineAgent.Clone()
-			localBaselineAgent.EnableMetrics()
+			// Clone all agents for this worker to avoid mutex contention on neural networks
+			localConfig := config.CloneAll()
+			localConfig.EnableMetrics()
 
 			for gameNum := range gameChan {
-				// Rotate test agent through positions
-				testPos := gameNum % 3
+				// Set game number in config
+				localConfig.GameNum = gameNum
 
-				// Play game with test agent in this position
-				g := PlayFullGame(localTestAgent, localBaselineAgent, testPos)
+				// Play game with the specified configuration
+				g := PlayFullGame(localConfig)
 
 				// Track passed games
 				if g.Declarer == nil || (g.SpeakerPassed && g.ListenerPassed && g.DealerPassed) {
@@ -216,41 +379,49 @@ func EvaluateAgents(testAgent, baselineAgent *agent.SkatAgent, games int) *Evalu
 			}
 
 			// Merge local agent metrics back to main agents
-			testAgent.MergeMetrics(localTestAgent.GetMetrics())
-			baselineAgent.MergeMetrics(localBaselineAgent.GetMetrics())
+			config.MergeMetrics(localConfig)
 		}()
 	}
 
 	wg.Wait()
 
-	// Get final metrics snapshots
-	testMetrics := testAgent.GetMetrics()
-	baselineMetrics := baselineAgent.GetMetrics()
-
-	return &EvaluationStats{
-		TestWins:           testMetrics.Wins,
-		TestGames:          testMetrics.Games,
-		TestPoints:         testMetrics.Points,
-		TestOverbid:        testMetrics.Overbid,
-		BaselineWins:       baselineMetrics.Wins,
-		BaselineGames:      baselineMetrics.Games,
-		BaselinePoints:     baselineMetrics.Points,
-		BaselineOverbid:    baselineMetrics.Overbid,
-		PassedGames:        passedGamesAtomic.Load(),
-		GamesCompleted:     int64(games),
-		TestGrandGames:     testMetrics.GrandGames,
-		TestGrandWins:      testMetrics.GrandWins,
-		TestSuitGames:      testMetrics.SuitGames,
-		TestSuitWins:       testMetrics.SuitWins,
-		TestNullGames:      testMetrics.NullGames,
-		TestNullWins:       testMetrics.NullWins,
-		BaselineGrandGames: baselineMetrics.GrandGames,
-		BaselineGrandWins:  baselineMetrics.GrandWins,
-		BaselineSuitGames:  baselineMetrics.SuitGames,
-		BaselineSuitWins:   baselineMetrics.SuitWins,
-		BaselineNullGames:  baselineMetrics.NullGames,
-		BaselineNullWins:   baselineMetrics.NullWins,
+	// Get final metrics snapshots based on mode
+	stats := &EvaluationStats{
+		PassedGames:    passedGamesAtomic.Load(),
+		GamesCompleted: int64(games),
 	}
+
+	switch config.Mode {
+	case TestAgainstTwoAgents, FiftyFiftySplit:
+		testMetrics := config.TestAgent.GetMetrics()
+		baselineMetrics := config.BaselineAgent.GetMetrics()
+
+		stats.TestWins = testMetrics.Wins
+		stats.TestGames = testMetrics.Games
+		stats.TestPoints = testMetrics.Points
+		stats.TestOverbid = testMetrics.Overbid
+		stats.BaselineWins = baselineMetrics.Wins
+		stats.BaselineGames = baselineMetrics.Games
+		stats.BaselinePoints = baselineMetrics.Points
+		stats.BaselineOverbid = baselineMetrics.Overbid
+		stats.TestGrandGames = testMetrics.GrandGames
+		stats.TestGrandWins = testMetrics.GrandWins
+		stats.TestSuitGames = testMetrics.SuitGames
+		stats.TestSuitWins = testMetrics.SuitWins
+		stats.TestNullGames = testMetrics.NullGames
+		stats.TestNullWins = testMetrics.NullWins
+		stats.BaselineGrandGames = baselineMetrics.GrandGames
+		stats.BaselineGrandWins = baselineMetrics.GrandWins
+		stats.BaselineSuitGames = baselineMetrics.SuitGames
+		stats.BaselineSuitWins = baselineMetrics.SuitWins
+		stats.BaselineNullGames = baselineMetrics.NullGames
+		stats.BaselineNullWins = baselineMetrics.NullWins
+	case ThreeWay:
+		// For three-way mode, we don't have test/baseline distinction
+		// Could extend EvaluationStats to support this if needed
+	}
+
+	return stats
 }
 
 // runParallelTraining runs training episodes in parallel across all CPU cores

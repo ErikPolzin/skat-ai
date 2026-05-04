@@ -63,7 +63,8 @@ func runEvaluation(agentType, component string, games int, biddingWeights, cardp
 	fmt.Printf("Running %d games on %d CPU cores...\n", games, runtime.GOMAXPROCS(0))
 	fmt.Println(strings.Repeat("=", 50) + "\n")
 
-	stats := training.EvaluateAgents(testAgent, baselineAgent, games)
+	evalConfig := training.NewTestAgainstTwoConfig(testAgent, baselineAgent, 0)
+	stats := training.EvaluateAgents(evalConfig, games)
 
 	// Get agent metrics for bidding distribution
 	testMetrics := testAgent.GetMetrics()
@@ -722,11 +723,11 @@ func playGamesWithMode(testAgent *agent.SkatAgent, declarerHand game.Cards, mode
 	localTestAgent.EnableMetrics()
 
 	for i := 0; i < numGames; i++ {
-		training.PlayGameWithMode(localTestAgent, baselineAgent, declarerHand, mode, trumpSuit)
+		config := training.NewTestAgainstTwoConfig(localTestAgent, baselineAgent, i)
+		training.PlayGameWithMode(config, declarerHand, mode, trumpSuit)
 	}
 
 	// Get metrics from the local agent
 	metrics := localTestAgent.GetMetrics()
 	return int(metrics.Wins), int(metrics.Points), int(metrics.Games)
 }
-

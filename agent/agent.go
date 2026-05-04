@@ -85,6 +85,9 @@ type SkatAgent struct {
 
 	// Metrics
 	metrics *AgentMetrics
+
+	// Cached clone for performance (lazily created on first CachedClone() call)
+	cachedClone *SkatAgent
 }
 
 // Agent interface implementation
@@ -155,6 +158,16 @@ func (sa *SkatAgent) Clone() *SkatAgent {
 	clone.metrics = nil
 
 	return clone
+}
+
+// CachedClone returns a cached clone of the agent, creating it lazily on first call.
+// This is much faster than Clone() when called repeatedly, as it reuses the same clone.
+// Use this for performance in tight loops where you need multiple clones.
+func (sa *SkatAgent) CachedClone() *SkatAgent {
+	if sa.cachedClone == nil {
+		sa.cachedClone = sa.Clone()
+	}
+	return sa.cachedClone
 }
 
 // ChooseSkatDiscard selects which 2 cards to discard

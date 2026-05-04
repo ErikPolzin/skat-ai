@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"math/rand"
 	"os"
 	"time"
 
@@ -45,29 +44,29 @@ import (
 //   - Converges to Nash equilibrium where neither side can improve unilaterally
 func main() {
 	// Parse flags
-	episodes := flag.Int("episodes", 100000, "Number of training episodes")
-	bufferSize := flag.Int("buffer", 100000, "Replay buffer size")
+	episodes := flag.Int("episodes", 10000, "Number of training episodes")
+	bufferSize := flag.Int("buffer", 20000, "Replay buffer size")
 	batchSize := flag.Int("batch", 256, "Batch size")
 	gamma := flag.Float64("gamma", 0.95, "Discount factor")
-	lr := flag.Float64("lr", 0.0005, "Learning rate")
+	lr := flag.Float64("lr", 0.0001, "Learning rate")
 	l2Reg := flag.Float64("l2", 0.0001, "L2 regularization")
 	epsilonStart := flag.Float64("epsilon-start", 1.0, "Starting epsilon for exploration")
 	epsilonEnd := flag.Float64("epsilon-end", 0.1, "Ending epsilon for exploration")
-	epsilonDecay := flag.Float64("epsilon-decay", 0.995, "Epsilon decay rate per episode")
+	epsilonDecay := flag.Float64("epsilon-decay", 0.999, "Epsilon decay rate per episode")
 	trainSteps := flag.Int("train-steps", 4, "Training steps per episode")
-	evalEvery := flag.Int("eval-every", 1000, "Evaluate every N episodes")
-	evalGames := flag.Int("eval-games", 100, "Number of games per evaluation")
+	evalEvery := flag.Int("eval-every", 100, "Evaluate every N episodes")
+	evalGames := flag.Int("eval-games", 200, "Number of games per evaluation")
 	saveEvery := flag.Int("save-every", 5000, "Save model every N episodes")
 	outputWeights := flag.String("output", ".data/models/dqn_cardplay.weights", "Output weights file")
-	seed := flag.Int64("seed", 0, "Random seed (0 = use current time)")
+	trainingSplit := flag.String("split", "70/20/10", "Training split: heuristic/mixed/selfplay (e.g., 70/20/10)")
 
 	flag.Parse()
 
-	// Set random seed
-	if *seed == 0 {
-		rand.Seed(time.Now().UnixNano())
-	} else {
-		rand.Seed(*seed)
+	// Parse training split
+	heuristicPct, mixedPct, selfPlayPct, err := parseTrainingSplit(*trainingSplit)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid training split: %v\n", err)
+		os.Exit(1)
 	}
 
 	fmt.Println("============================================================")
@@ -82,6 +81,7 @@ func main() {
 	fmt.Printf("  L2 Regularization: %.5f\n", *l2Reg)
 	fmt.Printf("  Epsilon: %.2f -> %.2f (decay: %.6f)\n", *epsilonStart, *epsilonEnd, *epsilonDecay)
 	fmt.Printf("  Training Steps: %d per episode\n", *trainSteps)
+	fmt.Printf("  Training Split: %d%% heuristic / %d%% mixed / %d%% self-play\n", heuristicPct, mixedPct, selfPlayPct)
 	fmt.Printf("  Evaluation: every %d episodes\n", *evalEvery)
 	fmt.Printf("  Save: every %d episodes\n", *saveEvery)
 	fmt.Printf("  Output: %s\n\n", *outputWeights)
@@ -93,16 +93,15 @@ func main() {
 		float32(*gamma),
 		*lr,
 		*l2Reg,
+		float32(*epsilonStart),
+		float32(*epsilonDecay),
+		float32(*epsilonEnd),
 		nil,
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create trainer: %v\n", err)
 		os.Exit(1)
 	}
-
-	trainer.SetEpsilon(float32(*epsilonStart))
-	trainer.SetEpsilonDecay(float32(*epsilonDecay))
-	trainer.SetEpsilonMin(float32(*epsilonEnd))
 
 	// Training loop
 	fmt.Println("Starting self-play training...")
@@ -113,7 +112,7 @@ func main() {
 	// - Too frequent: unstable training (chasing a moving target)
 	// - Too rare: agents play against outdated opponents
 	// - Sweet spot: 10-100 episodes depending on learning rate
-	syncEvery := 10
+	syncEvery := 40
 
 	// Create DQN strategy with initial random weights
 	declWeights, defWeights := trainer.GetOnlineWeights()
@@ -143,12 +142,8 @@ func main() {
 		dqnStrategy.SetExploration(trainer.GetEpsilon())
 	}
 
-	// Create heuristic agents for mixed training
-	heuristicAgents := [3]*agent.SkatAgent{
-		agent.NewHeuristicAgent("Heuristic-0"),
-		agent.NewHeuristicAgent("Heuristic-1"),
-		agent.NewHeuristicAgent("Heuristic-2"),
-	}
+	// Create heuristic agent for mixed training
+	heuristicAgent := agent.NewHeuristicAgent("Heuristic")
 
 	for episode := 1; episode <= *episodes; episode++ {
 		// Periodically sync agents with latest network weights
@@ -157,17 +152,9 @@ func main() {
 			updateDQNWeights()
 		}
 
-		// 100% vs heuristic (no self-play)
-		// DQN plays against heuristics to learn from strong opponents
-		// Rotate DQN position to ensure it plays as both declarer and defender
-		var gameAgents [3]*agent.SkatAgent
-		dqnPos := episode % 3
-		gameAgents[dqnPos] = dqnAgent
-		gameAgents[(dqnPos+1)%3] = heuristicAgents[(dqnPos+1)%3]
-		gameAgents[(dqnPos+2)%3] = heuristicAgents[(dqnPos+2)%3]
-
-		// Play game and collect experiences from DQN agent only
-		playGameAndCollectExperiences(gameAgents, trainer, dqnPos)
+		// Determine episode type based on training split
+		episodeType := determineEpisodeType(episode, heuristicPct, mixedPct, selfPlayPct)
+		playGameWithMode(dqnAgent, heuristicAgent, trainer, episode, episodeType)
 
 		// Perform training steps if we have enough data
 		for step := 0; step < *trainSteps; step++ {
@@ -240,8 +227,9 @@ func main() {
 
 			baselineAgent := agent.NewHeuristicAgent("Baseline")
 
-			// Run evaluation
-			stats := training.EvaluateAgents(testAgent, baselineAgent, *evalGames)
+			// Run evaluation with 50/50 split (test bidding, even declarer/defender cardplay)
+			config := training.NewFiftyFiftySplitConfig(testAgent, baselineAgent, 0)
+			stats := training.EvaluateAgents(config, *evalGames)
 
 			// Calculate declarer win rates
 			testDeclWinRate := 0.0
@@ -323,25 +311,47 @@ type GameExperience struct {
 	PlayerPos  game.GamePosition
 }
 
-// playGameAndCollectExperiences plays a self-play game and collects DQN experiences from all players
-func playGameAndCollectExperiences(agents [3]*agent.SkatAgent, trainer *dqn.DQNCardPlayTrainer, dqnPos int) {
-	// Create and play game
+// playGameAndCollectExperiences plays a game with 50/50 declarer/defender split and collects DQN experiences
+func playGameAndCollectExperiences(dqnAgent, heuristicAgent *agent.SkatAgent, trainer *dqn.DQNCardPlayTrainer, episode int) {
+	// Create game
 	g := game.NewGame()
 	g = g.WithTestPlayers()
 	g = g.WithCardsDealt()
+
+	// Set up agents based on 50/50 split - all heuristic agents bid
+	agents := [3]*agent.SkatAgent{
+		heuristicAgent,
+		heuristicAgent.CachedClone(),
+		heuristicAgent.CachedClone().CachedClone(),
+	}
 
 	// Bidding phase
 	for g.Phase == game.PhaseBidding {
 		currentAgent := agents[g.CurrentPlayer]
 		accept := currentAgent.Bid(g)
 		if _, err := g.Bid(accept); err != nil {
-			panic(fmt.Sprintf("Bidding error (should never happen in self-play): %v", err))
+			panic(fmt.Sprintf("Bidding error: %v", err))
 		}
 	}
 
 	// Check if game was passed
 	if g.Declarer == nil {
-		return // No card play experiences if everyone passed
+		panic("Declarer is nil after bidding")
+	}
+
+	// After bidding, swap agents for cardplay based on episode number
+	// Even episodes: DQN as declarer, Odd episodes: heuristic as declarer
+	declarerPos := int(*g.Declarer)
+	if episode%2 == 0 {
+		// DQN as declarer
+		agents[declarerPos] = dqnAgent
+		agents[(declarerPos+1)%3] = heuristicAgent
+		agents[(declarerPos+2)%3] = heuristicAgent.CachedClone()
+	} else {
+		// Heuristic as declarer
+		agents[declarerPos] = heuristicAgent
+		agents[(declarerPos+1)%3] = dqnAgent
+		agents[(declarerPos+2)%3] = dqnAgent.CachedClone()
 	}
 
 	// Skat exchange and game choice
@@ -447,11 +457,16 @@ func playGameAndCollectExperiences(agents [3]*agent.SkatAgent, trainer *dqn.DQNC
 		}
 	}
 
-	// Record game results for DQN agent only (for metrics tracking)
+	// Record game results for DQN agent (for metrics tracking)
 	if g.Phase == game.PhaseComplete && g.Declarer != nil {
 		playerResults := g.PlayerResults()
 		if playerResults != nil {
-			agents[dqnPos].RecordGameResult(g, playerResults[dqnPos])
+			// Record for all positions where DQN agent is present
+			for pos := 0; pos < 3; pos++ {
+				if agents[pos] == dqnAgent || agents[pos] == dqnAgent.CachedClone() || agents[pos] == dqnAgent.CachedClone().CachedClone() {
+					dqnAgent.RecordGameResult(g, playerResults[pos])
+				}
+			}
 		}
 	}
 }
@@ -472,8 +487,10 @@ func computeTrickReward(scoresBefore, scoresAfter [2]int) map[bool]float32 {
 	// Normalize trick value to roughly [-1, 1]
 	normalized := float32(trickValue) / 30.0 // Max trick value ~30
 
-	// Scale down immediate rewards (terminal reward is more important)
-	scaled := normalized * 0.5
+	// Scale up rewards to provide stronger learning signal
+	// Typical trick: 10-15 points -> 0.67-1.0 reward
+	// Max trick: 30 points -> 2.0 reward
+	scaled := normalized * 2.0
 
 	// Assign rewards: positive if your team won, negative if opponent won
 	if declarerWonTrick {
@@ -490,4 +507,278 @@ func computeTrickReward(scoresBefore, scoresAfter [2]int) map[bool]float32 {
 // cardToIndex converts a card to its index (0-31)
 func cardToIndex(card game.Card) int {
 	return encoding.CardToIndex(card)
+}
+
+// parseTrainingSplit parses a training split string like "70/20/10" into percentages
+func parseTrainingSplit(split string) (heuristic, mixed, selfPlay int, err error) {
+	var h, m, s int
+	n, scanErr := fmt.Sscanf(split, "%d/%d/%d", &h, &m, &s)
+	if scanErr != nil || n != 3 {
+		return 0, 0, 0, fmt.Errorf("expected format: X/Y/Z (e.g., 70/20/10)")
+	}
+	if h < 0 || m < 0 || s < 0 {
+		return 0, 0, 0, fmt.Errorf("percentages must be non-negative")
+	}
+	if h+m+s != 100 {
+		return 0, 0, 0, fmt.Errorf("percentages must sum to 100, got %d", h+m+s)
+	}
+	return h, m, s, nil
+}
+
+// EpisodeType represents the type of training episode
+type EpisodeType int
+
+const (
+	EpisodeHeuristic EpisodeType = iota // DQN vs all heuristic
+	EpisodeMixed                        // DQN vs heuristic (50/50 declarer)
+	EpisodeSelfPlay                     // DQN vs DQN
+)
+
+// determineEpisodeType determines what type of episode to run based on the split percentages
+func determineEpisodeType(episode, heuristicPct, mixedPct, selfPlayPct int) EpisodeType {
+	// Use modulo to cycle through percentages
+	pos := (episode - 1) % 100
+
+	if pos < heuristicPct {
+		return EpisodeHeuristic
+	} else if pos < heuristicPct+mixedPct {
+		return EpisodeMixed
+	} else {
+		return EpisodeSelfPlay
+	}
+}
+
+// playGameWithMode plays a game with the specified training mode
+func playGameWithMode(dqnAgent, heuristicAgent *agent.SkatAgent, trainer *dqn.DQNCardPlayTrainer, episode int, mode EpisodeType) {
+	switch mode {
+	case EpisodeHeuristic:
+		playGameHeuristicOnly(dqnAgent, heuristicAgent, trainer)
+	case EpisodeMixed:
+		playGameAndCollectExperiences(dqnAgent, heuristicAgent, trainer, episode)
+	case EpisodeSelfPlay:
+		playGameSelfPlay(dqnAgent, trainer)
+	}
+}
+
+// playGameHeuristicOnly plays a game where all agents are heuristic (DQN observes)
+// This is used to seed the replay buffer with diverse experiences
+func playGameHeuristicOnly(dqnAgent, heuristicAgent *agent.SkatAgent, trainer *dqn.DQNCardPlayTrainer) {
+	// Create game
+	g := game.NewGame()
+	g = g.WithTestPlayers()
+	g = g.WithCardsDealt()
+
+	// All heuristic agents
+	agents := [3]*agent.SkatAgent{
+		heuristicAgent,
+		heuristicAgent.CachedClone(),
+		heuristicAgent.CachedClone().CachedClone(),
+	}
+
+	// Bidding phase
+	for g.Phase == game.PhaseBidding {
+		currentAgent := agents[g.CurrentPlayer]
+		accept := currentAgent.Bid(g)
+		if _, err := g.Bid(accept); err != nil {
+			panic(fmt.Sprintf("Bidding error: %v", err))
+		}
+	}
+
+	if g.Declarer == nil {
+		panic("Declarer is nil after bidding")
+	}
+
+	// Skat exchange and game choice
+	if g.Phase == game.PhaseSkatExchange {
+		declarerAgent := agents[*g.Declarer]
+		if _, err := g.SkatDecision(true); err != nil {
+			panic(fmt.Sprintf("Skat decision error: %v", err))
+		}
+		mode, trumpSuit := declarerAgent.ChooseGame(g)
+		card1, card2 := declarerAgent.ChooseSkatDiscard(g.Players[*g.Declarer].Hand, mode, trumpSuit)
+		if _, err := g.Discard(card1, card2); err != nil {
+			panic(fmt.Sprintf("Discard error: %v", err))
+		}
+		if _, err := g.DeclareGame(mode, trumpSuit, false, false); err != nil {
+			panic(fmt.Sprintf("Declare game error: %v", err))
+		}
+	}
+
+	// Card play phase - collect experiences from heuristic play
+	var trickExperiences [3]*GameExperience
+	var previousTrickExps [3]*GameExperience
+
+	for g.Phase == game.PhasePlaying {
+		validMoves := g.GetValidMoves()
+		currentPlayer := g.CurrentPlayer
+		playerIdx := int(currentPlayer)
+
+		if previousTrickExps[playerIdx] != nil && !previousTrickExps[playerIdx].Experience.Done {
+			state, validMask := dqn.EncodeStateToDQN(g, currentPlayer, validMoves)
+			previousTrickExps[playerIdx].Experience.NextState = state
+			previousTrickExps[playerIdx].Experience.NextMask = validMask
+			trainer.StoreExperience(previousTrickExps[playerIdx].Experience, previousTrickExps[playerIdx].IsDeclarer)
+			previousTrickExps[playerIdx] = nil
+		}
+
+		state, validMask := dqn.EncodeStateToDQN(g, currentPlayer, validMoves)
+		card := agents[currentPlayer].SelectMove(g, validMoves)
+		action := cardToIndex(card)
+		isDeclarer := currentPlayer == *g.Declarer
+
+		trickExperiences[playerIdx] = &GameExperience{
+			Experience: dqn.DQNExperience{
+				State:     state,
+				Action:    action,
+				ValidMask: validMask,
+				Reward:    0,
+			},
+			IsDeclarer: isDeclarer,
+			PlayerPos:  currentPlayer,
+		}
+
+		if _, err := g.PlayCard(card); err != nil {
+			panic(fmt.Sprintf("PlayCard error: %v", err))
+		}
+
+		if len(g.Trick) == 3 {
+			scoresBefore := [2]int{g.DeclarerScore, g.OpponentScore}
+			if _, err := g.ResolveTrick(); err != nil {
+				panic(fmt.Sprintf("ResolveTrick error: %v", err))
+			}
+			scoresAfter := [2]int{g.DeclarerScore, g.OpponentScore}
+			trickReward := computeTrickReward(scoresBefore, scoresAfter)
+
+			for i := 0; i < 3; i++ {
+				if trickExperiences[i] != nil {
+					playerIsDeclarer := trickExperiences[i].IsDeclarer
+					trickExperiences[i].Experience.Reward = trickReward[playerIsDeclarer]
+
+					if g.Phase != game.PhasePlaying {
+						trickExperiences[i].Experience.Done = true
+						trainer.StoreExperience(trickExperiences[i].Experience, trickExperiences[i].IsDeclarer)
+					} else {
+						previousTrickExps[i] = trickExperiences[i]
+					}
+				}
+			}
+			trickExperiences = [3]*GameExperience{}
+		}
+	}
+}
+
+// playGameSelfPlay plays a game where all agents are DQN
+func playGameSelfPlay(dqnAgent *agent.SkatAgent, trainer *dqn.DQNCardPlayTrainer) {
+	// Create game
+	g := game.NewGame()
+	g = g.WithTestPlayers()
+	g = g.WithCardsDealt()
+
+	// All DQN agents
+	agents := [3]*agent.SkatAgent{
+		dqnAgent,
+		dqnAgent.CachedClone(),
+		dqnAgent.CachedClone().CachedClone(),
+	}
+
+	// Bidding phase - use heuristic bidding
+	for g.Phase == game.PhaseBidding {
+		currentAgent := agents[g.CurrentPlayer]
+		accept := currentAgent.Bid(g)
+		if _, err := g.Bid(accept); err != nil {
+			panic(fmt.Sprintf("Bidding error: %v", err))
+		}
+	}
+
+	if g.Declarer == nil {
+		panic("Declarer is nil after bidding")
+	}
+
+	// Skat exchange and game choice
+	if g.Phase == game.PhaseSkatExchange {
+		declarerAgent := agents[*g.Declarer]
+		if _, err := g.SkatDecision(true); err != nil {
+			panic(fmt.Sprintf("Skat decision error: %v", err))
+		}
+		mode, trumpSuit := declarerAgent.ChooseGame(g)
+		card1, card2 := declarerAgent.ChooseSkatDiscard(g.Players[*g.Declarer].Hand, mode, trumpSuit)
+		if _, err := g.Discard(card1, card2); err != nil {
+			panic(fmt.Sprintf("Discard error: %v", err))
+		}
+		if _, err := g.DeclareGame(mode, trumpSuit, false, false); err != nil {
+			panic(fmt.Sprintf("Declare game error: %v", err))
+		}
+	}
+
+	// Card play phase
+	var trickExperiences [3]*GameExperience
+	var previousTrickExps [3]*GameExperience
+
+	for g.Phase == game.PhasePlaying {
+		validMoves := g.GetValidMoves()
+		currentPlayer := g.CurrentPlayer
+		playerIdx := int(currentPlayer)
+
+		if previousTrickExps[playerIdx] != nil && !previousTrickExps[playerIdx].Experience.Done {
+			state, validMask := dqn.EncodeStateToDQN(g, currentPlayer, validMoves)
+			previousTrickExps[playerIdx].Experience.NextState = state
+			previousTrickExps[playerIdx].Experience.NextMask = validMask
+			trainer.StoreExperience(previousTrickExps[playerIdx].Experience, previousTrickExps[playerIdx].IsDeclarer)
+			previousTrickExps[playerIdx] = nil
+		}
+
+		state, validMask := dqn.EncodeStateToDQN(g, currentPlayer, validMoves)
+		card := agents[currentPlayer].SelectMove(g, validMoves)
+		action := cardToIndex(card)
+		isDeclarer := currentPlayer == *g.Declarer
+
+		trickExperiences[playerIdx] = &GameExperience{
+			Experience: dqn.DQNExperience{
+				State:     state,
+				Action:    action,
+				ValidMask: validMask,
+				Reward:    0,
+			},
+			IsDeclarer: isDeclarer,
+			PlayerPos:  currentPlayer,
+		}
+
+		if _, err := g.PlayCard(card); err != nil {
+			panic(fmt.Sprintf("PlayCard error: %v", err))
+		}
+
+		if len(g.Trick) == 3 {
+			scoresBefore := [2]int{g.DeclarerScore, g.OpponentScore}
+			if _, err := g.ResolveTrick(); err != nil {
+				panic(fmt.Sprintf("ResolveTrick error: %v", err))
+			}
+			scoresAfter := [2]int{g.DeclarerScore, g.OpponentScore}
+			trickReward := computeTrickReward(scoresBefore, scoresAfter)
+
+			for i := 0; i < 3; i++ {
+				if trickExperiences[i] != nil {
+					playerIsDeclarer := trickExperiences[i].IsDeclarer
+					trickExperiences[i].Experience.Reward = trickReward[playerIsDeclarer]
+
+					if g.Phase != game.PhasePlaying {
+						trickExperiences[i].Experience.Done = true
+						trainer.StoreExperience(trickExperiences[i].Experience, trickExperiences[i].IsDeclarer)
+					} else {
+						previousTrickExps[i] = trickExperiences[i]
+					}
+				}
+			}
+			trickExperiences = [3]*GameExperience{}
+		}
+	}
+
+	// Record game results
+	if g.Phase == game.PhaseComplete && g.Declarer != nil {
+		playerResults := g.PlayerResults()
+		if playerResults != nil {
+			for pos := 0; pos < 3; pos++ {
+				dqnAgent.RecordGameResult(g, playerResults[pos])
+			}
+		}
+	}
 }

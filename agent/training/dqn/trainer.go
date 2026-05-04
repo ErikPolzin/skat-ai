@@ -2,6 +2,7 @@ package dqn
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 
 	"skat/agent/strategies"
@@ -15,10 +16,10 @@ import (
 
 // DQNExperience represents a single experience tuple for Deep Q-Learning
 type DQNExperience struct {
-	State     [130]float32 // State encoding (130 features, no PlayerRole)
+	State     [114]float32 // State encoding (114 features, simplified)
 	Action    int          // Card index (0-31) that was taken
 	Reward    float32      // Immediate trick reward
-	NextState [130]float32 // Next state encoding
+	NextState [114]float32 // Next state encoding
 	Done      bool         // Whether game ended
 	ValidMask [32]float32  // Valid moves at current state
 	NextMask  [32]float32  // Valid moves at next state
@@ -123,7 +124,7 @@ type DQNCardPlayModel struct {
 	solver gorgonia.Solver
 
 	// Input nodes
-	x          *gorgonia.Node // State features (162)
+	x          *gorgonia.Node // State features (146)
 	validMask  *gorgonia.Node // Valid moves mask (32)
 	targetQ    *gorgonia.Node // Target Q-values (32)
 	actionMask *gorgonia.Node // One-hot action taken (32)
@@ -170,6 +171,9 @@ func NewDQNCardPlayTrainer(
 	gamma float32,
 	learningRate float64,
 	l2Reg float64,
+	epsilon float32,
+	epsilonDecay float32,
+	epsilonMin float32,
 	strategy *strategies.DeepQLearningCardPlayStrategy,
 ) (*DQNCardPlayTrainer, error) {
 	trainer := &DQNCardPlayTrainer{
@@ -178,12 +182,12 @@ func NewDQNCardPlayTrainer(
 		gamma:          gamma,
 		learningRate:   learningRate,
 		batchSize:      batchSize,
-		targetUpdate:   100, // Update target network every 100 steps
+		targetUpdate:   1000, // Update target network every 1000 steps (was 100, too frequent)
 		l2Reg:          l2Reg,
 		stepCount:      0,
-		epsilon:        1.0,   // Start with full exploration
-		epsilonDecay:   0.995, // Decay per episode
-		epsilonMin:     0.1,   // Minimum exploration
+		epsilon:        epsilon,
+		epsilonDecay:   epsilonDecay,
+		epsilonMin:     epsilonMin,
 	}
 
 	// Create declarer online network
@@ -228,9 +232,9 @@ func (t *DQNCardPlayTrainer) createDQNModel(strategy *strategies.DeepQLearningCa
 	// Always create fresh weights - we have separate networks per role
 	weights := strategies.NewCardPlayNetworkNodes(g)
 
-	// Input: batch_size x 130 (state without valid mask)
+	// Input: batch_size x 114 (state without valid mask)
 	xState := gorgonia.NewMatrix(g, tensor.Float32,
-		gorgonia.WithShape(t.batchSize, 130),
+		gorgonia.WithShape(t.batchSize, 114),
 		gorgonia.WithName("dqn_state"))
 
 	// Valid moves mask: batch_size x 32
@@ -248,7 +252,7 @@ func (t *DQNCardPlayTrainer) createDQNModel(strategy *strategies.DeepQLearningCa
 		gorgonia.WithShape(t.batchSize, 32),
 		gorgonia.WithName("dqn_action_mask"))
 
-	// Concatenate state (130) and valid mask (32) to form full input (162) for network
+	// Concatenate state (114) and valid mask (32) to form full input (146) for network
 	x := gorgonia.Must(gorgonia.Concat(1, xState, validMask))
 
 	// Build Dueling DQN network
@@ -349,7 +353,6 @@ func (t *DQNCardPlayTrainer) createDQNModel(strategy *strategies.DeepQLearningCa
 		"policy.0.weight", "policy.0.bias",
 		"policy.2.weight", "policy.2.bias",
 		"value.0.weight", "value.0.bias",
-		"value.2.weight", "value.2.bias",
 	}
 	allWeights := weights.ToSlice()
 	for i, name := range weightNames {
@@ -430,18 +433,18 @@ func (t *DQNCardPlayTrainer) trainBatch(batch []DQNExperience, isDeclarer bool) 
 	batchSize := len(batch)
 
 	// Prepare batch data
-	stateData := make([]float32, batchSize*130)
+	stateData := make([]float32, batchSize*114)
 	maskData := make([]float32, batchSize*32)
 	actionMaskData := make([]float32, batchSize*32)
-	nextStateData := make([]float32, batchSize*130)
+	nextStateData := make([]float32, batchSize*114)
 	nextMaskData := make([]float32, batchSize*32)
 
 	// Build batched inputs
 	for i, exp := range batch {
-		copy(stateData[i*130:(i+1)*130], exp.State[:])
+		copy(stateData[i*114:(i+1)*114], exp.State[:])
 		copy(maskData[i*32:(i+1)*32], exp.ValidMask[:])
 		actionMaskData[i*32+exp.Action] = 1.0
-		copy(nextStateData[i*130:(i+1)*130], exp.NextState[:])
+		copy(nextStateData[i*114:(i+1)*114], exp.NextState[:])
 		copy(nextMaskData[i*32:(i+1)*32], exp.NextMask[:])
 	}
 
@@ -479,7 +482,7 @@ func (t *DQNCardPlayTrainer) trainBatch(batch []DQNExperience, isDeclarer bool) 
 	}
 
 	// Create tensors
-	stateTensor := tensor.New(tensor.WithBacking(stateData), tensor.WithShape(len(batch), 130))
+	stateTensor := tensor.New(tensor.WithBacking(stateData), tensor.WithShape(len(batch), 114))
 	maskTensor := tensor.New(tensor.WithBacking(maskData), tensor.WithShape(len(batch), 32))
 	actionMaskTensor := tensor.New(tensor.WithBacking(actionMaskData), tensor.WithShape(len(batch), 32))
 	targetQTensor := tensor.New(tensor.WithBacking(targetQData), tensor.WithShape(len(batch), 32))
@@ -507,11 +510,39 @@ func (t *DQNCardPlayTrainer) trainBatch(batch []DQNExperience, isDeclarer bool) 
 		return 0, fmt.Errorf("unexpected loss type: %T", lossData)
 	}
 
-	// Update weights
+	// Update weights with gradient clipping
 	var valueGrads []gorgonia.ValueGrad
 	for _, w := range onlineNet.weights {
 		valueGrads = append(valueGrads, w)
 	}
+
+	// Clip gradients to prevent exploding gradients in large network
+	// Compute global gradient norm
+	gradNorm := float32(0.0)
+	for _, vg := range valueGrads {
+		if grad, err := vg.Grad(); err == nil && grad != nil {
+			gradData := grad.Data().([]float32)
+			for _, g := range gradData {
+				gradNorm += g * g
+			}
+		}
+	}
+	gradNorm = float32(math.Sqrt(float64(gradNorm)))
+
+	// Clip if norm exceeds threshold
+	clipThreshold := float32(10.0) // Max gradient norm
+	if gradNorm > clipThreshold {
+		scale := clipThreshold / gradNorm
+		for _, vg := range valueGrads {
+			if grad, err := vg.Grad(); err == nil && grad != nil {
+				gradData := grad.Data().([]float32)
+				for i := range gradData {
+					gradData[i] *= scale
+				}
+			}
+		}
+	}
+
 	if err := onlineNet.solver.Step(valueGrads); err != nil {
 		return 0, err
 	}
@@ -525,7 +556,7 @@ func (t *DQNCardPlayTrainer) trainBatch(batch []DQNExperience, isDeclarer bool) 
 // getBatchQFromNetwork gets Q-values for a batch of states from a specific network
 func (t *DQNCardPlayTrainer) getBatchQFromNetwork(net *DQNCardPlayModel, stateData, maskData []float32, batchSize int) []float32 {
 	// Create tensors for batch
-	stateTensor := tensor.New(tensor.WithBacking(stateData), tensor.WithShape(batchSize, 130))
+	stateTensor := tensor.New(tensor.WithBacking(stateData), tensor.WithShape(batchSize, 114))
 	maskTensor := tensor.New(tensor.WithBacking(maskData), tensor.WithShape(batchSize, 32))
 	dummyTarget := make([]float32, batchSize*32)
 	dummyAction := make([]float32, batchSize*32)
@@ -611,10 +642,10 @@ func (t *DQNCardPlayTrainer) GetOnlineWeights() (declarerWeights, defenderWeight
 	return t.declarerOnlineNet.weightsMap, t.defenderOnlineNet.weightsMap
 }
 
-// EncodeStateToDQN converts game state to DQN state encoding without PlayerRole feature
-// Returns 130 active features (no PlayerRole) + valid mask
-func EncodeStateToDQN(gs *game.GameState, myPosition game.GamePosition, validMoves []game.Card) ([130]float32, [32]float32) {
-	// Use the DQN-specific encoding (no PlayerRole)
+// EncodeStateToDQN converts game state to DQN state encoding
+// Returns 114 active features + valid mask
+func EncodeStateToDQN(gs *game.GameState, myPosition game.GamePosition, validMoves []game.Card) ([114]float32, [32]float32) {
+	// Use the simplified DQN encoding
 	dqnEnc := encoding.EncodeDQNCardPlay(gs, myPosition, validMoves)
 	return dqnEnc.ToSlice(), dqnEnc.GetValidMask()
 }

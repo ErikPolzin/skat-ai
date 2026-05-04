@@ -2,15 +2,18 @@ package db
 
 import (
 	"database/sql"
+	_ "embed"
 	"fmt"
 	"log"
-	"os"
 	"skat/game"
 	"strings"
 	"time"
 
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
+
+//go:embed schema/schema.turso.sql
+var tursoSchema string
 
 // Database wraps the sql.DB connection
 type TursoDatabase struct {
@@ -41,12 +44,8 @@ func (d *TursoDatabase) Close() error {
 
 // InitSchema initializes the database schema
 func (d *TursoDatabase) InitSchema() error {
-	schema, err := os.ReadFile("server/db/schema/schema.turso.sql")
-	if err != nil {
-		return fmt.Errorf("failed to read schema file: %w", err)
-	}
 	// Split by semicolon and execute each statement
-	statements := strings.Split(string(schema), ";")
+	statements := strings.Split(tursoSchema, ";")
 	for _, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt != "" {

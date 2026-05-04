@@ -2,15 +2,18 @@ package db
 
 import (
 	"database/sql"
+	_ "embed"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/lib/pq"
 
 	"skat/game"
 )
+
+//go:embed schema/schema.postgres.sql
+var postgresSchema string
 
 // Database wraps the sql.DB connection
 type PgDatabase struct {
@@ -41,13 +44,8 @@ func (d *PgDatabase) Close() error {
 
 // InitSchema initializes the database schema
 func (d *PgDatabase) InitSchema() error {
-	schema, err := os.ReadFile("server/db/schema/schema.postgres.sql")
-	if err != nil {
-		return fmt.Errorf("failed to read schema file: %w", err)
-	}
-
 	// PostgreSQL can handle multiple statements
-	_, err = d.DB.Exec(string(schema))
+	_, err := d.DB.Exec(postgresSchema)
 	if err != nil {
 		return fmt.Errorf("failed to initialize schema: %w", err)
 	}

@@ -365,16 +365,47 @@ func (gs *GameState) Clone() *GameState {
 		d := *gs.Declarer
 		declarer = &d
 	}
-	clone := &GameState{
-		CurrentPlayer: gs.CurrentPlayer,
-		Declarer:      declarer,
-		Mode:          gs.Mode,
-		TrumpSuit:     gs.TrumpSuit,
-		TrickWinner:   gs.TrickWinner,
-		Phase:         gs.Phase,
-		DeclarerScore: gs.DeclarerScore,
+
+	var trickWinner *GamePosition
+	if gs.TrickWinner != nil {
+		tw := *gs.TrickWinner
+		trickWinner = &tw
 	}
 
+	var forfeitedPlayer *GamePosition
+	if gs.ForfeitedPlayer != nil {
+		fp := *gs.ForfeitedPlayer
+		forfeitedPlayer = &fp
+	}
+
+	clone := &GameState{
+		ID:                    gs.ID,
+		Code:                  gs.Code,
+		SessionID:             gs.SessionID,
+		GameNumber:            gs.GameNumber,
+		CurrentPlayer:         gs.CurrentPlayer,
+		Declarer:              declarer,
+		Mode:                  gs.Mode,
+		TrumpSuit:             gs.TrumpSuit,
+		Phase:                 gs.Phase,
+		TrickWinner:           trickWinner,
+		TrickStarter:          gs.TrickStarter,
+		DeclarerScore:         gs.DeclarerScore,
+		OpponentScore:         gs.OpponentScore,
+		Matadors:              gs.Matadors,
+		PlayedHand:            gs.PlayedHand,
+		AnnouncedSchneider:    gs.AnnouncedSchneider,
+		AnnouncedSchwarz:      gs.AnnouncedSchwarz,
+		BidValue:              gs.BidValue,
+		ListenerPassed:        gs.ListenerPassed,
+		SpeakerPassed:         gs.SpeakerPassed,
+		DealerPassed:          gs.DealerPassed,
+		Overbid:               gs.Overbid,
+		CurrentPlayerDeadline: gs.CurrentPlayerDeadline,
+		ForfeitedPlayer:       forfeitedPlayer,
+	}
+
+	// Deep copy players
 	for i := 0; i < 3; i++ {
 		clone.Players[i] = &PlayerState{
 			Hand:    append([]Card{}, gs.Players[i].Hand...),
@@ -384,7 +415,10 @@ func (gs *GameState) Clone() *GameState {
 		}
 	}
 
+	// Copy skat (it's a fixed-size array, so this is a value copy)
 	clone.Skat = gs.Skat
+
+	// Deep copy trick
 	clone.Trick = append([]Card{}, gs.Trick...)
 
 	return clone

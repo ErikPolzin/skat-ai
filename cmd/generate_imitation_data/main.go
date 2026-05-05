@@ -5,9 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
+	"sync"
 
 	"skat/agent"
+	"skat/agent/strategies"
 	"skat/agent/strategies/encoding"
 	"skat/game"
 )
@@ -23,24 +26,111 @@ type ImitationExample struct {
 func main() {
 	numGames := flag.Int("games", 10000, "Number of games to generate")
 	outputFile := flag.String("output", ".data/imitation_dataset.csv", "Output file for dataset")
+	searchDepth := flag.Int("depth", 7, "Minimax search depth (default: 7)")
+	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel workers")
 	flag.Parse()
 
-	fmt.Printf("Generating imitation learning dataset from %d heuristic games...\n", *numGames)
+	fmt.Printf("Generating imitation learning dataset from %d optimal (minimax) games...\n", *numGames)
+	fmt.Printf("Using search depth: %d\n", *searchDepth)
+	fmt.Printf("Using %d parallel workers\n", *workers)
 
-	// Create heuristic agent
-	heuristicAgent := agent.NewHeuristicAgent("Heuristic")
+	// Channel for collecting results
+	examplesChan := make(chan []ImitationExample, *workers)
+	var wg sync.WaitGroup
 
-	var dataset []ImitationExample
+	// Progress tracking
+	progressChan := make(chan int, *workers)
+	doneChan := make(chan bool)
 
-	for gameNum := 0; gameNum < *numGames; gameNum++ {
-		// Create and play game with all heuristic agents
-		examples := playGameAndCollectExamples(heuristicAgent)
-		dataset = append(dataset, examples...)
+	// Progress reporter goroutine
+	go func() {
+		gamesCompleted := 0
+		for range progressChan {
+			gamesCompleted++
+			if gamesCompleted%100 == 0 {
+				fmt.Printf("  Generated %d games...\n", gamesCompleted)
+			}
+		}
+		doneChan <- true
+	}()
 
-		if (gameNum+1)%100 == 0 {
-			fmt.Printf("  Generated %d games (%d examples)...\n", gameNum+1, len(dataset))
+	// Worker function
+	worker := func(numGamesToGenerate int) {
+		defer wg.Done()
+
+		// Create minimax agent for optimal examples
+		minimaxAgent := agent.NewAgentWithStrategies(
+			"MinimaxExpert",
+			&agent.HeuristicBiddingStrategy{},
+			&agent.HeuristicGameChoiceStrategy{},
+			strategies.NewPerfectInfoMinimaxStrategyWithDepth(*searchDepth),
+		)
+
+		// Create heuristic agent for opponent simulation
+		heuristicAgent := agent.NewAgentWithStrategies(
+			"HeuristicOpponent",
+			&agent.HeuristicBiddingStrategy{},
+			&agent.HeuristicGameChoiceStrategy{},
+			&agent.HeuristicCardPlayStrategy{},
+		)
+
+		for i := 0; i < numGamesToGenerate; i++ {
+			examples := playGameAndCollectExamples(minimaxAgent, heuristicAgent)
+			examplesChan <- examples
+			progressChan <- 1
 		}
 	}
+
+	// Distribute work across workers
+	gamesPerWorker := *numGames / *workers
+	remainder := *numGames % *workers
+
+	for i := 0; i < *workers; i++ {
+		wg.Add(1)
+		gamesToGenerate := gamesPerWorker
+		if i < remainder {
+			gamesToGenerate++
+		}
+		go worker(gamesToGenerate)
+	}
+
+	// Close channels when all workers are done
+	go func() {
+		wg.Wait()
+		close(examplesChan)
+		close(progressChan)
+	}()
+
+	// Collect results with balanced declarer/defender split
+	var declarerExamples []ImitationExample
+	var defenderExamples []ImitationExample
+
+	for examples := range examplesChan {
+		for _, ex := range examples {
+			if ex.IsDeclarer {
+				declarerExamples = append(declarerExamples, ex)
+			} else {
+				defenderExamples = append(defenderExamples, ex)
+			}
+		}
+	}
+
+	// Wait for progress reporter to finish
+	<-doneChan
+
+	// Balance the dataset to 50/50 declarer/defender
+	minCount := len(declarerExamples)
+	if len(defenderExamples) < minCount {
+		minCount = len(defenderExamples)
+	}
+
+	// Create balanced dataset
+	dataset := make([]ImitationExample, 0, minCount*2)
+	dataset = append(dataset, declarerExamples[:minCount]...)
+	dataset = append(dataset, defenderExamples[:minCount]...)
+
+	fmt.Printf("\nBalanced dataset: %d declarer + %d defender = %d total examples\n",
+		minCount, minCount, len(dataset))
 
 	// Save dataset to CSV file
 	fmt.Printf("\nSaving %d examples to %s...\n", len(dataset), *outputFile)
@@ -101,33 +191,21 @@ func main() {
 	}
 
 	// Print statistics
-	declarerExamples := 0
-	defenderExamples := 0
-	for _, ex := range dataset {
-		if ex.IsDeclarer {
-			declarerExamples++
-		} else {
-			defenderExamples++
-		}
-	}
-
 	fmt.Printf("\nDataset Statistics:\n")
 	fmt.Printf("  Total examples: %d\n", len(dataset))
-	fmt.Printf("  Declarer examples: %d (%.1f%%)\n", declarerExamples, float64(declarerExamples)/float64(len(dataset))*100)
-	fmt.Printf("  Defender examples: %d (%.1f%%)\n", defenderExamples, float64(defenderExamples)/float64(len(dataset))*100)
+	fmt.Printf("  Declarer examples: %d (%.1f%%)\n", minCount, 50.0)
+	fmt.Printf("  Defender examples: %d (%.1f%%)\n", minCount, 50.0)
 	fmt.Printf("\n✓ Dataset generation complete!\n")
 }
 
-// playGameAndCollectExamples plays one game with heuristic agents and collects all (state, action) pairs
-func playGameAndCollectExamples(heuristicAgent *agent.SkatAgent) []ImitationExample {
-	var examples []ImitationExample
-
+// setupGame creates a game, runs bidding, and returns the game state ready for card play
+func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, [3]*agent.SkatAgent) {
 	// Create game
 	g := game.NewGame()
 	g = g.WithTestPlayers()
 	g = g.WithCardsDealt()
 
-	// All heuristic agents
+	// All heuristic agents for bidding
 	agents := [3]*agent.SkatAgent{
 		heuristicAgent,
 		heuristicAgent.CachedClone(),
@@ -144,11 +222,11 @@ func playGameAndCollectExamples(heuristicAgent *agent.SkatAgent) []ImitationExam
 	}
 
 	if g.Declarer == nil {
-		// Game was passed, no card play examples
-		return examples
+		// Game was passed
+		return g, agents
 	}
 
-	// Skat exchange and game choice
+	// Skat exchange and game choice (using heuristic)
 	if g.Phase == game.PhaseSkatExchange {
 		declarerAgent := agents[*g.Declarer]
 		if _, err := g.SkatDecision(true); err != nil {
@@ -164,34 +242,54 @@ func playGameAndCollectExamples(heuristicAgent *agent.SkatAgent) []ImitationExam
 		}
 	}
 
-	// Card play phase - collect (state, action) examples
+	return g, agents
+}
+
+// collectDeclarerExamples plays a game with minimax declarer vs heuristic defenders
+func collectDeclarerExamples(g *game.GameState, agents [3]*agent.SkatAgent, minimaxAgent *agent.SkatAgent) []ImitationExample {
+	var examples []ImitationExample
+
+	if g.Declarer == nil {
+		return examples
+	}
+
+	declarer := *g.Declarer
+	// Replace declarer with minimax
+	agents[declarer] = minimaxAgent
+
+	// Card play phase
 	for g.Phase == game.PhasePlaying {
 		validMoves := g.GetValidMoves()
 		currentPlayer := g.CurrentPlayer
 
-		// Get state encoding
-		enc := encoding.EncodeNeuralCardPlay(g, currentPlayer, validMoves)
-		state := enc.ToSlice()
-		validMask := enc.GetValidMask()
+		if currentPlayer == declarer {
+			// Encode state
+			enc := encoding.EncodeNeuralCardPlay(g, currentPlayer, validMoves)
+			state := enc.ToSlice()
+			validMask := enc.GetValidMask()
 
-		// Get action from heuristic
-		card := agents[currentPlayer].SelectMove(g, validMoves)
-		action := encoding.CardToIndex(card)
+			// Get minimax action
+			card := agents[currentPlayer].SelectMove(g, validMoves)
+			action := encoding.CardToIndex(card)
 
-		// Determine role
-		isDeclarer := currentPlayer == *g.Declarer
+			// Store declarer example
+			examples = append(examples, ImitationExample{
+				State:      state,
+				ValidMask:  validMask,
+				Action:     action,
+				IsDeclarer: true,
+			})
 
-		// Store example
-		examples = append(examples, ImitationExample{
-			State:      state,
-			ValidMask:  validMask,
-			Action:     action,
-			IsDeclarer: isDeclarer,
-		})
-
-		// Play card
-		if _, err := g.PlayCard(card); err != nil {
-			panic(fmt.Sprintf("PlayCard error: %v", err))
+			// Play card
+			if _, err := g.PlayCard(card); err != nil {
+				panic(fmt.Sprintf("PlayCard error: %v", err))
+			}
+		} else {
+			// Heuristic defender plays
+			card := agents[currentPlayer].SelectMove(g, validMoves)
+			if _, err := g.PlayCard(card); err != nil {
+				panic(fmt.Sprintf("PlayCard error: %v", err))
+			}
 		}
 
 		// Resolve trick if complete
@@ -201,6 +299,89 @@ func playGameAndCollectExamples(heuristicAgent *agent.SkatAgent) []ImitationExam
 			}
 		}
 	}
+
+	return examples
+}
+
+// collectDefenderExamples plays a game with minimax defenders vs heuristic declarer
+func collectDefenderExamples(g *game.GameState, agents [3]*agent.SkatAgent, minimaxAgent *agent.SkatAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+	var examples []ImitationExample
+
+	if g.Declarer == nil {
+		return examples
+	}
+
+	declarer := *g.Declarer
+	// Replace declarer with heuristic
+	agents[declarer] = heuristicAgent
+
+	// Card play phase
+	for g.Phase == game.PhasePlaying {
+		validMoves := g.GetValidMoves()
+		currentPlayer := g.CurrentPlayer
+
+		if currentPlayer != declarer {
+			// Encode state
+			enc := encoding.EncodeNeuralCardPlay(g, currentPlayer, validMoves)
+			state := enc.ToSlice()
+			validMask := enc.GetValidMask()
+
+			// Get minimax action
+			card := minimaxAgent.SelectMove(g, validMoves)
+			action := encoding.CardToIndex(card)
+
+			// Store defender example
+			examples = append(examples, ImitationExample{
+				State:      state,
+				ValidMask:  validMask,
+				Action:     action,
+				IsDeclarer: false,
+			})
+
+			// Play card
+			if _, err := g.PlayCard(card); err != nil {
+				panic(fmt.Sprintf("PlayCard error: %v", err))
+			}
+		} else {
+			// Heuristic declarer plays
+			card := agents[currentPlayer].SelectMove(g, validMoves)
+			if _, err := g.PlayCard(card); err != nil {
+				panic(fmt.Sprintf("PlayCard error: %v", err))
+			}
+		}
+
+		// Resolve trick if complete
+		if len(g.Trick) == 3 {
+			if _, err := g.ResolveTrick(); err != nil {
+				panic(fmt.Sprintf("ResolveTrick error: %v", err))
+			}
+		}
+	}
+
+	return examples
+}
+
+// playGameAndCollectExamples plays games twice: once for declarer examples, once for defender examples
+func playGameAndCollectExamples(minimaxAgent *agent.SkatAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+	var examples []ImitationExample
+
+	// Setup game and run bidding once
+	g, agents := setupGame(heuristicAgent)
+
+	if g.Declarer == nil {
+		// Game was passed, no examples
+		return examples
+	}
+
+	// Collect declarer examples: minimax declarer vs heuristic defenders
+	gDeclarer := g.Clone()
+	declarerExamples := collectDeclarerExamples(gDeclarer, agents, minimaxAgent)
+	examples = append(examples, declarerExamples...)
+
+	// Collect defender examples: heuristic declarer vs minimax defenders
+	gDefender := g.Clone()
+	defenderExamples := collectDefenderExamples(gDefender, agents, minimaxAgent, heuristicAgent)
+	examples = append(examples, defenderExamples...)
 
 	return examples
 }

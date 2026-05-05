@@ -13,22 +13,23 @@ import (
 )
 
 func main() {
-	agentType := flag.String("agent-type", "qlearning", "Agent type: qlearning, neural, weighted, mcts, or heuristic")
+	agentType := flag.String("agent-type", "qlearning", "Agent type: qlearning, neural, weighted, mcts, minimax, or heuristic")
 	component := flag.String("component", "bidding", "Component to test: bidding, game-choice, card-play, or combined")
 	games := flag.Int("games", 500, "Number of evaluation games")
 	biddingWeights := flag.String("bidding-weights", ".data/models/bidding_choice_weights.bin", "Path to bidding neural network weights")
 	cardplayWeights := flag.String("cardplay-weights", ".data/models/cardplay_weights.bin", "Path to card play neural network weights")
 	threshold := flag.Float64("threshold", 0.6, "Weighted heuristic bidding threshold (0.5-0.7)")
+	minimaxDepth := flag.Int("minimax-depth", 10, "Minimax search depth for perfect-info minimax")
 	flag.Parse()
 
-	runEvaluation(*agentType, *component, *games, *biddingWeights, *cardplayWeights, *threshold)
+	runEvaluation(*agentType, *component, *games, *biddingWeights, *cardplayWeights, *threshold, *minimaxDepth)
 }
 
-func runEvaluation(agentType, component string, games int, biddingWeights, cardplayWeights string, threshold float64) {
+func runEvaluation(agentType, component string, games int, biddingWeights, cardplayWeights string, threshold float64, minimaxDepth int) {
 	// Validate agent type
-	if agentType != "qlearning" && agentType != "neural" && agentType != "weighted" && agentType != "heuristic" && agentType != "mcts" {
+	if agentType != "qlearning" && agentType != "neural" && agentType != "weighted" && agentType != "heuristic" && agentType != "mcts" && agentType != "minimax" {
 		fmt.Printf("Unknown agent type: %s\n", agentType)
-		fmt.Println("Valid options: qlearning, neural, weighted, heuristic, mcts")
+		fmt.Println("Valid options: qlearning, neural, weighted, heuristic, mcts, minimax")
 		os.Exit(1)
 	}
 
@@ -43,7 +44,7 @@ func runEvaluation(agentType, component string, games int, biddingWeights, cardp
 	printEvaluationHeader(agentType, component, threshold)
 
 	// Build agent configuration based on type and component
-	config := buildAgentConfig(agentType, component, threshold, cardplayWeights)
+	config := buildAgentConfig(agentType, component, threshold, cardplayWeights, minimaxDepth)
 
 	testAgent, err := agent.NewHybridAgent("Test", config)
 	if err != nil {
@@ -204,8 +205,8 @@ func runEvaluation(agentType, component string, games int, biddingWeights, cardp
 		testExampleGameChoiceHands(testAgent)
 	}
 
-	if component == "card-play" || component == "combined" {
-		// Run game-play test with known winning games
+	if (component == "card-play" || component == "combined") && agentType != "minimax" {
+		// Run game-play test with known winning games (skip for minimax - too slow)
 		fmt.Println("\n" + strings.Repeat("=", 50))
 		fmt.Println("EXAMPLE GAME PLAY RESULTS")
 		fmt.Println(strings.Repeat("=", 50))
@@ -439,7 +440,7 @@ func printEvaluationHeader(agentType, component string, threshold float64) {
 }
 
 // buildAgentConfig creates agent configuration based on type and component
-func buildAgentConfig(agentType, component string, threshold float64, cardplayWeights string) agent.HybridAgentConfig {
+func buildAgentConfig(agentType, component string, threshold float64, cardplayWeights string, minimaxDepth int) agent.HybridAgentConfig {
 	config := agent.HybridAgentConfig{
 		BiddingType:      "weighted",
 		BiddingThreshold: 0.65,
@@ -479,6 +480,12 @@ func buildAgentConfig(agentType, component string, threshold float64, cardplayWe
 		if component == "card-play" || component == "combined" {
 			config.CardPlayType = "mcts"
 			config.MCTSSimulations = 500
+		}
+
+	case "minimax":
+		if component == "card-play" || component == "combined" {
+			config.CardPlayType = "minimax"
+			config.MinimaxDepth = minimaxDepth
 		}
 
 	case "neural":

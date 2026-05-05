@@ -232,6 +232,7 @@ type HybridAgentConfig struct {
 
 	CardPlayType    string
 	MCTSSimulations int    // For MCTS card play
+	MinimaxDepth    int    // For minimax card play
 	DQNDeclarerPath string // For DQN card play
 	DQNDefenderPath string // For DQN card play
 }
@@ -293,6 +294,12 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 			simulations = 500 // Default simulations
 		}
 		agent.cardPlayStrategy = NewMCTSCardPlayStrategyWithParams(simulations, 1.41, 10)
+	case "minimax":
+		depth := config.MinimaxDepth
+		if depth == 0 {
+			depth = 7 // Default depth
+		}
+		agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth)
 	case "dqn":
 		if config.DQNDeclarerPath == "" || config.DQNDefenderPath == "" {
 			return nil, fmt.Errorf("DQN card play requires both declarer and defender weight paths")

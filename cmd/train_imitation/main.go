@@ -96,40 +96,38 @@ func main() {
 			baselineAgent := agent.NewHeuristicAgent("Baseline")
 
 			// Run evaluation with 50/50 split
-			config := training.NewFiftyFiftySplitConfig(testAgent, baselineAgent, 0)
-			stats := training.EvaluateAgents(config, *evalGames)
+			config := agent.NewFiftyFiftySplitConfig(testAgent, baselineAgent)
+			training.EvaluateAgents(config, *evalGames)
+			testStats := config.TestAgent.GetMetrics()
+			baselineStats := config.TestAgent.GetMetrics()
 
 			// Calculate win rates
 			testDeclWinRate := 0.0
-			if stats.TestGames > 0 {
-				testDeclWinRate = float64(stats.TestWins) / float64(stats.TestGames) * 100
+			if testStats.Games > 0 {
+				testDeclWinRate = float64(testStats.Wins) / float64(testStats.Games) * 100
 			}
 			baselineDeclWinRate := 0.0
-			if stats.BaselineGames > 0 {
-				baselineDeclWinRate = float64(stats.BaselineWins) / float64(stats.BaselineGames) * 100
+			if baselineStats.Games > 0 {
+				baselineDeclWinRate = float64(baselineStats.Wins) / float64(baselineStats.Games) * 100
 			}
 
 			// Calculate defender win rates
-			testDefWins := stats.BaselineGames - stats.BaselineWins
-			testDefGames := stats.BaselineGames
 			testDefWinRate := 0.0
-			if testDefGames > 0 {
-				testDefWinRate = float64(testDefWins) / float64(testDefGames) * 100
+			if testStats.DefenderGames > 0 {
+				testDefWinRate = float64(testStats.DefenderWins) / float64(baselineStats.Games) * 100
 			}
 
-			baselineDefWins := stats.TestGames - stats.TestWins
-			baselineDefGames := stats.TestGames
 			baselineDefWinRate := 0.0
-			if baselineDefGames > 0 {
-				baselineDefWinRate = float64(baselineDefWins) / float64(baselineDefGames) * 100
+			if baselineStats.DefenderGames > 0 {
+				baselineDefWinRate = float64(baselineStats.DefenderWins) / float64(baselineStats.DefenderGames) * 100
 			}
 
 			fmt.Printf("  → Imitation: Decl %.1f%% (%d/%d) | Def %.1f%% (%d/%d)\n",
-				testDeclWinRate, stats.TestWins, stats.TestGames,
-				testDefWinRate, testDefWins, testDefGames)
+				testDeclWinRate, testStats.Wins, testStats.Games,
+				testDefWinRate, testStats.DefenderWins, testStats.DefenderGames)
 			fmt.Printf("  → Baseline:  Decl %.1f%% (%d/%d) | Def %.1f%% (%d/%d)\n\n",
-				baselineDeclWinRate, stats.BaselineWins, stats.BaselineGames,
-				baselineDefWinRate, baselineDefWins, baselineDefGames)
+				baselineDeclWinRate, baselineStats.Wins, baselineStats.Games,
+				baselineDefWinRate, baselineStats.DefenderWins, baselineStats.DefenderGames)
 		}
 	}
 

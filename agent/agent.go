@@ -522,18 +522,18 @@ func (sa *SkatAgent) ResetMetrics() {
 
 // AgentMetricsSnapshot is a point-in-time snapshot of agent metrics
 type AgentMetricsSnapshot struct {
-	Wins          int64
-	Games         int64
-	Points        int64
-	Overbid       int64
-	GrandGames    int64
-	GrandWins     int64
-	SuitGames     int64
-	SuitWins      int64
-	NullGames     int64
-	NullWins      int64
-	DefenderGames int64
-	DefenderWins  int64
+	Wins           int64
+	Games          int64
+	Points         int64
+	Overbid        int64
+	GrandGames     int64
+	GrandWins      int64
+	SuitGames      int64
+	SuitWins       int64
+	NullGames      int64
+	NullWins       int64
+	DefenderGames  int64
+	DefenderWins   int64
 	BiddingAccepts map[int]int
 	BiddingRejects map[int]int
 }

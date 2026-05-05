@@ -241,15 +241,17 @@ func runMatchup(def1, def2 AgentDefinition, numGames int) TournamentResult {
 	agent2.EnableMetrics()
 
 	// Run evaluation
-	config := training.NewTestAgainstTwoConfig(agent1, agent2, 0)
-	stats := training.EvaluateAgents(config, numGames)
+	config := agent.NewFiftyFiftySplitConfig(agent1, agent2)
+	training.EvaluateAgents(config, numGames)
+	Agent1Metrics := config.TestAgent.GetMetrics()
+	Agent2Metrics := config.BaselineAgent.GetMetrics()
 
 	return TournamentResult{
 		Agent1Name: def1.Name,
 		Agent2Name: def2.Name,
-		Agent1Wins: int(stats.TestWins),
-		Agent2Wins: int(stats.BaselineWins),
-		TotalGames: int(stats.TestGames + stats.BaselineGames),
+		Agent1Wins: int(Agent1Metrics.Wins),
+		Agent2Wins: int(Agent2Metrics.Wins),
+		TotalGames: int(Agent1Metrics.Games),
 	}
 }
 

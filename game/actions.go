@@ -2,7 +2,6 @@ package game
 
 import (
 	"fmt"
-	"skat/logger"
 	"time"
 
 	"github.com/google/uuid"
@@ -428,7 +427,6 @@ func (gs *GameState) NextGame() (string, error) {
 		player.ReadyForNext = false // Reset ready state for new game
 	}
 	gs.UpdateCurrentPlayerDeadline()
-	logger.Info("Started a new game", "game_id", gs.ID)
 	return "Started new game", nil
 }
 

@@ -64,28 +64,25 @@ func runEvaluation(agentType, component string, games int, biddingWeights, cardp
 	fmt.Printf("Running %d games on %d CPU cores...\n", games, runtime.GOMAXPROCS(0))
 	fmt.Println(strings.Repeat("=", 50) + "\n")
 
-	evalConfig := training.NewTestAgainstTwoConfig(testAgent, baselineAgent, 0)
-	stats := training.EvaluateAgents(evalConfig, games)
+	evalConfig := agent.NewFiftyFiftySplitConfig(testAgent, baselineAgent)
+	training.EvaluateAgents(evalConfig, games)
 
 	// Get agent metrics for bidding distribution
 	testMetrics := testAgent.GetMetrics()
 	baselineMetrics := baselineAgent.GetMetrics()
 
-	testGames := stats.TestGames
-	testWins := stats.TestWins
-	testPoints := stats.TestPoints
-	testOverbid := stats.TestOverbid
-	baselineGames := stats.BaselineGames
-	baselineWins := stats.BaselineWins
-	baselinePoints := stats.BaselinePoints
-	baselineOverbid := stats.BaselineOverbid
-	passedGames := stats.PassedGames
+	testGames := testMetrics.Games
+	testWins := testMetrics.Wins
+	testPoints := testMetrics.Points
+	testOverbid := testMetrics.Overbid
+	baselineGames := baselineMetrics.Games
+	baselineWins := baselineMetrics.Wins
+	baselinePoints := baselineMetrics.Points
+	baselineOverbid := baselineMetrics.Overbid
 
 	fmt.Println("\n" + strings.Repeat("=", 50))
 	fmt.Println("FINAL RESULTS")
 	fmt.Println(strings.Repeat("=", 50))
-	fmt.Printf("\nPassed games (everyone passed): %d/%d (%.1f%%)\n",
-		passedGames, games, float64(passedGames)/float64(games)*100)
 
 	if testGames > 0 {
 		fmt.Printf("\nTest (%s):\n", testDescription)
@@ -103,12 +100,12 @@ func runEvaluation(agentType, component string, games int, biddingWeights, cardp
 		}
 
 		// Game type breakdown
-		testGrand := stats.TestGrandGames
-		testGrandW := stats.TestGrandWins
-		testSuit := stats.TestSuitGames
-		testSuitW := stats.TestSuitWins
-		testNull := stats.TestNullGames
-		testNullW := stats.TestNullWins
+		testGrand := testMetrics.GrandGames
+		testGrandW := testMetrics.GrandWins
+		testSuit := testMetrics.SuitGames
+		testSuitW := testMetrics.SuitWins
+		testNull := testMetrics.NullGames
+		testNullW := testMetrics.NullWins
 
 		fmt.Printf("  Game type breakdown:\n")
 		if testGrand > 0 {
@@ -151,12 +148,12 @@ func runEvaluation(agentType, component string, games int, biddingWeights, cardp
 		}
 
 		// Game type breakdown
-		baseGrand := stats.BaselineGrandGames
-		baseGrandW := stats.BaselineGrandWins
-		baseSuit := stats.BaselineSuitGames
-		baseSuitW := stats.BaselineSuitWins
-		baseNull := stats.BaselineNullGames
-		baseNullW := stats.BaselineNullWins
+		baseGrand := baselineMetrics.GrandGames
+		baseGrandW := baselineMetrics.GrandWins
+		baseSuit := baselineMetrics.SuitGames
+		baseSuitW := baselineMetrics.SuitWins
+		baseNull := baselineMetrics.NullGames
+		baseNullW := baselineMetrics.NullWins
 
 		fmt.Printf("  Game type breakdown:\n")
 		if baseGrand > 0 {
@@ -725,16 +722,16 @@ func runGamePlayTest(testAgent *agent.SkatAgent) {
 func playGamesWithMode(testAgent *agent.SkatAgent, declarerHand game.Cards, mode game.GameMode, trumpSuit game.Suit, numGames int) (wins, totalPoints, gamesPlayed int) {
 	baselineAgent := agent.NewHeuristicAgent("Baseline")
 
-	// Create a local test agent with metrics enabled
-	localTestAgent := testAgent.Clone()
-	localTestAgent.EnableMetrics()
+	config := agent.NewFiftyFiftySplitConfig(testAgent, baselineAgent)
+	g := game.NewGame()
+	g = agent.WithAgentPlayers(g, config)
 
 	for i := 0; i < numGames; i++ {
-		config := training.NewTestAgainstTwoConfig(localTestAgent, baselineAgent, i)
-		training.PlayGameWithMode(config, declarerHand, mode, trumpSuit)
+		agent.PlayGameWithMode(g, config, declarerHand, mode, trumpSuit)
+		g.NextGame()
 	}
 
 	// Get metrics from the local agent
-	metrics := localTestAgent.GetMetrics()
+	metrics := testAgent.GetMetrics()
 	return int(metrics.Wins), int(metrics.Points), int(metrics.Games)
 }

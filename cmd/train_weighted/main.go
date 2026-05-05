@@ -8,7 +8,6 @@ import (
 
 	"skat/agent"
 	"skat/agent/strategies"
-	"skat/agent/training"
 	"skat/agent/training/weighted"
 	"skat/game"
 )
@@ -62,14 +61,17 @@ func collectTrainingData(episodes int) []weighted.BiddingExample {
 	agent2 := agent.NewHeuristicAgent("Heuristic-2")
 	agent3 := agent.NewHeuristicAgent("Heuristic-3")
 
+	g := game.NewGame()
+
 	for i := 0; i < episodes; i++ {
 		if (i+1)%100 == 0 {
 			fmt.Printf("  Played %d/%d games\r", i+1, episodes)
 		}
 
+		config := agent.NewThreeWayConfig(agent1, agent2, agent3)
+
 		// Create game and save initial hands before playing
-		g := game.NewGame()
-		g = g.WithTestPlayers()
+		g = agent.WithAgentPlayers(g, config)
 		g = g.WithCardsDealt()
 
 		// Save initial hands before the game modifies them
@@ -80,8 +82,10 @@ func collectTrainingData(episodes int) []weighted.BiddingExample {
 		}
 
 		// Play the game with three-way config
-		config := training.NewThreeWayConfig(agent1, agent2, agent3, i)
-		training.PlayGameToCompletion(g, config)
+		g = agent.WithAgentBidding(g, config)
+		g = agent.WithAgentSkatDecision(g)
+		g = agent.WithAgentGameChoice(g)
+		g = agent.WithAgentCardPlay(g)
 
 		// Collect training examples from declarers only
 		if g.Declarer != nil && g.Phase == game.PhaseComplete {
@@ -98,6 +102,7 @@ func collectTrainingData(episodes int) []weighted.BiddingExample {
 				examples = append(examples, example)
 			}
 		}
+		g.NextGame()
 	}
 
 	fmt.Printf("  Played %d/%d games\n", episodes, episodes)

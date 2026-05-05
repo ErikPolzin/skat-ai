@@ -1,23 +1,5 @@
 package game
 
-import "fmt"
-
-func (gs *GameState) WithTestPlayers() *GameState {
-	if gs.Phase != PhaseWaitingForPlayers {
-		panic("Cannot seed with test players, game is not waiting for players")
-	}
-	for j := 0; j < 3; j++ {
-		gs.Players[j] = &PlayerState{
-			ID:      fmt.Sprintf("player-%d", j),
-			Name:    fmt.Sprintf("Player %d", j),
-			Hand:    Cards{},
-			IsAgent: true,
-		}
-	}
-	gs.Phase = PhaseDealing
-	return gs
-}
-
 func (gs *GameState) WithCardsDealt() *GameState {
 	_, err := gs.Deal()
 	if err != nil {

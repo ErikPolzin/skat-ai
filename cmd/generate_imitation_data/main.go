@@ -199,54 +199,24 @@ func main() {
 }
 
 // setupGame creates a game, runs bidding, and returns the game state ready for card play
-func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, [3]*agent.SkatAgent) {
-	// Create game
-	g := game.NewGame()
-	g = g.WithTestPlayers()
-	g = g.WithCardsDealt()
-
-	// All heuristic agents for bidding
-	agents := [3]*agent.SkatAgent{
+func setupGame(heuristicAgent *agent.SkatAgent) *game.GameState {
+	config := agent.NewThreeWayConfig(
 		heuristicAgent,
 		heuristicAgent.CachedClone(),
-		heuristicAgent.CachedClone().CachedClone(),
-	}
+		heuristicAgent.CachedClone().CachedClone())
+	// Create game
+	g := game.NewGame()
+	g = agent.WithAgentPlayers(g, config)
+	g = g.WithCardsDealt()
+	g = agent.WithAgentBidding(g, config)
+	g = agent.WithAgentSkatDecision(g)
+	g = agent.WithAgentGameChoice(g)
 
-	// Bidding phase
-	for g.Phase == game.PhaseBidding {
-		currentAgent := agents[g.CurrentPlayer]
-		accept := currentAgent.Bid(g)
-		if _, err := g.Bid(accept); err != nil {
-			panic(fmt.Sprintf("Bidding error: %v", err))
-		}
-	}
-
-	if g.Declarer == nil {
-		// Game was passed
-		return g, agents
-	}
-
-	// Skat exchange and game choice (using heuristic)
-	if g.Phase == game.PhaseSkatExchange {
-		declarerAgent := agents[*g.Declarer]
-		if _, err := g.SkatDecision(true); err != nil {
-			panic(fmt.Sprintf("Skat decision error: %v", err))
-		}
-		mode, trumpSuit := declarerAgent.ChooseGame(g)
-		card1, card2 := declarerAgent.ChooseSkatDiscard(g.Players[*g.Declarer].Hand, mode, trumpSuit)
-		if _, err := g.Discard(card1, card2); err != nil {
-			panic(fmt.Sprintf("Discard error: %v", err))
-		}
-		if _, err := g.DeclareGame(mode, trumpSuit, false, false); err != nil {
-			panic(fmt.Sprintf("Declare game error: %v", err))
-		}
-	}
-
-	return g, agents
+	return g
 }
 
 // collectDeclarerExamples plays a game with minimax declarer vs heuristic defenders
-func collectDeclarerExamples(g *game.GameState, agents [3]*agent.SkatAgent, minimaxAgent *agent.SkatAgent) []ImitationExample {
+func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
 	var examples []ImitationExample
 
 	if g.Declarer == nil {
@@ -255,12 +225,15 @@ func collectDeclarerExamples(g *game.GameState, agents [3]*agent.SkatAgent, mini
 
 	declarer := *g.Declarer
 	// Replace declarer with minimax
-	agents[declarer] = minimaxAgent
+	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), minimaxAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), heuristicAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), heuristicAgent)
 
 	// Card play phase
 	for g.Phase == game.PhasePlaying {
 		validMoves := g.GetValidMoves()
 		currentPlayer := g.CurrentPlayer
+		currentAgent := agent.GetAgentForPlayer(g.GetCurrentPlayer())
 
 		if currentPlayer == declarer {
 			// Encode state
@@ -269,7 +242,7 @@ func collectDeclarerExamples(g *game.GameState, agents [3]*agent.SkatAgent, mini
 			validMask := enc.GetValidMask()
 
 			// Get minimax action
-			card := agents[currentPlayer].SelectMove(g, validMoves)
+			card := currentAgent.SelectMove(g, validMoves)
 			action := encoding.CardToIndex(card)
 
 			// Store declarer example
@@ -286,7 +259,7 @@ func collectDeclarerExamples(g *game.GameState, agents [3]*agent.SkatAgent, mini
 			}
 		} else {
 			// Heuristic defender plays
-			card := agents[currentPlayer].SelectMove(g, validMoves)
+			card := currentAgent.SelectMove(g, validMoves)
 			if _, err := g.PlayCard(card); err != nil {
 				panic(fmt.Sprintf("PlayCard error: %v", err))
 			}
@@ -304,7 +277,7 @@ func collectDeclarerExamples(g *game.GameState, agents [3]*agent.SkatAgent, mini
 }
 
 // collectDefenderExamples plays a game with minimax defenders vs heuristic declarer
-func collectDefenderExamples(g *game.GameState, agents [3]*agent.SkatAgent, minimaxAgent *agent.SkatAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+func collectDefenderExamples(g *game.GameState, minimaxAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
 	var examples []ImitationExample
 
 	if g.Declarer == nil {
@@ -312,8 +285,9 @@ func collectDefenderExamples(g *game.GameState, agents [3]*agent.SkatAgent, mini
 	}
 
 	declarer := *g.Declarer
-	// Replace declarer with heuristic
-	agents[declarer] = heuristicAgent
+	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), heuristicAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), minimaxAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), minimaxAgent)
 
 	// Card play phase
 	for g.Phase == game.PhasePlaying {
@@ -344,7 +318,8 @@ func collectDefenderExamples(g *game.GameState, agents [3]*agent.SkatAgent, mini
 			}
 		} else {
 			// Heuristic declarer plays
-			card := agents[currentPlayer].SelectMove(g, validMoves)
+			currentAgent := agent.GetAgentForPlayer(g.GetCurrentPlayer())
+			card := currentAgent.SelectMove(g, validMoves)
 			if _, err := g.PlayCard(card); err != nil {
 				panic(fmt.Sprintf("PlayCard error: %v", err))
 			}
@@ -366,7 +341,7 @@ func playGameAndCollectExamples(minimaxAgent *agent.SkatAgent, heuristicAgent *a
 	var examples []ImitationExample
 
 	// Setup game and run bidding once
-	g, agents := setupGame(heuristicAgent)
+	g := setupGame(heuristicAgent)
 
 	if g.Declarer == nil {
 		// Game was passed, no examples
@@ -375,12 +350,12 @@ func playGameAndCollectExamples(minimaxAgent *agent.SkatAgent, heuristicAgent *a
 
 	// Collect declarer examples: minimax declarer vs heuristic defenders
 	gDeclarer := g.Clone()
-	declarerExamples := collectDeclarerExamples(gDeclarer, agents, minimaxAgent)
+	declarerExamples := collectDeclarerExamples(gDeclarer, minimaxAgent, heuristicAgent)
 	examples = append(examples, declarerExamples...)
 
 	// Collect defender examples: heuristic declarer vs minimax defenders
 	gDefender := g.Clone()
-	defenderExamples := collectDefenderExamples(gDefender, agents, minimaxAgent, heuristicAgent)
+	defenderExamples := collectDefenderExamples(gDefender, minimaxAgent, heuristicAgent)
 	examples = append(examples, defenderExamples...)
 
 	return examples

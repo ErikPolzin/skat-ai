@@ -6,26 +6,24 @@ import (
 	"os"
 	"runtime"
 	"skat/agent"
-	"skat/agent/strategies"
 	"skat/agent/training"
 	"skat/game"
 	"strings"
 )
 
 func main() {
-	agentType := flag.String("agent-type", "qlearning", "Agent type: qlearning, neural, weighted, mcts, minimax, or heuristic")
+	agentType := flag.String("agent-type", "neural", "Agent type: neural, mcts, minimax, or heuristic")
 	component := flag.String("component", "bidding", "Component to test: bidding, game-choice, card-play, or combined")
 	games := flag.Int("games", 500, "Number of evaluation games")
-	biddingWeights := flag.String("bidding-weights", ".data/models/bidding_choice_weights.bin", "Path to bidding neural network weights")
 	cardplayWeights := flag.String("cardplay-weights", ".data/models/cardplay_weights.bin", "Path to card play neural network weights")
 	threshold := flag.Float64("threshold", 0.6, "Weighted heuristic bidding threshold (0.5-0.7)")
 	minimaxDepth := flag.Int("minimax-depth", 10, "Minimax search depth for perfect-info minimax")
 	flag.Parse()
 
-	runEvaluation(*agentType, *component, *games, *biddingWeights, *cardplayWeights, *threshold, *minimaxDepth)
+	runEvaluation(*agentType, *component, *games, *cardplayWeights, *threshold, *minimaxDepth)
 }
 
-func runEvaluation(agentType, component string, games int, biddingWeights, cardplayWeights string, threshold float64, minimaxDepth int) {
+func runEvaluation(agentType, component string, games int, cardplayWeights string, threshold float64, minimaxDepth int) {
 	// Validate agent type
 	if agentType != "qlearning" && agentType != "neural" && agentType != "weighted" && agentType != "heuristic" && agentType != "mcts" && agentType != "minimax" {
 		fmt.Printf("Unknown agent type: %s\n", agentType)
@@ -41,7 +39,7 @@ func runEvaluation(agentType, component string, games int, biddingWeights, cardp
 	}
 
 	// Print evaluation header
-	printEvaluationHeader(agentType, component, threshold)
+	printEvaluationHeader(agentType, component)
 
 	// Build agent configuration based on type and component
 	config := buildAgentConfig(agentType, component, threshold, cardplayWeights, minimaxDepth)
@@ -302,15 +300,7 @@ func testExampleBiddingHands(testAgent *agent.SkatAgent) {
 			hMax = hAccepts[len(hAccepts)-1]
 		}
 
-		// Determine strategy type for labeling
-		strategyLabel := "Test agent"
-		if _, ok := biddingStrat.(*agent.QLearningBiddingStrategy); ok {
-			strategyLabel = "Q-learning"
-		} else if _, ok := biddingStrat.(*strategies.WeightedHeuristicBiddingStrategy); ok {
-			strategyLabel = "Weighted"
-		}
-
-		fmt.Printf("  %s bids up to: %d\n", strategyLabel, qMax)
+		fmt.Printf("  Weighted bids up to: %d\n", qMax)
 		fmt.Printf("  Heuristic bids up to:  %d", hMax)
 		if qMax == hMax {
 			fmt.Printf(" ✓\n")
@@ -369,15 +359,9 @@ func testExampleGameChoiceHands(testAgent *agent.SkatAgent) {
 		testChoice := formatGameChoice(testMode, testSuit)
 		hChoice := formatGameChoice(hMode, hSuit)
 
-		// Determine strategy type for labeling
-		strategyLabel := "Test agent"
-		if _, ok := gameChoice.(*agent.QLearningGameChoiceStrategy); ok {
-			strategyLabel = "Q-learning"
-		}
-
 		fmt.Printf("\n%s:\n", tc.name)
 		fmt.Printf("  %s\n", tc.reason)
-		fmt.Printf("  %s: %s\n", strategyLabel, testChoice)
+		fmt.Printf("  Test agent: %s\n", testChoice)
 		fmt.Printf("  Heuristic:  %s", hChoice)
 		if testChoice != hChoice {
 			fmt.Printf(" ✗\n")
@@ -398,31 +382,11 @@ func formatGameChoice(mode game.GameMode, suit game.Suit) string {
 }
 
 // printEvaluationHeader prints the appropriate header for the evaluation
-func printEvaluationHeader(agentType, component string, threshold float64) {
+func printEvaluationHeader(agentType, component string) {
 	switch agentType {
 	case "heuristic":
 		fmt.Println("Heuristic Agent Evaluation")
 		fmt.Println("===========================")
-	case "weighted":
-		if component == "bidding" {
-			fmt.Println("Weighted Heuristic Bidding Strategy Evaluation")
-			fmt.Println("================================================")
-			fmt.Printf("Creating weighted heuristic bidding agent...\n")
-			fmt.Printf("  Bidding threshold: %.2f\n", threshold)
-			fmt.Printf("  Using default weights (can be trained with: go run cmd/train_weighted/main.go)\n\n")
-		}
-	case "qlearning":
-		switch component {
-		case "bidding":
-			fmt.Println("Q-Learning Bidding Strategy Evaluation")
-			fmt.Println("========================================")
-		case "game-choice":
-			fmt.Println("Q-Learning Game Choice Strategy Evaluation")
-			fmt.Println("============================================")
-		case "combined":
-			fmt.Println("Combined Q-Learning Agent Evaluation")
-			fmt.Println("=====================================")
-		}
 	case "mcts":
 		if component == "card-play" {
 			fmt.Println("MCTS Card Play Strategy Evaluation")
@@ -440,7 +404,7 @@ func printEvaluationHeader(agentType, component string, threshold float64) {
 func buildAgentConfig(agentType, component string, threshold float64, cardplayWeights string, minimaxDepth int) agent.HybridAgentConfig {
 	config := agent.HybridAgentConfig{
 		BiddingType:      "weighted",
-		BiddingThreshold: 0.65,
+		BiddingThreshold: threshold,
 		GameChoiceType:   "heuristic",
 		CardPlayType:     "heuristic",
 	}
@@ -452,25 +416,13 @@ func buildAgentConfig(agentType, component string, threshold float64, cardplayWe
 		config.BiddingType = "heuristic"
 
 	case "weighted":
-		// Weighted bidding is based on component
+		// Weighted strategies based on component
 		if component == "bidding" || component == "combined" {
 			config.BiddingType = "weighted"
 			config.BiddingThreshold = threshold
 		}
-
-	case "qlearning":
-		switch component {
-		case "bidding":
-			config.BiddingType = "qlearning"
-			config.BiddingQTable = loadQLearningBiddingQTable()
-		case "game-choice":
-			config.GameChoiceType = "qlearning"
-			config.GameChoiceQTable = loadQLearningGameChoiceQTable()
-		case "combined":
-			config.BiddingType = "qlearning"
-			config.BiddingQTable = loadQLearningBiddingQTable()
-			config.GameChoiceType = "qlearning"
-			config.GameChoiceQTable = loadQLearningGameChoiceQTable()
+		if component == "combined" {
+			config.GameChoiceType = "weighted"
 		}
 
 	case "mcts":
@@ -504,15 +456,8 @@ func buildAgentDescription(agentType, component string, threshold float64) strin
 	case "weighted":
 		if component == "bidding" {
 			return fmt.Sprintf("Weighted heuristic bidding (threshold=%.2f) + Heuristic game choice/play", threshold)
-		}
-	case "qlearning":
-		switch component {
-		case "bidding":
-			return "Q-learning bidding + Heuristic game choice/play"
-		case "game-choice":
-			return "Heuristic bidding + Q-learning game choice + Heuristic play"
-		case "combined":
-			return "Q-learning bidding + Q-learning game choice + Heuristic play"
+		} else if component == "combined" {
+			return fmt.Sprintf("Weighted heuristic bidding+game choice (threshold=%.2f) + Heuristic play", threshold)
 		}
 	case "mcts":
 		if component == "card-play" {

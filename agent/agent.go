@@ -13,10 +13,8 @@ type (
 	RandomBiddingStrategy            = strategies.RandomBiddingStrategy
 	HeuristicBiddingStrategy         = strategies.HeuristicBiddingStrategy
 	WeightedHeuristicBiddingStrategy = strategies.WeightedHeuristicBiddingStrategy
-	QLearningBiddingStrategy         = strategies.QLearningBiddingStrategy
 	RandomGameChoiceStrategy         = strategies.RandomGameChoiceStrategy
 	HeuristicGameChoiceStrategy      = strategies.HeuristicGameChoiceStrategy
-	QLearningGameChoiceStrategy      = strategies.QLearningGameChoiceStrategy
 	RandomCardPlayStrategy           = strategies.RandomCardPlayStrategy
 	HeuristicCardPlayStrategy        = strategies.HeuristicCardPlayStrategy
 	MCTSCardPlayStrategy             = strategies.MCTSCardPlayStrategy
@@ -24,8 +22,6 @@ type (
 
 // Re-export constructor functions
 var (
-	NewQLearningBiddingStrategy         = strategies.NewQLearningBiddingStrategy
-	NewQLearningGameChoiceStrategy      = strategies.NewQLearningGameChoiceStrategy
 	NewMCTSCardPlayStrategyWithParams   = strategies.NewMCTSCardPlayStrategyWithParams
 	NewHeuristicCardPlayStrategy        = strategies.NewHeuristicCardPlayStrategy
 	NewWeightedHeuristicBiddingStrategy = strategies.NewWeightedHeuristicBiddingStrategy
@@ -175,18 +171,6 @@ func (sa *SkatAgent) ChooseSkatDiscard(hand []game.Card, mode game.GameMode, tru
 	return sa.gameChoiceStrategy.ChooseSkatDiscard(hand, mode, trumpSuit)
 }
 
-// Constructors
-
-// NewSkatAgent creates an agent with Q-learning for bidding/game choice and MCTS for card play
-func NewSkatAgent(name string, simulations int) *SkatAgent {
-	return &SkatAgent{
-		name:               name,
-		biddingStrategy:    NewQLearningBiddingStrategy(0.15),
-		gameChoiceStrategy: NewQLearningGameChoiceStrategy(0.15),
-		cardPlayStrategy:   NewMCTSCardPlayStrategyWithParams(simulations, 1.41, 10),
-	}
-}
-
 // NewAgentWithStrategies creates an agent with custom strategies
 func NewAgentWithStrategies(name string, bidding BiddingStrategy, gameChoice GameChoiceStrategy, cardPlay CardPlayStrategy) *SkatAgent {
 	return &SkatAgent{
@@ -201,7 +185,6 @@ func NewAgentWithStrategies(name string, bidding BiddingStrategy, gameChoice Gam
 // Uses weighted heuristic for bidding with a balanced threshold (0.65)
 func NewHeuristicAgent(name string) *SkatAgent {
 	weightedBidding := strategies.NewWeightedHeuristicBiddingStrategy()
-	weightedBidding.SetBiddingThreshold(0.65) // Balanced threshold
 
 	return &SkatAgent{
 		name:               name,
@@ -249,22 +232,15 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 		weighted := strategies.NewWeightedHeuristicBiddingStrategy()
 		threshold := config.BiddingThreshold
 		if threshold == 0 {
-			threshold = 0.65 // Default threshold
+			threshold = 0.6 // Default threshold
 		}
 		weighted.SetBiddingThreshold(threshold)
 		agent.biddingStrategy = weighted
-	case "qlearning":
-		ql := NewQLearningBiddingStrategy(0.0) // No exploration for evaluation
-		if config.BiddingQTable != nil {
-			ql.SetQTable(config.BiddingQTable)
-		}
-		agent.biddingStrategy = ql
 	case "random":
 		agent.biddingStrategy = &RandomBiddingStrategy{}
 	default:
 		// Default to weighted heuristic
 		weighted := strategies.NewWeightedHeuristicBiddingStrategy()
-		weighted.SetBiddingThreshold(0.65)
 		agent.biddingStrategy = weighted
 	}
 
@@ -272,12 +248,6 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	switch config.GameChoiceType {
 	case "heuristic":
 		agent.gameChoiceStrategy = &HeuristicGameChoiceStrategy{}
-	case "qlearning":
-		ql := NewQLearningGameChoiceStrategy(0.0) // No exploration for evaluation
-		if config.GameChoiceQTable != nil {
-			ql.SetQTable(config.GameChoiceQTable)
-		}
-		agent.gameChoiceStrategy = ql
 	case "random":
 		agent.gameChoiceStrategy = &RandomGameChoiceStrategy{}
 	default:

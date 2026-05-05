@@ -14,28 +14,28 @@ type WeightedHeuristicBiddingStrategy struct {
 // BidWeights contains learned weights for hand evaluation
 type BidWeights struct {
 	// Grand game weights
-	GrandJacks         float64 // Weight per jack in hand
-	GrandAces          float64 // Weight per ace
-	GrandTens          float64 // Weight per ten
-	GrandAceTenPairs   float64 // Weight for ace-ten combinations
-	GrandTotalWinners  float64 // Weight for (jacks + aces)
+	GrandJacks        float64 // Weight per jack in hand
+	GrandAces         float64 // Weight per ace
+	GrandTens         float64 // Weight per ten
+	GrandAceTenPairs  float64 // Weight for ace-ten combinations
+	GrandTotalWinners float64 // Weight for (jacks + aces)
 
 	// Suit game weights
-	SuitTrumpLength    float64 // Weight per trump card
-	SuitTrumpLengthSq  float64 // Weight for trump_length^2 (captures trump dominance)
-	SuitTopTrumps      float64 // Weight for having club/spade jack or trump ace
-	SuitSideAces       float64 // Weight per ace in side suits
-	SuitVoidSuits      float64 // Weight per void suit (good for ruffing)
-	SuitShortSuits     float64 // Weight per singleton/doubleton
-	SuitAceTenPairs    float64 // Weight for ace-ten pairs in side suits
+	SuitTrumpLength   float64 // Weight per trump card
+	SuitTrumpLengthSq float64 // Weight for trump_length^2 (captures trump dominance)
+	SuitTopTrumps     float64 // Weight for having club/spade jack or trump ace
+	SuitSideAces      float64 // Weight per ace in side suits
+	SuitVoidSuits     float64 // Weight per void suit (good for ruffing)
+	SuitShortSuits    float64 // Weight per singleton/doubleton
+	SuitAceTenPairs   float64 // Weight for ace-ten pairs in side suits
 
 	// Shared weights
-	Matadors           float64 // Weight per matador (with or against)
-	TotalPoints        float64 // Weight for total card points in hand
+	Matadors    float64 // Weight per matador (with or against)
+	TotalPoints float64 // Weight for total card points in hand
 
 	// Bias terms
-	GrandBias          float64 // Constant offset for grand evaluation
-	SuitBias           float64 // Constant offset for suit evaluation
+	GrandBias float64 // Constant offset for grand evaluation
+	SuitBias  float64 // Constant offset for suit evaluation
 }
 
 // DefaultBidWeights returns reasonable default weights (based on heuristic knowledge)
@@ -59,12 +59,12 @@ func DefaultBidWeights() BidWeights {
 		SuitAceTenPairs:   15.0,
 
 		// Shared
-		Matadors:          10.0,
-		TotalPoints:       0.3,
+		Matadors:    10.0,
+		TotalPoints: 0.3,
 
 		// Bias
-		GrandBias:         -100.0, // Grand is harder, needs strong hand
-		SuitBias:          0.0,
+		GrandBias: -100.0, // Grand is harder, needs strong hand
+		SuitBias:  0.0,
 	}
 }
 
@@ -72,7 +72,7 @@ func DefaultBidWeights() BidWeights {
 func NewWeightedHeuristicBiddingStrategy() *WeightedHeuristicBiddingStrategy {
 	return &WeightedHeuristicBiddingStrategy{
 		weights:          DefaultBidWeights(),
-		biddingThreshold: 0.6, // Bid if estimated win probability > 60%
+		biddingThreshold: 0.4, // Bid if estimated win probability > 60%
 	}
 }
 

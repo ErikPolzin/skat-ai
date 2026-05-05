@@ -61,17 +61,16 @@ func collectTrainingData(episodes int) []weighted.BiddingExample {
 	agent2 := agent.NewHeuristicAgent("Heuristic-2")
 	agent3 := agent.NewHeuristicAgent("Heuristic-3")
 
+	config := agent.NewThreeWayConfig(agent1, agent2, agent3)
 	g := game.NewGame()
+	g = agent.WithAgentPlayers(g, config)
 
 	for i := 0; i < episodes; i++ {
 		if (i+1)%100 == 0 {
 			fmt.Printf("  Played %d/%d games\r", i+1, episodes)
 		}
 
-		config := agent.NewThreeWayConfig(agent1, agent2, agent3)
-
 		// Create game and save initial hands before playing
-		g = agent.WithAgentPlayers(g, config)
 		g = g.WithCardsDealt()
 
 		// Save initial hands before the game modifies them
@@ -84,7 +83,11 @@ func collectTrainingData(episodes int) []weighted.BiddingExample {
 		// Play the game with three-way config
 		g = agent.WithAgentBidding(g, config)
 		g = agent.WithAgentSkatDecision(g)
-		g = agent.WithAgentGameChoice(g)
+		g, overbid := agent.WithAgentGameChoice(g)
+		if overbid {
+			g.NextGame()
+			continue
+		}
 		g = agent.WithAgentCardPlay(g)
 
 		// Collect training examples from declarers only

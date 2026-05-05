@@ -121,61 +121,6 @@ func defineAgents(qtablePath, dqnPath string) []AgentDefinition {
 		},
 	}
 
-	// Add Q-learning agents if Q-tables exist
-	biddingQTablePath := qtablePath + "/bidding_qtable.gob"
-	gameChoiceQTablePath := qtablePath + "/game_choice_qtable.gob"
-
-	if _, err := os.Stat(biddingQTablePath); err == nil {
-		data, err := agent.LoadQTableData(biddingQTablePath, false)
-		if err == nil {
-			agents = append(agents, AgentDefinition{
-				Name: "QL-Bidding",
-				Config: agent.HybridAgentConfig{
-					BiddingType:    "qlearning",
-					BiddingQTable:  data.QTable,
-					GameChoiceType: "heuristic",
-					CardPlayType:   "heuristic",
-				},
-			})
-		}
-	}
-
-	if _, err := os.Stat(gameChoiceQTablePath); err == nil {
-		data, err := agent.LoadQTableData(gameChoiceQTablePath, false)
-		if err == nil {
-			agents = append(agents, AgentDefinition{
-				Name: "QL-GameChoice",
-				Config: agent.HybridAgentConfig{
-					BiddingType:      "weighted",
-					BiddingThreshold: 0.65,
-					GameChoiceType:   "qlearning",
-					GameChoiceQTable: data.QTable,
-					CardPlayType:     "heuristic",
-				},
-			})
-		}
-	}
-
-	// Add combined Q-learning if both exist
-	if _, err := os.Stat(biddingQTablePath); err == nil {
-		if _, err := os.Stat(gameChoiceQTablePath); err == nil {
-			bData, err1 := agent.LoadQTableData(biddingQTablePath, false)
-			gData, err2 := agent.LoadQTableData(gameChoiceQTablePath, false)
-			if err1 == nil && err2 == nil {
-				agents = append(agents, AgentDefinition{
-					Name: "QL-Combined",
-					Config: agent.HybridAgentConfig{
-						BiddingType:      "qlearning",
-						BiddingQTable:    bData.QTable,
-						GameChoiceType:   "qlearning",
-						GameChoiceQTable: gData.QTable,
-						CardPlayType:     "heuristic",
-					},
-				})
-			}
-		}
-	}
-
 	// Add DQN agent if weights exist
 	declarerPath := dqnPath + ".declarer"
 	defenderPath := dqnPath + ".defender"

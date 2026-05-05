@@ -199,7 +199,7 @@ func main() {
 }
 
 // setupGame creates a game, runs bidding, and returns the game state ready for card play
-func setupGame(heuristicAgent *agent.SkatAgent) *game.GameState {
+func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, bool) {
 	config := agent.NewThreeWayConfig(
 		heuristicAgent,
 		heuristicAgent.CachedClone(),
@@ -210,9 +210,7 @@ func setupGame(heuristicAgent *agent.SkatAgent) *game.GameState {
 	g = g.WithCardsDealt()
 	g = agent.WithAgentBidding(g, config)
 	g = agent.WithAgentSkatDecision(g)
-	g = agent.WithAgentGameChoice(g)
-
-	return g
+	return agent.WithAgentGameChoice(g)
 }
 
 // collectDeclarerExamples plays a game with minimax declarer vs heuristic defenders
@@ -341,9 +339,9 @@ func playGameAndCollectExamples(minimaxAgent *agent.SkatAgent, heuristicAgent *a
 	var examples []ImitationExample
 
 	// Setup game and run bidding once
-	g := setupGame(heuristicAgent)
+	g, overbid := setupGame(heuristicAgent)
 
-	if g.Declarer == nil {
+	if g.Declarer == nil || overbid {
 		// Game was passed, no examples
 		return examples
 	}

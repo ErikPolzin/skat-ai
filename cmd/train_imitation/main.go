@@ -84,7 +84,6 @@ func main() {
 			testStrategy.SetExploration(0.0)
 
 			weightedBidding := strategies.NewWeightedHeuristicBiddingStrategy()
-			weightedBidding.SetBiddingThreshold(0.65)
 
 			testAgent := agent.NewAgentWithStrategies(
 				"Imitation",

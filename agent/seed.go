@@ -178,29 +178,27 @@ func WithAgentBidding(gs *game.GameState, config AgentConfig) *game.GameState {
 		}
 	}
 	// After bidding, set up agents for cardplay based on configuration
-	if gs.Phase == game.PhaseSkatExchange && gs.Declarer != nil {
-		declarerPos := *gs.Declarer
-		declarer := gs.GetPlayerByPosition(declarerPos)
-		defender1 := gs.GetPlayerByPosition((declarerPos + 1) % 3)
-		defender2 := gs.GetPlayerByPosition((declarerPos + 2) % 3)
+	declarerPos := *gs.Declarer
+	declarer := gs.GetPlayerByPosition(declarerPos)
+	defender1 := gs.GetPlayerByPosition((declarerPos + 1) % 3)
+	defender2 := gs.GetPlayerByPosition((declarerPos + 2) % 3)
 
-		switch config.Mode {
-		case FiftyFiftySplit:
-			// Alternate based on gameNum: even games = test as declarer, odd games = baseline as declarer
-			if gs.GameNumber%2 == 0 {
-				// Want test agent as declarer - fill defenders with baseline
-				SetAgentForPlayer(declarer, config.TestAgent)
-				SetAgentForPlayer(defender1, config.BaselineAgent)
-				SetAgentForPlayer(defender2, config.BaselineAgent.CachedClone())
-			} else {
-				// Want baseline as declarer, test as defender
-				SetAgentForPlayer(declarer, config.BaselineAgent)
-				SetAgentForPlayer(defender1, config.TestAgent)
-				SetAgentForPlayer(defender2, config.TestAgent.CachedClone())
-			}
-		case ThreeWay:
-			// No repositioning needed - agents stay as they are
+	switch config.Mode {
+	case FiftyFiftySplit:
+		// Alternate based on gameNum: even games = test as declarer, odd games = baseline as declarer
+		if gs.GameNumber%2 == 0 {
+			// Want test agent as declarer - fill defenders with baseline
+			SetAgentForPlayer(declarer, config.TestAgent)
+			SetAgentForPlayer(defender1, config.BaselineAgent)
+			SetAgentForPlayer(defender2, config.BaselineAgent.CachedClone())
+		} else {
+			// Want baseline as declarer, test as defender
+			SetAgentForPlayer(declarer, config.BaselineAgent)
+			SetAgentForPlayer(defender1, config.TestAgent)
+			SetAgentForPlayer(defender2, config.TestAgent.CachedClone())
 		}
+	case ThreeWay:
+		// No repositioning needed - agents stay as they are
 	}
 	return gs
 }
@@ -223,7 +221,7 @@ func WithAgentSkatDecision(gs *game.GameState) *game.GameState {
 	return gs
 }
 
-func WithAgentGameChoice(gs *game.GameState) *game.GameState {
+func WithAgentGameChoice(gs *game.GameState) (*game.GameState, bool) {
 	if gs.Phase != game.PhaseDeclarerChoice {
 		panic("Cannot run agent skat decision, game is not in skat exchange phase")
 	}
@@ -232,7 +230,7 @@ func WithAgentGameChoice(gs *game.GameState) *game.GameState {
 	if _, err := gs.DeclareGame(mode, trumpSuit, false, false); err != nil {
 		panic(fmt.Sprintf("DeclareGame error: %v", err))
 	}
-	return gs
+	return gs, gs.Overbid
 }
 
 func WithAgentCardPlay(gs *game.GameState) *game.GameState {
@@ -269,13 +267,9 @@ func WithAgentCardPlay(gs *game.GameState) *game.GameState {
 func PlayFullGame(gs *game.GameState, config AgentConfig) {
 	gs = gs.WithCardsDealt()
 	gs = WithAgentBidding(gs, config)
-	if gs.Phase == game.PhaseSkatExchange {
-		gs = WithAgentSkatDecision(gs)
-	}
-	if gs.Phase == game.PhaseDeclarerChoice {
-		gs = WithAgentGameChoice(gs)
-	}
-	if gs.Phase == game.PhasePlaying {
+	gs = WithAgentSkatDecision(gs)
+	gs, overbid := WithAgentGameChoice(gs)
+	if !overbid {
 		gs = WithAgentCardPlay(gs)
 	}
 	recordGameResults(gs)
@@ -289,13 +283,9 @@ func PlayGameWithMode(gs *game.GameState, config AgentConfig, declarerHand game.
 	gs = gs.WithSkatPickedUp(false)
 	gs = gs.WithGame(mode, trumpSuit)
 	gs = WithAgentBidding(gs, config)
-	if gs.Phase == game.PhaseSkatExchange {
-		gs = WithAgentSkatDecision(gs)
-	}
-	if gs.Phase == game.PhaseDeclarerChoice {
-		gs = WithAgentGameChoice(gs)
-	}
-	if gs.Phase == game.PhasePlaying {
+	gs = WithAgentSkatDecision(gs)
+	gs, overbid := WithAgentGameChoice(gs)
+	if !overbid {
 		gs = WithAgentCardPlay(gs)
 	}
 	recordGameResults(gs)

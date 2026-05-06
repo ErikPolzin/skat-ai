@@ -66,10 +66,9 @@ type AgentConfig struct {
 	// Game choice strategy configuration
 	GameChoiceType string
 	// Card play strategy configuration
-	CardPlayType        string
-	MCTSSimulations     *int    // For MCTS card play (nullable)
-	DeclarerWeightsPath *string // Path to neural network declarer weights (nullable)
-	DefenderWeightsPath *string // Path to neural network defender weights (nullable)
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	CardPlayType         string
+	MCTSSimulations      *int    // For MCTS card play (nullable)
+	CardplayWeightsPath  *string // Path to combined neural network weights (nullable)
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }

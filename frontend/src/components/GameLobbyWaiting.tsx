@@ -63,7 +63,7 @@ export function GameLobbyWaiting() {
   };
 
   const getAgentTypeLabel = (agent: AgentInfo): string => {
-    if (agent.card_play_type === "dqn") return "Neural";
+    if (agent.card_play_type === "neural") return "Neural";
     if (agent.card_play_type === "mcts") return "MCTS";
     return "Heuristic";
   };
@@ -209,7 +209,7 @@ export function GameLobbyWaiting() {
                               label={getAgentTypeLabel(agent)}
                               size="small"
                               color={
-                                agent.card_play_type === "dqn"
+                                agent.card_play_type === "neural"
                                   ? "primary"
                                   : agent.card_play_type === "mcts"
                                     ? "secondary"

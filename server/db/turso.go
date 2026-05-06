@@ -864,14 +864,14 @@ func (d *TursoDatabase) GetAgentConfig(profileID string) (*AgentConfig, error) {
 	err := d.DB.QueryRow(`
 		SELECT profile_id, bidding_type, bidding_threshold,
 		       game_choice_type,
-		       card_play_type, mcts_simulations, declarer_weights_path, defender_weights_path,
+		       card_play_type, mcts_simulations, cardplay_weights_path,
 		       created_at, updated_at
 		FROM agent_configs
 		WHERE profile_id = ?
 	`, profileID).Scan(
 		&config.ProfileID, &config.BiddingType, &config.BiddingThreshold,
 		&config.GameChoiceType,
-		&config.CardPlayType, &config.MCTSSimulations, &config.DeclarerWeightsPath, &config.DefenderWeightsPath,
+		&config.CardPlayType, &config.MCTSSimulations, &config.CardplayWeightsPath,
 		&config.CreatedAt, &config.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -888,21 +888,20 @@ func (d *TursoDatabase) SaveAgentConfig(config AgentConfig) error {
 		INSERT INTO agent_configs (
 			profile_id, bidding_type, bidding_threshold,
 			game_choice_type,
-			card_play_type, mcts_simulations, declarer_weights_path, defender_weights_path,
+			card_play_type, mcts_simulations, cardplay_weights_path,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (profile_id) DO UPDATE SET
 			bidding_type = excluded.bidding_type,
 			bidding_threshold = excluded.bidding_threshold,
 			game_choice_type = excluded.game_choice_type,
 			card_play_type = excluded.card_play_type,
 			mcts_simulations = excluded.mcts_simulations,
-			declarer_weights_path = excluded.declarer_weights_path,
-			defender_weights_path = excluded.defender_weights_path,
+			cardplay_weights_path = excluded.cardplay_weights_path,
 			updated_at = excluded.updated_at
 	`, config.ProfileID, config.BiddingType, config.BiddingThreshold,
 		config.GameChoiceType,
-		config.CardPlayType, config.MCTSSimulations, config.DeclarerWeightsPath, config.DefenderWeightsPath,
+		config.CardPlayType, config.MCTSSimulations, config.CardplayWeightsPath,
 		config.CreatedAt, config.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to save agent config: %w", err)

@@ -52,14 +52,9 @@ func NewServer(database db.Database) *Server {
 			mctsSimulations = *config.MCTSSimulations
 		}
 
-		declarerWeightsPath := ""
-		if config.DeclarerWeightsPath != nil {
-			declarerWeightsPath = *config.DeclarerWeightsPath
-		}
-
-		defenderWeightsPath := ""
-		if config.DefenderWeightsPath != nil {
-			defenderWeightsPath = *config.DefenderWeightsPath
+		cardplayWeightsPath := ""
+		if config.CardplayWeightsPath != nil {
+			cardplayWeightsPath = *config.CardplayWeightsPath
 		}
 
 		return &agent.AgentConfigData{
@@ -69,8 +64,7 @@ func NewServer(database db.Database) *Server {
 			GameChoiceType:      config.GameChoiceType,
 			CardPlayType:        config.CardPlayType,
 			MCTSSimulations:     mctsSimulations,
-			DeclarerWeightsPath: declarerWeightsPath,
-			DefenderWeightsPath: defenderWeightsPath,
+			CardplayWeightsPath: cardplayWeightsPath,
 		}, nil
 	})
 

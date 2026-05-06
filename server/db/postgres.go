@@ -354,9 +354,12 @@ func (d *PgDatabase) DeleteGame(gameID string) error {
 
 func (d *PgDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 	rows, err := d.DB.Query(`
-		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent, pr.profile_icon, pr.is_online, pl.ready_for_next
+		SELECT pl.hand, pl.position, pr.id, pr.name,
+		       CASE WHEN ac.profile_id IS NOT NULL THEN TRUE ELSE FALSE END as is_agent,
+		       pr.profile_icon, pr.is_online, pl.ready_for_next
 		FROM players pl
 		JOIN profiles pr ON pr.id = pl.profile_id
+		LEFT JOIN agent_configs ac ON pr.id = ac.profile_id
 		WHERE pl.game_id = $1
 	`, gameID)
 	if err != nil {
@@ -797,14 +800,14 @@ func (d *PgDatabase) GetAgentConfig(profileID string) (*AgentConfig, error) {
 	err := d.DB.QueryRow(`
 		SELECT profile_id, bidding_type, bidding_threshold,
 		       game_choice_type,
-		       card_play_type, mcts_simulations, declarer_weights_path, defender_weights_path,
+		       card_play_type, mcts_simulations, cardplay_weights_path,
 		       created_at, updated_at
 		FROM agent_configs
 		WHERE profile_id = $1
 	`, profileID).Scan(
 		&config.ProfileID, &config.BiddingType, &config.BiddingThreshold,
 		&config.GameChoiceType,
-		&config.CardPlayType, &config.MCTSSimulations, &config.DeclarerWeightsPath, &config.DefenderWeightsPath,
+		&config.CardPlayType, &config.MCTSSimulations, &config.CardplayWeightsPath,
 		&config.CreatedAt, &config.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -821,21 +824,20 @@ func (d *PgDatabase) SaveAgentConfig(config AgentConfig) error {
 		INSERT INTO agent_configs (
 			profile_id, bidding_type, bidding_threshold,
 			game_choice_type,
-			card_play_type, mcts_simulations, declarer_weights_path, defender_weights_path,
+			card_play_type, mcts_simulations, cardplay_weights_path,
 			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (profile_id) DO UPDATE SET
 			bidding_type = $2,
 			bidding_threshold = $3,
 			game_choice_type = $4,
 			card_play_type = $5,
 			mcts_simulations = $6,
-			declarer_weights_path = $7,
-			defender_weights_path = $8,
-			updated_at = $10
+			cardplay_weights_path = $7,
+			updated_at = $9
 	`, config.ProfileID, config.BiddingType, config.BiddingThreshold,
 		config.GameChoiceType,
-		config.CardPlayType, config.MCTSSimulations, config.DeclarerWeightsPath, config.DefenderWeightsPath,
+		config.CardPlayType, config.MCTSSimulations, config.CardplayWeightsPath,
 		config.CreatedAt, config.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to save agent config: %w", err)

@@ -28,10 +28,18 @@ func main() {
 	outputFile := flag.String("output", ".data/imitation_dataset.csv", "Output file for dataset")
 	searchDepth := flag.Int("depth", 7, "Minimax search depth (default: 7)")
 	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel workers")
+	agentType := flag.String("agent", "minimax", "Agent type to collect data from (minimax or heuristic)")
 	flag.Parse()
 
-	fmt.Printf("Generating imitation learning dataset from %d optimal (minimax) games...\n", *numGames)
-	fmt.Printf("Using search depth: %d\n", *searchDepth)
+	if *agentType != "minimax" && *agentType != "heuristic" {
+		fmt.Fprintf(os.Stderr, "Invalid agent type: %s (must be 'minimax' or 'heuristic')\n", *agentType)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Generating imitation learning dataset from %d %s games...\n", *numGames, *agentType)
+	if *agentType == "minimax" {
+		fmt.Printf("Using search depth: %d\n", *searchDepth)
+	}
 	fmt.Printf("Using %d parallel workers\n", *workers)
 
 	// Channel for collecting results
@@ -58,24 +66,40 @@ func main() {
 	worker := func(numGamesToGenerate int) {
 		defer wg.Done()
 
-		// Create minimax agent for optimal examples
-		minimaxAgent := agent.NewAgentWithStrategies(
-			"MinimaxExpert",
-			strategies.NewWeightedHeuristicBiddingStrategy(),
-			strategies.NewWeightedHeuristicGameChoiceStrategy(),
-			strategies.NewPerfectInfoMinimaxStrategyWithDepth(*searchDepth),
-		)
+		var expertAgent *agent.SkatAgent
+		var opponentAgent *agent.SkatAgent
 
-		// Create heuristic agent for opponent simulation
-		heuristicAgent := agent.NewAgentWithStrategies(
-			"HeuristicOpponent",
-			&agent.HeuristicBiddingStrategy{},
-			&agent.HeuristicGameChoiceStrategy{},
-			&agent.HeuristicCardPlayStrategy{},
-		)
+		if *agentType == "minimax" {
+			// Create minimax agent for optimal examples
+			expertAgent = agent.NewAgentWithStrategies(
+				"MinimaxExpert",
+				strategies.NewWeightedHeuristicBiddingStrategy(),
+				strategies.NewWeightedHeuristicGameChoiceStrategy(),
+				strategies.NewPerfectInfoMinimaxStrategyWithDepth(*searchDepth),
+			)
+
+			// Create heuristic agent for opponent simulation
+			opponentAgent = agent.NewAgentWithStrategies(
+				"HeuristicOpponent",
+				&agent.HeuristicBiddingStrategy{},
+				&agent.HeuristicGameChoiceStrategy{},
+				&agent.HeuristicCardPlayStrategy{},
+			)
+		} else {
+			// Create heuristic agent for data collection
+			expertAgent = agent.NewAgentWithStrategies(
+				"HeuristicExpert",
+				&agent.HeuristicBiddingStrategy{},
+				&agent.HeuristicGameChoiceStrategy{},
+				&agent.HeuristicCardPlayStrategy{},
+			)
+
+			// Use same heuristic for opponents
+			opponentAgent = expertAgent
+		}
 
 		for i := 0; i < numGamesToGenerate; i++ {
-			examples := playGameAndCollectExamples(minimaxAgent, heuristicAgent)
+			examples := playGameAndCollectExamples(expertAgent, opponentAgent)
 			examplesChan <- examples
 			progressChan <- 1
 		}
@@ -213,8 +237,8 @@ func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, bool) {
 	return agent.WithAgentGameChoice(g)
 }
 
-// collectDeclarerExamples plays a game with minimax declarer vs heuristic defenders
-func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+// collectDeclarerExamples plays a game with expert declarer vs opponent defenders
+func collectDeclarerExamples(g *game.GameState, expertAgent, opponentAgent *agent.SkatAgent) []ImitationExample {
 	var examples []ImitationExample
 
 	if g.Declarer == nil {
@@ -222,10 +246,10 @@ func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 	}
 
 	declarer := *g.Declarer
-	// Replace declarer with minimax
-	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), minimaxAgent)
-	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), heuristicAgent)
-	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), heuristicAgent)
+	// Replace declarer with expert agent
+	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), expertAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), opponentAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), opponentAgent)
 
 	// Card play phase
 	for g.Phase == game.PhasePlaying {
@@ -239,7 +263,7 @@ func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 			state := enc.ToSlice()
 			validMask := enc.GetValidMask()
 
-			// Get minimax action
+			// Get expert action
 			card := currentAgent.SelectMove(g, validMoves)
 			action := encoding.CardToIndex(card)
 
@@ -256,7 +280,7 @@ func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 				panic(fmt.Sprintf("PlayCard error: %v", err))
 			}
 		} else {
-			// Heuristic defender plays
+			// Opponent defender plays
 			card := currentAgent.SelectMove(g, validMoves)
 			if _, err := g.PlayCard(card); err != nil {
 				panic(fmt.Sprintf("PlayCard error: %v", err))
@@ -274,8 +298,8 @@ func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 	return examples
 }
 
-// collectDefenderExamples plays a game with minimax defenders vs heuristic declarer
-func collectDefenderExamples(g *game.GameState, minimaxAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+// collectDefenderExamples plays a game with expert defenders vs opponent declarer
+func collectDefenderExamples(g *game.GameState, expertAgent, opponentAgent *agent.SkatAgent) []ImitationExample {
 	var examples []ImitationExample
 
 	if g.Declarer == nil {
@@ -283,9 +307,9 @@ func collectDefenderExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 	}
 
 	declarer := *g.Declarer
-	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), heuristicAgent)
-	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), minimaxAgent)
-	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), minimaxAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), opponentAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), expertAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), expertAgent)
 
 	// Card play phase
 	for g.Phase == game.PhasePlaying {
@@ -298,8 +322,8 @@ func collectDefenderExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 			state := enc.ToSlice()
 			validMask := enc.GetValidMask()
 
-			// Get minimax action
-			card := minimaxAgent.SelectMove(g, validMoves)
+			// Get expert action
+			card := expertAgent.SelectMove(g, validMoves)
 			action := encoding.CardToIndex(card)
 
 			// Store defender example
@@ -315,7 +339,7 @@ func collectDefenderExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 				panic(fmt.Sprintf("PlayCard error: %v", err))
 			}
 		} else {
-			// Heuristic declarer plays
+			// Opponent declarer plays
 			currentAgent := agent.GetAgentForPlayer(g.GetCurrentPlayer())
 			card := currentAgent.SelectMove(g, validMoves)
 			if _, err := g.PlayCard(card); err != nil {
@@ -335,25 +359,25 @@ func collectDefenderExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 }
 
 // playGameAndCollectExamples plays games twice: once for declarer examples, once for defender examples
-func playGameAndCollectExamples(minimaxAgent *agent.SkatAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+func playGameAndCollectExamples(expertAgent *agent.SkatAgent, opponentAgent *agent.SkatAgent) []ImitationExample {
 	var examples []ImitationExample
 
 	// Setup game and run bidding once
-	g, overbid := setupGame(heuristicAgent)
+	g, overbid := setupGame(opponentAgent)
 
 	if g.Declarer == nil || overbid {
 		// Game was passed, no examples
 		return examples
 	}
 
-	// Collect declarer examples: minimax declarer vs heuristic defenders
+	// Collect declarer examples: expert declarer vs opponent defenders
 	gDeclarer := g.Clone()
-	declarerExamples := collectDeclarerExamples(gDeclarer, minimaxAgent, heuristicAgent)
+	declarerExamples := collectDeclarerExamples(gDeclarer, expertAgent, opponentAgent)
 	examples = append(examples, declarerExamples...)
 
-	// Collect defender examples: heuristic declarer vs minimax defenders
+	// Collect defender examples: opponent declarer vs expert defenders
 	gDefender := g.Clone()
-	defenderExamples := collectDefenderExamples(gDefender, minimaxAgent, heuristicAgent)
+	defenderExamples := collectDefenderExamples(gDefender, expertAgent, opponentAgent)
 	examples = append(examples, defenderExamples...)
 
 	return examples

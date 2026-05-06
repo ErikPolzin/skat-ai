@@ -18,8 +18,7 @@ type AgentConfigData struct {
 	GameChoiceType      string
 	CardPlayType        string
 	MCTSSimulations     int
-	DeclarerWeightsPath string
-	DefenderWeightsPath string
+	CardplayWeightsPath string
 }
 
 var (
@@ -49,7 +48,7 @@ func BuildAgentFromConfig(config *AgentConfigData) (*SkatAgent, error) {
 		GameChoiceType:    config.GameChoiceType,
 		CardPlayType:      config.CardPlayType,
 		MCTSSimulations:   config.MCTSSimulations,
-		NeuralWeightsPath: config.DeclarerWeightsPath, // Use declarer path field for combined weights
+		NeuralWeightsPath: config.CardplayWeightsPath,
 	}
 
 	return NewHybridAgent(config.ProfileID, hybridConfig)

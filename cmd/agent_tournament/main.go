@@ -127,14 +127,13 @@ func defineAgents(qtablePath, dqnPath string) []AgentDefinition {
 	if _, err := os.Stat(declarerPath); err == nil {
 		if _, err := os.Stat(defenderPath); err == nil {
 			agents = append(agents, AgentDefinition{
-				Name: "DQN-CardPlay",
+				Name: "Neural-CardPlay",
 				Config: agent.HybridAgentConfig{
 					BiddingType:      "weighted",
 					BiddingThreshold: 0.65,
 					GameChoiceType:   "heuristic",
-					CardPlayType:     "dqn",
-					DQNDeclarerPath:  declarerPath,
-					DQNDefenderPath:  defenderPath,
+					CardPlayType:     "neural",
+					NeuralWeightsPath: declarerPath, // Combined weights file (using declarerPath variable)
 				},
 			})
 		}

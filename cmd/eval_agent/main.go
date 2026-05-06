@@ -82,13 +82,18 @@ func runEvaluation(agentType, component string, games int, cardplayWeights strin
 	fmt.Println("FINAL RESULTS")
 	fmt.Println(strings.Repeat("=", 50))
 
-	if testGames > 0 {
+	if testGames > 0 || testMetrics.PassedGames > 0 {
 		fmt.Printf("\nTest (%s):\n", testDescription)
-		fmt.Printf("  Declarer win rate: %.1f%% (%d/%d games as declarer)\n",
-			float64(testWins)/float64(testGames)*100, testWins, testGames)
-		fmt.Printf("  Avg points as declarer: %.1f\n", float64(testPoints)/float64(testGames))
-		fmt.Printf("  Overbid rate: %.1f%% (%d/%d)\n",
-			float64(testOverbid)/float64(testGames)*100, testOverbid, testGames)
+		if testGames > 0 {
+			fmt.Printf("  Declarer win rate: %.1f%% (%d/%d games as declarer)\n",
+				float64(testWins)/float64(testGames)*100, testWins, testGames)
+			fmt.Printf("  Avg points as declarer: %.1f\n", float64(testPoints)/float64(testGames))
+			fmt.Printf("  Overbid rate: %.1f%% (%d/%d)\n",
+				float64(testOverbid)/float64(testGames)*100, testOverbid, testGames)
+		}
+		if testMetrics.PassedGames > 0 {
+			fmt.Printf("  Passed games: %d (all players passed)\n", testMetrics.PassedGames)
+		}
 
 		// Defender stats
 		if testMetrics.DefenderGames > 0 {
@@ -130,13 +135,18 @@ func runEvaluation(agentType, component string, games int, cardplayWeights strin
 		}
 	}
 
-	if baselineGames > 0 {
+	if baselineGames > 0 || baselineMetrics.PassedGames > 0 {
 		fmt.Printf("\nBaseline (Heuristic):\n")
-		fmt.Printf("  Declarer win rate: %.1f%% (%d/%d games as declarer)\n",
-			float64(baselineWins)/float64(baselineGames)*100, baselineWins, baselineGames)
-		fmt.Printf("  Avg points as declarer: %.1f\n", float64(baselinePoints)/float64(baselineGames))
-		fmt.Printf("  Overbid rate: %.1f%% (%d/%d)\n",
-			float64(baselineOverbid)/float64(baselineGames)*100, baselineOverbid, baselineGames)
+		if baselineGames > 0 {
+			fmt.Printf("  Declarer win rate: %.1f%% (%d/%d games as declarer)\n",
+				float64(baselineWins)/float64(baselineGames)*100, baselineWins, baselineGames)
+			fmt.Printf("  Avg points as declarer: %.1f\n", float64(baselinePoints)/float64(baselineGames))
+			fmt.Printf("  Overbid rate: %.1f%% (%d/%d)\n",
+				float64(baselineOverbid)/float64(baselineGames)*100, baselineOverbid, baselineGames)
+		}
+		if baselineMetrics.PassedGames > 0 {
+			fmt.Printf("  Passed games: %d (all players passed)\n", baselineMetrics.PassedGames)
+		}
 
 		// Defender stats
 		if baselineMetrics.DefenderGames > 0 {
@@ -430,18 +440,26 @@ func buildAgentConfig(agentType, component string, threshold float64, cardplayWe
 			config.CardPlayType = "mcts"
 			config.MCTSSimulations = 500
 		}
+		if component == "combined" {
+			config.GameChoiceType = "weighted"
+		}
 
 	case "minimax":
 		if component == "card-play" || component == "combined" {
 			config.CardPlayType = "minimax"
 			config.MinimaxDepth = minimaxDepth
 		}
+		if component == "combined" {
+			config.GameChoiceType = "weighted"
+		}
 
 	case "neural":
 		if component == "card-play" || component == "combined" {
 			config.CardPlayType = "neural"
-			config.DQNDeclarerPath = cardplayWeights + ".declarer"
-			config.DQNDefenderPath = cardplayWeights + ".defender"
+			config.NeuralWeightsPath = cardplayWeights
+		}
+		if component == "combined" {
+			config.GameChoiceType = "weighted"
 		}
 	}
 
@@ -462,10 +480,20 @@ func buildAgentDescription(agentType, component string, threshold float64) strin
 	case "mcts":
 		if component == "card-play" {
 			return "Weighted bidding + Heuristic game choice + MCTS card play"
+		} else if component == "combined" {
+			return fmt.Sprintf("Weighted bidding+game choice (threshold=%.2f) + MCTS card play", threshold)
+		}
+	case "minimax":
+		if component == "card-play" {
+			return "Weighted bidding + Heuristic game choice + Minimax card play"
+		} else if component == "combined" {
+			return fmt.Sprintf("Weighted bidding+game choice (threshold=%.2f) + Minimax card play", threshold)
 		}
 	case "neural":
 		if component == "card-play" {
 			return "Weighted bidding + Heuristic game choice + DQN card play"
+		} else if component == "combined" {
+			return fmt.Sprintf("Weighted bidding+game choice (threshold=%.2f) + DQN card play", threshold)
 		}
 	}
 	return fmt.Sprintf("%s agent testing %s", agentType, component)

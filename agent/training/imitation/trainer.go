@@ -242,7 +242,7 @@ func (t *BehavioralCloningTrainer) LoadDataset(filename string) error {
 }
 
 // Train performs one epoch of training
-func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss float64, err error) {
+func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, declarerAcc, defenderAcc float64, err error) {
 	// Shuffle datasets
 	rand.Shuffle(len(t.declarerExamples), func(i, j int) {
 		t.declarerExamples[i], t.declarerExamples[j] = t.declarerExamples[j], t.declarerExamples[i]
@@ -252,39 +252,43 @@ func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss float64, 
 	})
 
 	// Train declarer network
-	var declLoss float64
+	var declLoss, declAcc float64
 	declBatches := len(t.declarerExamples) / t.batchSize
 	for i := 0; i < declBatches; i++ {
 		batch := t.declarerExamples[i*t.batchSize : (i+1)*t.batchSize]
-		loss, err := t.trainBatch(t.declarerNet, batch)
+		loss, acc, err := t.trainBatch(t.declarerNet, batch)
 		if err != nil {
-			return 0, 0, fmt.Errorf("declarer training error: %w", err)
+			return 0, 0, 0, 0, fmt.Errorf("declarer training error: %w", err)
 		}
 		declLoss += loss
+		declAcc += acc
 	}
 	if declBatches > 0 {
 		declLoss /= float64(declBatches)
+		declAcc /= float64(declBatches)
 	}
 
 	// Train defender network
-	var defLoss float64
+	var defLoss, defAcc float64
 	defBatches := len(t.defenderExamples) / t.batchSize
 	for i := 0; i < defBatches; i++ {
 		batch := t.defenderExamples[i*t.batchSize : (i+1)*t.batchSize]
-		loss, err := t.trainBatch(t.defenderNet, batch)
+		loss, acc, err := t.trainBatch(t.defenderNet, batch)
 		if err != nil {
-			return 0, 0, fmt.Errorf("defender training error: %w", err)
+			return 0, 0, 0, 0, fmt.Errorf("defender training error: %w", err)
 		}
 		defLoss += loss
+		defAcc += acc
 	}
 	if defBatches > 0 {
 		defLoss /= float64(defBatches)
+		defAcc /= float64(defBatches)
 	}
 
-	return declLoss, defLoss, nil
+	return declLoss, defLoss, declAcc, defAcc, nil
 }
 
-func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, batch []ImitationExample) (float64, error) {
+func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, batch []ImitationExample) (loss, accuracy float64, err error) {
 	// Prepare batch data
 	stateData := make([]float32, len(batch)*114)
 	maskData := make([]float32, len(batch)*32)
@@ -309,7 +313,7 @@ func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, bat
 
 	// Forward + backward
 	if err := model.vm.RunAll(); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	// Get loss
@@ -321,8 +325,30 @@ func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, bat
 	case []float32:
 		lossVal = v[0]
 	default:
-		return 0, fmt.Errorf("unexpected loss type: %T", lossData)
+		return 0, 0, fmt.Errorf("unexpected loss type: %T", lossData)
 	}
+
+	// Calculate accuracy
+	logitsData := model.logits.Value().Data().([]float32)
+	correct := 0
+	for i, ex := range batch {
+		// Get the predicted action (argmax of valid moves)
+		maxIdx := -1
+		maxVal := float32(-1e9)
+		for j := 0; j < 32; j++ {
+			if ex.ValidMask[j] > 0 {
+				val := logitsData[i*32+j]
+				if val > maxVal {
+					maxVal = val
+					maxIdx = j
+				}
+			}
+		}
+		if maxIdx == ex.Action {
+			correct++
+		}
+	}
+	acc := float64(correct) / float64(len(batch))
 
 	// Update weights
 	var valueGrads []gorgonia.ValueGrad
@@ -331,13 +357,13 @@ func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, bat
 	}
 
 	if err := model.solver.Step(valueGrads); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	// Reset for next batch
 	model.vm.Reset()
 
-	return float64(lossVal), nil
+	return float64(lossVal), acc, nil
 }
 
 // GetWeights returns trained network weights

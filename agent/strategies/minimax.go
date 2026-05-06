@@ -3,7 +3,6 @@ package strategies
 import (
 	"math"
 	"skat/game"
-	"sort"
 	"sync"
 )
 
@@ -18,12 +17,12 @@ type TranspositionEntry struct {
 // PerfectInfoMinimaxStrategy implements minimax search with perfect information
 // This is suitable for generating optimal training data where all hands are known
 type PerfectInfoMinimaxStrategy struct {
-	maxDepth         int
-	transTable       map[uint64]*TranspositionEntry
-	transMutex       sync.RWMutex
-	useMoveOrdering  bool
-	useTransTable    bool
-	useLateMoveRed   bool
+	maxDepth          int
+	transTable        map[uint64]*TranspositionEntry
+	transMutex        sync.RWMutex
+	useMoveOrdering   bool
+	useTransTable     bool
+	useLateMoveRed    bool
 	lateMoveThreshold int
 	lateMoveReduction int
 }
@@ -49,8 +48,8 @@ func NewPerfectInfoMinimaxStrategyWithDepth(maxDepth int) *PerfectInfoMinimaxStr
 		useMoveOrdering:   true,
 		useTransTable:     true,
 		useLateMoveRed:    true,
-		lateMoveThreshold: 3,
-		lateMoveReduction: 2,
+		lateMoveThreshold: 2,
+		lateMoveReduction: 3,
 	}
 }
 
@@ -75,7 +74,7 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 
 	// Order moves by card value for better pruning
 	if m.useMoveOrdering {
-		m.orderMoves(validMoves, isDeclarer)
+		m.orderMoves(state, validMoves, isDeclarer)
 	}
 
 	var bestMove game.Card
@@ -159,7 +158,7 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 	// Order moves for better pruning
 	if m.useMoveOrdering {
 		isDeclarer := state.Declarer != nil && state.CurrentPlayer == *state.Declarer
-		m.orderMoves(validMoves, isDeclarer)
+		m.orderMoves(state, validMoves, isDeclarer)
 	}
 
 	isDeclarer := state.Declarer != nil && state.CurrentPlayer == *state.Declarer
@@ -236,19 +235,10 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 }
 
 // orderMoves sorts moves to improve alpha-beta pruning efficiency
-// High-value cards are searched first for declarers, low-value for defenders
-func (m *PerfectInfoMinimaxStrategy) orderMoves(moves []game.Card, isDeclarer bool) {
-	if isDeclarer {
-		// Declarer: try high-value cards first
-		sort.Slice(moves, func(i, j int) bool {
-			return moves[i].Value() > moves[j].Value()
-		})
-	} else {
-		// Defenders: try low-value cards first (to avoid giving points)
-		sort.Slice(moves, func(i, j int) bool {
-			return moves[i].Value() < moves[j].Value()
-		})
-	}
+// Uses heuristic-based ordering to prioritize moves likely to be good
+func (m *PerfectInfoMinimaxStrategy) orderMoves(state *game.GameState, moves []game.Card, isDeclarer bool) {
+	// Use heuristic-based move ordering for better pruning
+	heuristicOrder(state, moves, isDeclarer)
 }
 
 // hashState creates a hash of the game state for transposition table
@@ -304,8 +294,32 @@ func (m *PerfectInfoMinimaxStrategy) evaluate(state *game.GameState) float64 {
 	}
 
 	// Add cards in the current trick (not yet scored)
-	for _, card := range state.Trick {
-		score += float64(card.Value())
+	// But we need to determine WHO would win this trick
+	if len(state.Trick) > 0 {
+		trickValue := 0
+		for _, card := range state.Trick {
+			trickValue += card.Value()
+		}
+
+		// Find the winning card so far using the same logic as PlayCard
+		winner := game.Dealer // Relative position (0, 1, or 2 within the trick)
+		winCard := state.Trick[0]
+		for i := game.Listener; i < game.GamePosition(len(state.Trick)); i++ {
+			if state.CardBeats(state.Trick[i], winCard) {
+				winner = i
+				winCard = state.Trick[i]
+			}
+		}
+
+		// Convert relative position to absolute player position
+		actualWinner := (state.TrickStarter + winner) % 3
+
+		// Add trick value based on who's currently winning
+		if actualWinner == declarer {
+			score += float64(trickValue)
+		} else {
+			score -= float64(trickValue)
+		}
 	}
 
 	return score

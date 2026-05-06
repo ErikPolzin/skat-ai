@@ -282,18 +282,39 @@ func PlayGameWithMode(gs *game.GameState, config AgentConfig, declarerHand game.
 	gs = gs.WithDeclarer(game.Speaker, 0)
 	gs = gs.WithSkatPickedUp(false)
 	gs = gs.WithGame(mode, trumpSuit)
-	gs = WithAgentBidding(gs, config)
-	gs = WithAgentSkatDecision(gs)
-	gs, overbid := WithAgentGameChoice(gs)
-	if !overbid {
+	if !gs.Overbid {
 		gs = WithAgentCardPlay(gs)
 	}
 	recordGameResults(gs)
 }
 
 func recordGameResults(g *game.GameState) {
-	// Record metrics if agents have them enabled
-	if g.Declarer != nil && !(g.SpeakerPassed && g.ListenerPassed && g.DealerPassed) {
+	// Check if all players passed (Zwangspiel - forced game)
+	// In Skat, when all pass, listener is forced to play at bid 18
+	if g.SpeakerPassed && g.ListenerPassed && g.DealerPassed {
+
+		// Record passed game (Zwangspiel) for all agents
+		for _, player := range g.Players {
+			if player != nil && player.IsAgent {
+				agent := GetAgentForPlayerID(player.ID)
+				agent.RecordPassedGame()
+			}
+		}
+		// Still record the actual game result since listener was forced to play
+		if g.Declarer != nil {
+			playerResults := g.PlayerResults()
+			if playerResults != nil {
+				for _, r := range playerResults {
+					agent := GetAgentForPlayerID(r.PlayerID)
+					agent.RecordGameResult(g, r)
+				}
+			}
+		}
+		return
+	}
+
+	// Record normal game results if agents have them enabled
+	if g.Declarer != nil {
 		playerResults := g.PlayerResults()
 		if playerResults != nil {
 			for _, r := range playerResults {

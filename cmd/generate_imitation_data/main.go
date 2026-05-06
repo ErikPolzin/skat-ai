@@ -61,8 +61,8 @@ func main() {
 		// Create minimax agent for optimal examples
 		minimaxAgent := agent.NewAgentWithStrategies(
 			"MinimaxExpert",
-			&agent.HeuristicBiddingStrategy{},
-			&agent.HeuristicGameChoiceStrategy{},
+			strategies.NewWeightedHeuristicBiddingStrategy(),
+			strategies.NewWeightedHeuristicGameChoiceStrategy(),
 			strategies.NewPerfectInfoMinimaxStrategyWithDepth(*searchDepth),
 		)
 

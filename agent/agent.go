@@ -10,21 +10,23 @@ import (
 
 // Re-export strategy types for backwards compatibility
 type (
-	RandomBiddingStrategy            = strategies.RandomBiddingStrategy
-	HeuristicBiddingStrategy         = strategies.HeuristicBiddingStrategy
-	WeightedHeuristicBiddingStrategy = strategies.WeightedHeuristicBiddingStrategy
-	RandomGameChoiceStrategy         = strategies.RandomGameChoiceStrategy
-	HeuristicGameChoiceStrategy      = strategies.HeuristicGameChoiceStrategy
-	RandomCardPlayStrategy           = strategies.RandomCardPlayStrategy
-	HeuristicCardPlayStrategy        = strategies.HeuristicCardPlayStrategy
-	MCTSCardPlayStrategy             = strategies.MCTSCardPlayStrategy
+	RandomBiddingStrategy               = strategies.RandomBiddingStrategy
+	HeuristicBiddingStrategy            = strategies.HeuristicBiddingStrategy
+	WeightedHeuristicBiddingStrategy    = strategies.WeightedHeuristicBiddingStrategy
+	RandomGameChoiceStrategy            = strategies.RandomGameChoiceStrategy
+	HeuristicGameChoiceStrategy         = strategies.HeuristicGameChoiceStrategy
+	WeightedHeuristicGameChoiceStrategy = strategies.WeightedHeuristicGameChoiceStrategy
+	RandomCardPlayStrategy              = strategies.RandomCardPlayStrategy
+	HeuristicCardPlayStrategy           = strategies.HeuristicCardPlayStrategy
+	MCTSCardPlayStrategy                = strategies.MCTSCardPlayStrategy
 )
 
 // Re-export constructor functions
 var (
-	NewMCTSCardPlayStrategyWithParams   = strategies.NewMCTSCardPlayStrategyWithParams
-	NewHeuristicCardPlayStrategy        = strategies.NewHeuristicCardPlayStrategy
-	NewWeightedHeuristicBiddingStrategy = strategies.NewWeightedHeuristicBiddingStrategy
+	NewMCTSCardPlayStrategyWithParams      = strategies.NewMCTSCardPlayStrategyWithParams
+	NewHeuristicCardPlayStrategy           = strategies.NewHeuristicCardPlayStrategy
+	NewWeightedHeuristicBiddingStrategy    = strategies.NewWeightedHeuristicBiddingStrategy
+	NewWeightedHeuristicGameChoiceStrategy = strategies.NewWeightedHeuristicGameChoiceStrategy
 )
 
 // BiddingStrategy interface for bidding decisions
@@ -68,6 +70,7 @@ type AgentMetrics struct {
 	mu             sync.Mutex
 	biddingAccepts map[int]int // bid value -> count of accepts
 	biddingRejects map[int]int // bid value -> count of rejects
+	passedGames    atomic.Int64 // games where all players passed
 }
 
 // SkatAgent uses strategies for different aspects of play
@@ -215,9 +218,8 @@ type HybridAgentConfig struct {
 
 	CardPlayType    string
 	MCTSSimulations int    // For MCTS card play
-	MinimaxDepth    int    // For minimax card play
-	DQNDeclarerPath string // For DQN card play
-	DQNDefenderPath string // For DQN card play
+	MinimaxDepth      int    // For minimax card play
+	NeuralWeightsPath string // For neural network card play (combined declarer+defender weights)
 }
 
 // NewHybridAgent creates an agent with mixed strategies (for experimentation)
@@ -231,10 +233,9 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	case "weighted":
 		weighted := strategies.NewWeightedHeuristicBiddingStrategy()
 		threshold := config.BiddingThreshold
-		if threshold == 0 {
-			threshold = 0.6 // Default threshold
+		if threshold != 0 {
+			weighted.SetBiddingThreshold(threshold)
 		}
-		weighted.SetBiddingThreshold(threshold)
 		agent.biddingStrategy = weighted
 	case "random":
 		agent.biddingStrategy = &RandomBiddingStrategy{}
@@ -248,6 +249,8 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	switch config.GameChoiceType {
 	case "heuristic":
 		agent.gameChoiceStrategy = &HeuristicGameChoiceStrategy{}
+	case "weighted":
+		agent.gameChoiceStrategy = strategies.NewWeightedHeuristicGameChoiceStrategy()
 	case "random":
 		agent.gameChoiceStrategy = &RandomGameChoiceStrategy{}
 	default:
@@ -270,16 +273,16 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 			depth = 7 // Default depth
 		}
 		agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth)
-	case "dqn":
-		if config.DQNDeclarerPath == "" || config.DQNDefenderPath == "" {
-			return nil, fmt.Errorf("DQN card play requires both declarer and defender weight paths")
+	case "neural":
+		if config.NeuralWeightsPath == "" {
+			return nil, fmt.Errorf("neural card play requires weight path")
 		}
-		dqn, err := strategies.NewNeuralCardPlayStrategyFromWeights(config.DQNDeclarerPath, config.DQNDefenderPath)
+		neuralStrategy, err := strategies.NewNeuralCardPlayStrategyFromWeights(config.NeuralWeightsPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load DQN weights: %w", err)
+			return nil, fmt.Errorf("failed to load neural weights: %w", err)
 		}
-		dqn.SetExploration(0.0) // No exploration for evaluation
-		agent.cardPlayStrategy = dqn
+		neuralStrategy.SetExploration(0.0) // No exploration for evaluation
+		agent.cardPlayStrategy = neuralStrategy
 	case "random":
 		agent.cardPlayStrategy = &RandomCardPlayStrategy{}
 	default:
@@ -349,6 +352,14 @@ func (sa *SkatAgent) EnableMetrics() {
 	}
 }
 
+// RecordPassedGame records when all players passed (no one bid)
+func (sa *SkatAgent) RecordPassedGame() {
+	if sa.metrics == nil {
+		return
+	}
+	sa.metrics.passedGames.Add(1)
+}
+
 // RecordGameResult records the result of a game for this agent (declarer or defender)
 func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.PlayerResultState) {
 	if sa.metrics == nil {
@@ -413,6 +424,7 @@ func (sa *SkatAgent) MergeMetrics(other AgentMetricsSnapshot) {
 	sa.metrics.nullWins.Add(other.NullWins)
 	sa.metrics.defenderGames.Add(other.DefenderGames)
 	sa.metrics.defenderWins.Add(other.DefenderWins)
+	sa.metrics.passedGames.Add(other.PassedGames)
 
 	// Merge bidding distributions
 	sa.metrics.mu.Lock()
@@ -462,6 +474,7 @@ func (sa *SkatAgent) GetMetrics() AgentMetricsSnapshot {
 		DefenderWins:   sa.metrics.defenderWins.Load(),
 		BiddingAccepts: biddingAccepts,
 		BiddingRejects: biddingRejects,
+		PassedGames:    sa.metrics.passedGames.Load(),
 	}
 }
 
@@ -483,6 +496,7 @@ func (sa *SkatAgent) ResetMetrics() {
 	sa.metrics.nullWins.Store(0)
 	sa.metrics.defenderGames.Store(0)
 	sa.metrics.defenderWins.Store(0)
+	sa.metrics.passedGames.Store(0)
 
 	sa.metrics.mu.Lock()
 	sa.metrics.biddingAccepts = make(map[int]int)
@@ -506,6 +520,7 @@ type AgentMetricsSnapshot struct {
 	DefenderWins   int64
 	BiddingAccepts map[int]int
 	BiddingRejects map[int]int
+	PassedGames    int64
 }
 
 // GetMaxBid returns the highest bid value the agent accepted during evaluation

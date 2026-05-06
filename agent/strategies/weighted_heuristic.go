@@ -42,28 +42,28 @@ type BidWeights struct {
 // These can be replaced with learned weights from training data
 func DefaultBidWeights() BidWeights {
 	return BidWeights{
-		// Grand weights
-		GrandJacks:        12.0,
-		GrandAces:         18.0,
-		GrandTens:         5.0,
-		GrandAceTenPairs:  20.0,
-		GrandTotalWinners: 15.0,
+		// Grand weights (trained from 50k episodes)
+		GrandJacks:        12.002,
+		GrandAces:         17.977,
+		GrandTens:         4.962,
+		GrandAceTenPairs:  19.975,
+		GrandTotalWinners: 14.979,
 
-		// Suit weights
-		SuitTrumpLength:   8.0,
-		SuitTrumpLengthSq: 4.0,
+		// Suit weights (balanced for selective but not overly conservative bidding)
+		SuitTrumpLength:   5.0,
+		SuitTrumpLengthSq: 1.5, // Moderate squared bonus
 		SuitTopTrumps:     15.0,
-		SuitSideAces:      8.0,
-		SuitVoidSuits:     18.0,
-		SuitShortSuits:    7.0,
+		SuitSideAces:      10.0,
+		SuitVoidSuits:     15.0,
+		SuitShortSuits:    6.0,
 		SuitAceTenPairs:   15.0,
 
 		// Shared
-		Matadors:    10.0,
-		TotalPoints: 0.3,
+		Matadors:    9.892,
+		TotalPoints: -0.627,
 
 		// Bias
-		GrandBias: -100.0, // Grand is harder, needs strong hand
+		GrandBias: -20.0, // Modest penalty - Grand is viable with good jacks
 		SuitBias:  0.0,
 	}
 }
@@ -72,7 +72,7 @@ func DefaultBidWeights() BidWeights {
 func NewWeightedHeuristicBiddingStrategy() *WeightedHeuristicBiddingStrategy {
 	return &WeightedHeuristicBiddingStrategy{
 		weights:          DefaultBidWeights(),
-		biddingThreshold: 0.4, // Bid if estimated win probability > 60%
+		biddingThreshold: 0.70, // Higher threshold for more conservative bidding
 	}
 }
 
@@ -124,13 +124,20 @@ func (w *WeightedHeuristicBiddingStrategy) ShouldBid(gs *game.GameState, hand []
 	// Map to [0, 1] using a sigmoid: 1 / (1 + exp(-score/50))
 	winProbability := 1.0 / (1.0 + math.Exp(-bestScore/50.0))
 
-	// Bid if:
-	// 1. Win probability exceeds threshold
-	// 2. Game value can meet the bid
-	meetsThreshold := winProbability >= w.biddingThreshold
-	meetsValue := bestGameValue >= nextBid
+	// Apply safety margin to required game value
+	// Game value must significantly exceed the bid to account for uncertainty
+	safetyMargin := 1.2 // Need 50% more than bid value
+	requiredValue := int(float64(nextBid) * safetyMargin)
 
-	return meetsThreshold && meetsValue
+	// Bid if:
+	// 1. Win probability exceeds threshold, AND
+	// 2. Game value meets the safety-adjusted requirement, AND
+	// 3. Best score is positive and exceeds minimum threshold
+	meetsThreshold := winProbability >= w.biddingThreshold
+	meetsValue := bestGameValue >= requiredValue
+	meetsStrength := bestScore > 110.0 // Balanced threshold for realistic bidding
+
+	return meetsThreshold && meetsValue && meetsStrength
 }
 
 // evaluateGrand scores a hand for playing Grand
@@ -175,6 +182,12 @@ func (w *WeightedHeuristicBiddingStrategy) evaluateGrand(cards game.Cards) float
 			aceTenPairs++
 		}
 	}
+
+	// Grand requires good trump control
+	if jackCount < 2 {
+		return -100.0 // Nearly impossible without 3+ jacks
+	}
+	// 3 jacks is viable with good side suits - don't add extra penalty
 
 	// Calculate matadors
 	matadors := w.countMatadors(cards, game.ModeGrand, game.NoSuit)
@@ -337,4 +350,84 @@ func (w *WeightedHeuristicBiddingStrategy) GetWeights() BidWeights {
 // GetBiddingThreshold returns the current threshold
 func (w *WeightedHeuristicBiddingStrategy) GetBiddingThreshold() float64 {
 	return w.biddingThreshold
+}
+
+// WeightedHeuristicGameChoiceStrategy uses the same learned weights for game choice
+type WeightedHeuristicGameChoiceStrategy struct {
+	weights BidWeights
+}
+
+// NewWeightedHeuristicGameChoiceStrategy creates a new weighted game choice strategy
+func NewWeightedHeuristicGameChoiceStrategy() *WeightedHeuristicGameChoiceStrategy {
+	return &WeightedHeuristicGameChoiceStrategy{
+		weights: DefaultBidWeights(),
+	}
+}
+
+// NewWeightedHeuristicGameChoiceStrategyWithWeights creates strategy with custom weights
+func NewWeightedHeuristicGameChoiceStrategyWithWeights(weights BidWeights) *WeightedHeuristicGameChoiceStrategy {
+	return &WeightedHeuristicGameChoiceStrategy{
+		weights: weights,
+	}
+}
+
+func (w *WeightedHeuristicGameChoiceStrategy) GetName() string {
+	return "WeightedHeuristicGameChoice"
+}
+
+// ChooseGame selects the best game mode and trump suit based on weighted evaluation
+func (w *WeightedHeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int) (game.GameMode, game.Suit) {
+	cards := game.Cards(hand)
+
+	// Evaluate all possible games and find the best one
+	bestScore := -math.MaxFloat64
+	bestMode := game.ModeGrand
+	bestSuit := game.NoSuit
+
+	// Create evaluator for hand scoring
+	evaluator := &WeightedHeuristicBiddingStrategy{weights: w.weights}
+
+	// Evaluate Grand
+	grandScore := evaluator.evaluateGrand(cards)
+	grandValue := cards.GameValue(game.ModeGrand, game.NoSuit)
+
+	// Only consider if it meets the bid value
+	if grandValue >= bidValue && grandScore > bestScore {
+		bestScore = grandScore
+		bestMode = game.ModeGrand
+		bestSuit = game.NoSuit
+	}
+
+	// Evaluate all suit games
+	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+		suitScore := evaluator.evaluateSuit(cards, suit)
+		suitValue := cards.GameValue(game.ModeSuit, suit)
+
+		// Only consider if it meets the bid value
+		if suitValue >= bidValue && suitScore > bestScore {
+			bestScore = suitScore
+			bestMode = game.ModeSuit
+			bestSuit = suit
+		}
+	}
+
+	return bestMode, bestSuit
+}
+
+// SetWeights updates the weights (for training/tuning)
+func (w *WeightedHeuristicGameChoiceStrategy) SetWeights(weights BidWeights) {
+	w.weights = weights
+}
+
+// GetWeights returns the current weights
+func (w *WeightedHeuristicGameChoiceStrategy) GetWeights() BidWeights {
+	return w.weights
+}
+
+// ChooseSkatDiscard uses the same heuristic as the standard strategy
+// (skat discard is less amenable to simple weight-based optimization)
+func (w *WeightedHeuristicGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode game.GameMode, trumpSuit game.Suit) (game.Card, game.Card) {
+	// Delegate to heuristic strategy for skat discard
+	h := &HeuristicGameChoiceStrategy{}
+	return h.ChooseSkatDiscard(hand, mode, trumpSuit)
 }

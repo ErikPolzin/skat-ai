@@ -1,7 +1,6 @@
 package strategies
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -52,92 +51,16 @@ func NewNeuralCardPlayStrategy() *NeuralCardPlayStrategy {
 	}
 }
 
-// NewNeuralCardPlayStrategyFromWeights loads both declarer and defender networks from files or GCS
-// Paths can be local files (.data/model.weights) or GCS URIs (gs://bucket/path/model.weights)
-func NewNeuralCardPlayStrategyFromWeights(declarerPath, defenderPath string) (*NeuralCardPlayStrategy, error) {
-	ctx := context.Background()
-
+// NewNeuralCardPlayStrategyFromWeights loads both declarer and defender networks from a single file
+func NewNeuralCardPlayStrategyFromWeights(path string) (*NeuralCardPlayStrategy, error) {
 	// Create graphs for loading weights
 	declarerGraph := gorgonia.NewGraph()
 	defenderGraph := gorgonia.NewGraph()
 
-	var declarerWeights, defenderWeights map[string]*gorgonia.Node
-	var err error
-
-	// Load declarer weights (detect GCS vs local file)
-	if bucket, path, isGCS := parseGCSPath(declarerPath); isGCS {
-		declarerWeights, err = strategiesio.LoadCardPlayWeightsFromGCS(ctx, bucket, path, declarerGraph)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load declarer weights from GCS: %w", err)
-		}
-	} else {
-		declarerWeights, err = strategiesio.LoadCardPlayWeights(declarerPath, declarerGraph)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load declarer weights: %w", err)
-		}
-	}
-
-	// Load defender weights (detect GCS vs local file)
-	if bucket, path, isGCS := parseGCSPath(defenderPath); isGCS {
-		defenderWeights, err = strategiesio.LoadCardPlayWeightsFromGCS(ctx, bucket, path, defenderGraph)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load defender weights from GCS: %w", err)
-		}
-	} else {
-		defenderWeights, err = strategiesio.LoadCardPlayWeights(defenderPath, defenderGraph)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load defender weights: %w", err)
-		}
-	}
-
-	return &NeuralCardPlayStrategy{
-		declarerNet: createNetworkInstance(declarerWeights),
-		defenderNet: createNetworkInstance(defenderWeights),
-	}, nil
-}
-
-// parseGCSPath parses a GCS path (gs://bucket/path) into bucket and path components
-// Returns (bucket, path, true) if it's a GCS path, or ("", "", false) if it's a local path
-func parseGCSPath(path string) (bucket, objectPath string, isGCS bool) {
-	const gcsPrefix = "gs://"
-	if len(path) <= len(gcsPrefix) || path[:len(gcsPrefix)] != gcsPrefix {
-		return "", "", false
-	}
-
-	// Remove gs:// prefix
-	remainder := path[len(gcsPrefix):]
-
-	// Find first slash to separate bucket from path
-	slashIdx := -1
-	for i, ch := range remainder {
-		if ch == '/' {
-			slashIdx = i
-			break
-		}
-	}
-
-	if slashIdx == -1 {
-		// No slash found - entire remainder is bucket, no path
-		return remainder, "", true
-	}
-
-	return remainder[:slashIdx], remainder[slashIdx+1:], true
-}
-
-// NewNeuralCardPlayStrategyFromGCS loads both declarer and defender networks from GCS
-func NewNeuralCardPlayStrategyFromGCS(ctx context.Context, declarerBucket, declarerPath, defenderBucket, defenderPath string) (*NeuralCardPlayStrategy, error) {
-	// Create graphs for loading weights
-	declarerGraph := gorgonia.NewGraph()
-	defenderGraph := gorgonia.NewGraph()
-
-	declarerWeights, err := strategiesio.LoadCardPlayWeightsFromGCS(ctx, declarerBucket, declarerPath, declarerGraph)
+	// Load combined weights from single file
+	declarerWeights, defenderWeights, err := strategiesio.LoadCombinedCardPlayWeights(path, declarerGraph, defenderGraph)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load declarer weights from GCS: %w", err)
-	}
-
-	defenderWeights, err := strategiesio.LoadCardPlayWeightsFromGCS(ctx, defenderBucket, defenderPath, defenderGraph)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load defender weights from GCS: %w", err)
+		return nil, fmt.Errorf("failed to load weights: %w", err)
 	}
 
 	return &NeuralCardPlayStrategy{

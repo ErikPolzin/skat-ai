@@ -46,11 +46,10 @@ func BuildAgentFromConfig(config *AgentConfigData) (*SkatAgent, error) {
 	hybridConfig := HybridAgentConfig{
 		BiddingType:      config.BiddingType,
 		BiddingThreshold: config.BiddingThreshold,
-		GameChoiceType:   config.GameChoiceType,
-		CardPlayType:     config.CardPlayType,
-		MCTSSimulations:  config.MCTSSimulations,
-		DQNDeclarerPath:  config.DeclarerWeightsPath,
-		DQNDefenderPath:  config.DefenderWeightsPath,
+		GameChoiceType:    config.GameChoiceType,
+		CardPlayType:      config.CardPlayType,
+		MCTSSimulations:   config.MCTSSimulations,
+		NeuralWeightsPath: config.DeclarerWeightsPath, // Use declarer path field for combined weights
 	}
 
 	return NewHybridAgent(config.ProfileID, hybridConfig)

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"skat/agent"
@@ -63,14 +64,14 @@ func main() {
 
 	for epoch := 1; epoch <= *epochs; epoch++ {
 		// Train one epoch
-		declLoss, defLoss, err := trainer.Train()
+		declLoss, defLoss, declAcc, defAcc, err := trainer.Train()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Training error at epoch %d: %v\n", epoch, err)
 			os.Exit(1)
 		}
 
-		fmt.Printf("  [Epoch %3d/%d] Declarer Loss: %.4f | Defender Loss: %.4f\n",
-			epoch, *epochs, declLoss, defLoss)
+		fmt.Printf("  [Epoch %3d/%d] Decl Loss: %.4f Acc: %.1f%% | Def Loss: %.4f Acc: %.1f%%\n",
+			epoch, *epochs, declLoss, declAcc*100, defLoss, defAcc*100)
 
 		// Evaluate periodically
 		if epoch%*evalEvery == 0 {
@@ -88,7 +89,7 @@ func main() {
 			testAgent := agent.NewAgentWithStrategies(
 				"Imitation",
 				weightedBidding,
-				&agent.HeuristicGameChoiceStrategy{},
+				strategies.NewWeightedHeuristicGameChoiceStrategy(),
 				testStrategy,
 			)
 
@@ -98,7 +99,7 @@ func main() {
 			config := agent.NewFiftyFiftySplitConfig(testAgent, baselineAgent)
 			training.EvaluateAgents(config, *evalGames)
 			testStats := config.TestAgent.GetMetrics()
-			baselineStats := config.TestAgent.GetMetrics()
+			baselineStats := config.BaselineAgent.GetMetrics()
 
 			// Calculate win rates
 			testDeclWinRate := 0.0
@@ -113,7 +114,7 @@ func main() {
 			// Calculate defender win rates
 			testDefWinRate := 0.0
 			if testStats.DefenderGames > 0 {
-				testDefWinRate = float64(testStats.DefenderWins) / float64(baselineStats.Games) * 100
+				testDefWinRate = float64(testStats.DefenderWins) / float64(testStats.DefenderGames) * 100
 			}
 
 			baselineDefWinRate := 0.0
@@ -132,20 +133,21 @@ func main() {
 
 	// Save final model
 	declWeights, defWeights := trainer.GetWeights()
-	declarerPath := *outputWeights + ".declarer"
-	defenderPath := *outputWeights + ".defender"
 
-	if err := strategiesio.SaveWeights(declarerPath, declWeights); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to save declarer weights: %v\n", err)
+	// Ensure output directory exists
+	outputDir := filepath.Dir(*outputWeights)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
 		os.Exit(1)
 	}
-	if err := strategiesio.SaveWeights(defenderPath, defWeights); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to save defender weights: %v\n", err)
+
+	// Save combined weights to a single file
+	if err := strategiesio.SaveCombinedCardPlayWeights(*outputWeights, declWeights, defWeights); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to save weights: %v\n", err)
 		os.Exit(1)
 	}
 
 	elapsed := time.Since(startTime)
 	fmt.Printf("\n✓ Training complete in %s\n", elapsed)
-	fmt.Printf("✓ Declarer network saved to: %s\n", declarerPath)
-	fmt.Printf("✓ Defender network saved to: %s\n", defenderPath)
+	fmt.Printf("✓ Model saved to: %s\n", *outputWeights)
 }

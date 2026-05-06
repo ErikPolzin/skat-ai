@@ -423,6 +423,11 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 		// Game hasn't started yet - just remove the player
 		gs.Players[position] = nil
 
+		// Remove player from database
+		if err := s.db.RemovePlayer(gs.ID, playerID); err != nil {
+			logger.Warning("Failed to remove player from database", "game_id", gs.ID, "player_id", playerID, "error", err)
+		}
+
 		// If no players left, delete the game
 		if gs.PlayerCount() == 0 {
 			if err := s.db.DeleteGame(gs.ID); err != nil {

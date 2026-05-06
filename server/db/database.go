@@ -16,6 +16,7 @@ type Database interface {
 	GetGameBySessionCode(sessionCode string) (*game.GameState, error)
 	SaveGame(game game.GameState) error
 	DeleteGame(gameID string) error
+	RemovePlayer(gameID, playerID string) error
 	ListOpenSessions() ([]game.GameSessionState, error)
 	ListPlayers(gameID string) ([3]*game.PlayerState, error)
 	SavePlayerResults(result []game.PlayerResultState) error

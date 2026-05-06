@@ -132,6 +132,12 @@ func (d *MemoryDatabase) DeleteGame(gameID string) error {
 	return nil
 }
 
+func (d *MemoryDatabase) RemovePlayer(gameID, playerID string) error {
+	// No-op for memory database since players are stored in the game state
+	// which is updated directly
+	return nil
+}
+
 func (d *MemoryDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()

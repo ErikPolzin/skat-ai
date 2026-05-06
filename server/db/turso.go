@@ -385,6 +385,14 @@ func (d *TursoDatabase) DeleteGame(gameID string) error {
 	return nil
 }
 
+func (d *TursoDatabase) RemovePlayer(gameID, playerID string) error {
+	_, err := d.DB.Exec(`DELETE FROM players WHERE game_id = ? AND profile_id = ?`, gameID, playerID)
+	if err != nil {
+		return fmt.Errorf("failed to remove player: %w", err)
+	}
+	return nil
+}
+
 func (d *TursoDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 	rows, err := d.DB.Query(`
 		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent, pr.profile_icon, pr.is_online, pl.ready_for_next
@@ -523,7 +531,7 @@ func (d *TursoDatabase) GetFormattedSessionResults(sessionID string) ([]game.Ses
 		var result game.SessionGameResult
 		var trumpSuitInt int
 		var forfeitedPlayerPtr *int
-		var declarerWonInt int
+		var declarerWonInt sql.NullInt64
 
 		if err := rows.Scan(
 			&result.GameID,
@@ -539,7 +547,7 @@ func (d *TursoDatabase) GetFormattedSessionResults(sessionID string) ([]game.Ses
 
 		// Convert trump suit int to string
 		result.TrumpSuit = game.Suit(trumpSuitInt).String()
-		result.DeclarerWon = declarerWonInt != 0
+		result.DeclarerWon = declarerWonInt.Valid && declarerWonInt.Int64 != 0
 
 		// Convert forfeited player
 		if forfeitedPlayerPtr != nil {

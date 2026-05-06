@@ -352,6 +352,14 @@ func (d *PgDatabase) DeleteGame(gameID string) error {
 	return nil
 }
 
+func (d *PgDatabase) RemovePlayer(gameID, playerID string) error {
+	_, err := d.DB.Exec(`DELETE FROM players WHERE game_id = $1 AND profile_id = $2`, gameID, playerID)
+	if err != nil {
+		return fmt.Errorf("failed to remove player: %w", err)
+	}
+	return nil
+}
+
 func (d *PgDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 	rows, err := d.DB.Query(`
 		SELECT pl.hand, pl.position, pr.id, pr.name,

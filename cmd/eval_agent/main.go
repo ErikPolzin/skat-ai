@@ -657,6 +657,27 @@ func runGamePlayTest(testAgent *agent.SkatAgent) {
 			bestSuit:    game.Hearts,
 			description: "2 Jacks + 3 Hearts with A+10 - 5 trumps for Hearts, should win Hearts but struggle with Grand/others",
 		},
+		{
+			name:        "Perfect Null Hand",
+			handStr:     "7.♣-8.♣-9.♣-7.♠-8.♠-9.♠-7.♥-8.♥-7.♦-8.♦",
+			bestMode:    game.ModeNull,
+			bestSuit:    game.NoSuit,
+			description: "All low cards (7s, 8s, 9s) - perfect for Null, impossible to win tricks",
+		},
+		{
+			name:        "Good Null Hand",
+			handStr:     "7.♣-8.♣-9.♣-7.♠-9.♠-10.♠-7.♥-8.♥-9.♥-7.♦",
+			bestMode:    game.ModeNull,
+			bestSuit:    game.NoSuit,
+			description: "Mostly low cards with one 10 - should win Null, but might struggle with suit/grand",
+		},
+		{
+			name:        "Marginal Null Hand",
+			handStr:     "7.♣-9.♣-10.♣-7.♠-9.♠-J.♠-7.♥-8.♥-9.♥-8.♦",
+			bestMode:    game.ModeNull,
+			bestSuit:    game.NoSuit,
+			description: "Low cards with J and 10 - risky Null, defenders should be able to force wins sometimes",
+		},
 	}
 
 	numGames := 100
@@ -698,6 +719,19 @@ func runGamePlayTest(testAgent *agent.SkatAgent) {
 			fmt.Printf("  %s %-8s: %3d wins (%.0f%%), avg %+.1f points\n",
 				marker, suit.String(), wins, winRate, avgPoints)
 		}
+
+		// Test Null
+		nullWins, nullTotalPoints, nullGamesPlayed := playGamesWithMode(testAgent, hand, game.ModeNull, game.NoSuit, numGames)
+		nullWinRate := float64(nullWins) / float64(nullGamesPlayed) * 100
+		nullAvgPoints := float64(nullTotalPoints) / float64(nullGamesPlayed)
+
+		nullMarker := " "
+		if testHand.bestMode == game.ModeNull {
+			nullMarker = "✓"
+		}
+
+		fmt.Printf("  %s Null    : %3d wins (%.0f%%), avg %+.1f points\n",
+			nullMarker, nullWins, nullWinRate, nullAvgPoints)
 	}
 }
 

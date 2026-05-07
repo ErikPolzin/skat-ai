@@ -13,7 +13,7 @@ type HeuristicBiddingStrategy struct {
 // NewHeuristicBiddingStrategy creates a new heuristic bidding strategy with default threshold
 func NewHeuristicBiddingStrategy() *HeuristicBiddingStrategy {
 	return &HeuristicBiddingStrategy{
-		threshold: 0.45, // Default 45% confidence threshold - balanced bidding
+		threshold: 0.5, // Default 50% confidence threshold - balanced bidding
 	}
 }
 
@@ -50,8 +50,10 @@ func (h *HeuristicBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Car
 	var handProbability float64
 	if mode == game.ModeGrand {
 		handProbability = gameChoiceStrategy.evaluateGrandStrength(cards)
-	} else {
+	} else if mode == game.ModeSuit {
 		handProbability = gameChoiceStrategy.evaluateSuitStrength(cards, suit)
+	} else if mode == game.ModeNull {
+		handProbability = gameChoiceStrategy.evaluateNullStrength(cards)
 	}
 
 	// Bid only if:
@@ -99,6 +101,12 @@ func (h *HeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int)
 		}
 	}
 
+	// Check Null (fixed value of 23)
+	if 23 >= bidValue {
+		score := h.evaluateNullStrength(cards)
+		options = append(options, gameOption{game.ModeNull, game.NoSuit, 23, score})
+	}
+
 	// No viable options - return highest value game regardless
 	if len(options) == 0 {
 		bestValue := 0
@@ -121,6 +129,13 @@ func (h *HeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int)
 			}
 		}
 
+		// Null has fixed value of 23
+		if 23 > bestValue {
+			bestValue = 23
+			bestMode = game.ModeNull
+			bestSuit = game.NoSuit
+		}
+
 		return bestMode, bestSuit
 	}
 
@@ -136,6 +151,11 @@ func (h *HeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int)
 }
 
 func (h *HeuristicGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode game.GameMode, trumpSuit game.Suit) (game.Card, game.Card) {
+	// Special handling for Null games
+	if mode == game.ModeNull {
+		return h.chooseNullSkatDiscard(hand)
+	}
+
 	// Refined heuristic based on research:
 	// 1. Never discard trumps
 	// 2. Never discard Aces unless necessary
@@ -373,6 +393,61 @@ func (h *HeuristicGameChoiceStrategy) evaluateSuitStrength(cards game.Cards, tru
 	return sigmoid(score, 60.0, 100.0)
 }
 
+// chooseNullSkatDiscard selects two cards to discard for Null games
+// In Null, we want to keep low cards and discard high cards
+func (h *HeuristicGameChoiceStrategy) chooseNullSkatDiscard(hand []game.Card) (game.Card, game.Card) {
+	// Score each card for discarding in Null (higher score = better to discard)
+	type cardScore struct {
+		card  game.Card
+		score float64
+	}
+
+	var scoredCards []cardScore
+	for _, card := range hand {
+		score := 0.0
+
+		// High cards are best to discard (we want to keep low cards)
+		switch card.Rank {
+		case game.Ace:
+			score += 100.0 // Aces are worst in Null - must discard
+		case game.King:
+			score += 80.0
+		case game.Queen:
+			score += 70.0
+		case game.Jack:
+			score += 60.0
+		case game.Ten:
+			score += 50.0
+		case game.Nine:
+			score -= 30.0 // Keep 9s
+		case game.Eight:
+			score -= 40.0 // Keep 8s
+		case game.Seven:
+			score -= 50.0 // Keep 7s - best cards in Null
+		}
+
+		scoredCards = append(scoredCards, cardScore{card, score})
+	}
+
+	// Sort by discard score (descending)
+	for i := 0; i < len(scoredCards); i++ {
+		for j := i + 1; j < len(scoredCards); j++ {
+			if scoredCards[i].score < scoredCards[j].score {
+				scoredCards[i], scoredCards[j] = scoredCards[j], scoredCards[i]
+			}
+		}
+	}
+
+	// Return top two cards to discard
+	if len(scoredCards) >= 2 {
+		return scoredCards[0].card, scoredCards[1].card
+	}
+
+	// Fallback (shouldn't happen)
+	sortByValue(hand)
+	return hand[len(hand)-1], hand[len(hand)-2]
+}
+
 // evaluateDiscardScore scores how good a card is to discard (higher = better to discard)
 func (h *HeuristicGameChoiceStrategy) evaluateDiscardScore(card game.Card, nonTrumpCards []game.Card, suitCounts map[game.Suit]int) float64 {
 	score := 0.0
@@ -467,7 +542,7 @@ func (h *HeuristicCardPlayStrategy) countRemainingTrumps(gs *game.GameState, myH
 
 	myTrumps := make(map[game.Card]bool)
 	for _, card := range myHand {
-		if h.isTrump(gs, card) {
+		if gs.TrumpValue(card) > 0 {
 			myTrumps[card] = true
 		}
 	}
@@ -516,10 +591,138 @@ func (h *HeuristicCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []
 	currentPlayer := gs.CurrentPlayer
 	isDefender := gs.Declarer == nil || currentPlayer != *gs.Declarer
 
+	// Handle Null games (declarer tries to lose all tricks)
+	if gs.Mode == game.ModeNull {
+		if isDefender {
+			return h.selectNullDefenderMove(gs, validMoves)
+		}
+		return h.selectNullDeclarerMove(gs, validMoves)
+	}
+
 	if isDefender {
 		return h.selectDefenderMove(gs, validMoves)
 	}
 	return h.selectDeclarerMove(gs, validMoves)
+}
+
+// selectNullDeclarerMove handles card play for declarer in Null games
+// Goal: Lose every trick by playing cards that won't win
+func (h *HeuristicCardPlayStrategy) selectNullDeclarerMove(gs *game.GameState, validMoves []game.Card) game.Card {
+	trick := gs.Trick
+
+	// Sort moves by Null card strength (in Null: A > K > Q > J > 10 > 9 > 8 > 7)
+	game.SortByNullRank(validMoves)
+
+	// Leading the trick
+	if len(trick) == 0 {
+		// Lead lowest card to avoid winning
+		return validMoves[0]
+	}
+
+	// Following in trick - play card that loses but as high as possible without winning
+	leadSuit := trick[0].Suit
+
+	// Find highest card in current trick
+	highestCard := trick[0]
+	for _, card := range trick[1:] {
+		if card.BeatsInNull(highestCard, leadSuit) {
+			highestCard = card
+		}
+	}
+
+	// Try to play highest card that still loses
+	for i := len(validMoves) - 1; i >= 0; i-- {
+		if !validMoves[i].BeatsInNull(highestCard, leadSuit) {
+			return validMoves[i]
+		}
+	}
+
+	// Must win - play lowest card to minimize damage
+	return validMoves[0]
+}
+
+// selectNullDefenderMove handles card play for defenders in Null games
+// Goal: Force declarer to win tricks
+func (h *HeuristicCardPlayStrategy) selectNullDefenderMove(gs *game.GameState, validMoves []game.Card) game.Card {
+	trick := gs.Trick
+
+	// Sort moves by Null card strength
+	game.SortByNullRank(validMoves)
+
+	// Leading the trick
+	if len(trick) == 0 {
+		// Lead highest card to try to force declarer to win
+		return validMoves[len(validMoves)-1]
+	}
+
+	// Following in trick
+	leadSuit := trick[0].Suit
+
+	// Check if declarer has played yet
+	declarerPlayed := false
+	declarerCard := game.Card{}
+
+	for i, card := range trick {
+		pos := (gs.TrickStarter + game.GamePosition(i)) % 3
+		if gs.Declarer != nil && pos == *gs.Declarer {
+			declarerPlayed = true
+			declarerCard = card
+			break
+		}
+	}
+
+	if declarerPlayed {
+		// Declarer already played - check if they're winning
+		declarerWinning := true
+		for _, card := range trick {
+			if card != declarerCard && card.BeatsInNull(declarerCard, leadSuit) {
+				declarerWinning = false
+				break
+			}
+		}
+
+		if declarerWinning {
+			// Declarer is winning - try to take the trick with lowest winning card
+			for _, move := range validMoves {
+				if move.BeatsInNull(declarerCard, leadSuit) {
+					return move
+				}
+			}
+			// Can't beat - play lowest
+			return validMoves[0]
+		} else {
+			// Declarer is losing - play lowest card to not interfere
+			return validMoves[0]
+		}
+	} else {
+		// Declarer hasn't played yet
+		// Check if partner is already winning with a high card
+		// Find highest card currently in trick
+		highestInTrick := trick[0]
+		for _, card := range trick[1:] {
+			if card.BeatsInNull(highestInTrick, leadSuit) {
+				highestInTrick = card
+			}
+		}
+
+		// Check if any of our cards can beat partner's high card
+		// If not, play low to let partner force declarer
+		canBeatPartner := false
+		for _, move := range validMoves {
+			if move.BeatsInNull(highestInTrick, leadSuit) {
+				canBeatPartner = true
+				break
+			}
+		}
+
+		if canBeatPartner {
+			// We can beat partner - play our highest to force declarer even more
+			return validMoves[len(validMoves)-1]
+		} else {
+			// Can't beat partner's high card - play lowest to let partner win and force declarer
+			return validMoves[0]
+		}
+	}
 }
 
 func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, validMoves []game.Card) game.Card {
@@ -532,7 +735,7 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 
 		// First, check for unprotected Aces in side suits
 		for _, move := range validMoves {
-			if move.Rank == game.Ace && !h.isTrump(gs, move) {
+			if move.Rank == game.Ace && gs.TrumpValue(move) == 0 {
 				// Lead the Ace to cash it
 				return move
 			}
@@ -540,7 +743,7 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 
 		// Next, check for protected Ace-10 combinations (Ace with 10)
 		for suit := game.Clubs; suit <= game.Diamonds; suit++ {
-			if h.isTrump(gs, game.Card{Suit: suit, Rank: game.Ace}) {
+			if gs.TrumpValue(game.Card{Suit: suit, Rank: game.Ace}) > 0 {
 				continue // Skip trump suit
 			}
 
@@ -569,9 +772,9 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 		hasTrump := false
 
 		for _, move := range validMoves {
-			if h.isTrump(gs, move) {
+			if gs.TrumpValue(move) > 0 {
 				trumpCount++
-				if !hasTrump || h.cardStrongerThan(gs, move, highestTrump) {
+				if !hasTrump || gs.CardBeats(move, highestTrump) {
 					highestTrump = move
 					hasTrump = true
 				}
@@ -594,7 +797,7 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 			// Opponents have few/no trumps - cash our winners from short suits
 			suitLengths := make(map[game.Suit]int)
 			for _, move := range validMoves {
-				if !h.isTrump(gs, move) {
+				if gs.TrumpValue(move) == 0 {
 					suitLengths[move.Suit]++
 				}
 			}
@@ -612,7 +815,7 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 			// Lead high card from shortest suit
 			if shortestSuit != game.NoSuit {
 				for i := len(validMoves) - 1; i >= 0; i-- {
-					if validMoves[i].Suit == shortestSuit && !h.isTrump(gs, validMoves[i]) {
+					if validMoves[i].Suit == shortestSuit && gs.TrumpValue(validMoves[i]) == 0 {
 						return validMoves[i]
 					}
 				}
@@ -623,7 +826,7 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 		// This allows declarer to ruff later rounds of that suit
 		suitLengths := make(map[game.Suit]int)
 		for _, move := range validMoves {
-			if !h.isTrump(gs, move) {
+			if gs.TrumpValue(move) == 0 {
 				suitLengths[move.Suit]++
 			}
 		}
@@ -648,7 +851,7 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 
 		// Fallback: lead highest non-trump card
 		for i := len(validMoves) - 1; i >= 0; i-- {
-			if !h.isTrump(gs, validMoves[i]) {
+			if gs.TrumpValue(validMoves[i]) == 0 {
 				return validMoves[i]
 			}
 		}
@@ -682,7 +885,7 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 		hasAce := make(map[game.Suit]bool)
 
 		for _, move := range validMoves {
-			if h.isTrump(gs, move) {
+			if gs.TrumpValue(move) > 0 {
 				trumpCount++
 			} else {
 				suitCounts[move.Suit]++
@@ -719,7 +922,7 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 		if longestSuit != game.NoSuit && maxLength >= 3 {
 			// Lead high card from long suit to force declarer
 			for i := len(validMoves) - 1; i >= 0; i-- {
-				if validMoves[i].Suit == longestSuit && !h.isTrump(gs, validMoves[i]) {
+				if validMoves[i].Suit == longestSuit && gs.TrumpValue(validMoves[i]) == 0 {
 					return validMoves[i]
 				}
 			}
@@ -727,14 +930,14 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 
 		// Strategy 3: Lead any Ace we have (cash winners)
 		for _, move := range validMoves {
-			if move.Rank == game.Ace && !h.isTrump(gs, move) {
+			if move.Rank == game.Ace && gs.TrumpValue(move) == 0 {
 				return move
 			}
 		}
 
 		// Strategy 4: Lead low card from side suit to find partner's strength
 		for _, move := range validMoves {
-			if !h.isTrump(gs, move) && move.Value() == 0 {
+			if gs.TrumpValue(move) == 0 && move.Value() == 0 {
 				return move
 			}
 		}
@@ -743,7 +946,7 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 		if trumpCount >= 4 {
 			// We have strong trump control - lead trump to attack declarer
 			for i := len(validMoves) - 1; i >= 0; i-- {
-				if h.isTrump(gs, validMoves[i]) {
+				if gs.TrumpValue(validMoves[i]) > 0 {
 					return validMoves[i]
 				}
 			}
@@ -790,19 +993,6 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 	return validMoves[0]
 }
 
-func (h *HeuristicCardPlayStrategy) isTrump(gs *game.GameState, card game.Card) bool {
-	if card.Rank == game.Jack {
-		return true
-	}
-	if gs.Mode == game.ModeSuit && card.Suit == gs.TrumpSuit {
-		return true
-	}
-	return false
-}
-
-func (h *HeuristicCardPlayStrategy) cardStrongerThan(gs *game.GameState, card1, card2 game.Card) bool {
-	return gs.CardBeats(card1, card2)
-}
 
 func (h *HeuristicCardPlayStrategy) wouldWinTrick(gs *game.GameState, card game.Card, trick []game.Card) bool {
 	for _, trickCard := range trick {
@@ -852,6 +1042,7 @@ func sortByValue(cards []game.Card) {
 		}
 	}
 }
+
 
 // heuristicOrder orders moves by the sequence the heuristic agent would play them
 // Optimized for minimax: avoids allocations and uses in-place sorting
@@ -1066,6 +1257,90 @@ func getDefenderPartner(gs *game.GameState) game.GamePosition {
 		}
 	}
 	return game.Dealer
+}
+
+// evaluateNullStrength scores a hand for playing Null
+// Returns normalized probability (0-1) of winning the Null game
+// In Null, declarer must lose every trick, so low cards and weak holdings are best
+func (h *HeuristicGameChoiceStrategy) evaluateNullStrength(cards game.Cards) float64 {
+	score := 0.0
+
+	// In Null games, there are no trumps - suits follow standard order (A, K, Q, J, 10, 9, 8, 7)
+	// Declarer needs to LOSE all tricks, so we want:
+	// - Low cards (7, 8, 9) are excellent
+	// - No high cards (A, K, Q) that might win
+	// - Balanced distribution to avoid being forced to win
+
+	// Count cards by rank
+	sevenCount := 0
+	eightCount := 0
+	nineCount := 0
+	highCards := 0 // Aces, Kings, Queens
+	jacks := 0
+	tens := 0
+
+	for _, card := range cards {
+		switch card.Rank {
+		case game.Seven:
+			sevenCount++
+		case game.Eight:
+			eightCount++
+		case game.Nine:
+			nineCount++
+		case game.Ten:
+			tens++
+		case game.Jack:
+			jacks++
+		case game.Queen, game.King, game.Ace:
+			highCards++
+		}
+	}
+
+	// Strong bonus for low cards (want many 7s, 8s, 9s)
+	score += float64(sevenCount) * 55.0 // Sevens are best
+	score += float64(eightCount) * 45.0
+	score += float64(nineCount) * 35.0
+
+	// Heavy penalty for high cards (very risky in Null)
+	score -= float64(highCards) * 55.0 // Strong penalty for face cards
+
+	// Moderate penalty for Jacks and Tens
+	score -= float64(jacks) * 35.0
+	score -= float64(tens) * 40.0
+
+	// Check suit distribution - want balanced or short suits
+	suitCounts := make(map[game.Suit]int)
+	for _, card := range cards {
+		suitCounts[card.Suit]++
+	}
+
+	// Penalty for long suits (hard to avoid winning)
+	for _, count := range suitCounts {
+		if count >= 4 {
+			score -= 20.0
+		} else if count == 3 {
+			score -= 8.0
+		}
+	}
+
+	// Bonus for having escape cards (multiple low cards in each suit)
+	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+		lowCardsInSuit := 0
+		for _, card := range cards {
+			if card.Suit == suit && (card.Rank == game.Seven || card.Rank == game.Eight || card.Rank == game.Nine) {
+				lowCardsInSuit++
+			}
+		}
+		if lowCardsInSuit >= 2 {
+			score += 22.0 // Good escape options
+		}
+	}
+
+	// Normalize to 0-1 probability using sigmoid
+	// Typical Null scores range from -250 (impossible - many high cards) to +300 (excellent - all low cards)
+	// Shift center down to -15 to make good null hands competitive but not overwhelming
+	// Temperature=75 for moderate calibration
+	return sigmoid(score, -15.0, 75.0)
 }
 
 // sigmoid converts a raw score to a probability using a sigmoid function

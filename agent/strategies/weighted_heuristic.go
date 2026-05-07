@@ -144,35 +144,36 @@ func (w *WeightedHeuristicBiddingStrategy) ShouldBidWithProbability(gs *game.Gam
 	}
 
 	// Evaluate all possible games and find the best one
-	bestScore := -math.MaxFloat64
+	bestProbability := 0.0
 	bestGameValue := 0
 
 	// Evaluate Grand
 	grandValue := cards.GameValue(game.ModeGrand, game.NoSuit)
-	grandScore := w.evaluateGrand(cards)
-	if grandScore > bestScore {
-		bestScore = grandScore
+	grandProb := w.evaluateGrand(cards)
+	if grandProb > bestProbability {
+		bestProbability = grandProb
 		bestGameValue = grandValue
 	}
 
 	// Evaluate all suit games
 	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
 		suitValue := cards.GameValue(game.ModeSuit, suit)
-		suitScore := w.evaluateSuit(cards, suit)
-		if suitScore > bestScore {
-			bestScore = suitScore
+		suitProb := w.evaluateSuit(cards, suit)
+		if suitProb > bestProbability {
+			bestProbability = suitProb
 			bestGameValue = suitValue
 		}
 	}
 
-	// Normalize score to approximate win probability (sigmoid-like)
-	// Scores typically range from -100 to +200
-	// Map to [0, 1] using a sigmoid: 1 / (1 + exp(-score/temperature))
-	temperature := w.weights.SigmoidTemperature
-	if temperature == 0 {
-		temperature = 50.0 // Fallback to default
+	// Evaluate Null game using heuristic (not trained weights)
+	heuristic := &HeuristicGameChoiceStrategy{}
+	nullProb := heuristic.evaluateNullStrength(cards)
+	if nullProb > bestProbability {
+		bestProbability = nullProb
+		bestGameValue = 23 // Null has fixed value
 	}
-	winProbability := 1.0 / (1.0 + math.Exp(-bestScore/temperature))
+
+	winProbability := bestProbability
 
 	// Apply safety margin to required game value
 	// Game value must exceed the bid to account for uncertainty
@@ -190,27 +191,19 @@ func (w *WeightedHeuristicBiddingStrategy) ShouldBidWithProbability(gs *game.Gam
 
 // EvaluateGameProbability returns the predicted win probability for a specific game type
 func (w *WeightedHeuristicBiddingStrategy) EvaluateGameProbability(cards game.Cards, mode game.GameMode, suit game.Suit) float64 {
-	var score float64
-
 	if mode == game.ModeGrand {
-		score = w.evaluateGrand(cards)
+		return w.evaluateGrand(cards)
 	} else if mode == game.ModeSuit {
-		score = w.evaluateSuit(cards, suit)
-	} else {
-		// Null games - not supported by weighted heuristic, return 0
-		return 0.0
+		return w.evaluateSuit(cards, suit)
+	} else if mode == game.ModeNull {
+		// Null games - use heuristic evaluation
+		heuristic := &HeuristicGameChoiceStrategy{}
+		return heuristic.evaluateNullStrength(cards)
 	}
-
-	// Normalize score to win probability using the same sigmoid
-	temperature := w.weights.SigmoidTemperature
-	if temperature == 0 {
-		temperature = 50.0 // Fallback to default
-	}
-	winProbability := 1.0 / (1.0 + math.Exp(-score/temperature))
-	return winProbability
+	return 0.0
 }
 
-// evaluateGrand scores a hand for playing Grand
+// evaluateGrand scores a hand for playing Grand, returning normalized probability [0,1]
 func (w *WeightedHeuristicBiddingStrategy) evaluateGrand(cards game.Cards) float64 {
 	score := w.weights.GrandBias
 
@@ -253,12 +246,6 @@ func (w *WeightedHeuristicBiddingStrategy) evaluateGrand(cards game.Cards) float
 		}
 	}
 
-	// Grand requires good trump control
-	if jackCount < 2 {
-		return -100.0 // Nearly impossible without 3+ jacks
-	}
-	// 3 jacks is viable with good side suits - don't add extra penalty
-
 	// Calculate matadors
 	matadors := w.countMatadors(cards, game.ModeGrand, game.NoSuit)
 
@@ -271,10 +258,15 @@ func (w *WeightedHeuristicBiddingStrategy) evaluateGrand(cards game.Cards) float
 	score += w.weights.Matadors * float64(matadors)
 	score += w.weights.TotalPoints * float64(totalPoints)
 
-	return score
+	// Normalize to probability [0,1] using sigmoid
+	temperature := w.weights.SigmoidTemperature
+	if temperature == 0 {
+		temperature = 50.0
+	}
+	return 1.0 / (1.0 + math.Exp(-score/temperature))
 }
 
-// evaluateSuit scores a hand for playing a specific suit game
+// evaluateSuit scores a hand for playing a specific suit game, returning normalized probability [0,1]
 func (w *WeightedHeuristicBiddingStrategy) evaluateSuit(cards game.Cards, trumpSuit game.Suit) float64 {
 	score := w.weights.SuitBias
 
@@ -354,7 +346,12 @@ func (w *WeightedHeuristicBiddingStrategy) evaluateSuit(cards game.Cards, trumpS
 	score += w.weights.Matadors * float64(matadors)
 	score += w.weights.TotalPoints * float64(totalPoints)
 
-	return score
+	// Normalize to probability [0,1] using sigmoid
+	temperature := w.weights.SigmoidTemperature
+	if temperature == 0 {
+		temperature = 50.0
+	}
+	return 1.0 / (1.0 + math.Exp(-score/temperature))
 }
 
 // countMatadors returns the absolute matador count
@@ -450,7 +447,7 @@ func (w *WeightedHeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidVa
 	cards := game.Cards(hand)
 
 	// Evaluate all possible games and find the best one
-	bestScore := -math.MaxFloat64
+	bestProbability := 0.0
 	bestMode := game.ModeGrand
 	bestSuit := game.NoSuit
 
@@ -458,26 +455,38 @@ func (w *WeightedHeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidVa
 	evaluator := &WeightedHeuristicBiddingStrategy{weights: w.weights}
 
 	// Evaluate Grand
-	grandScore := evaluator.evaluateGrand(cards)
+	grandProb := evaluator.evaluateGrand(cards)
 	grandValue := cards.GameValue(game.ModeGrand, game.NoSuit)
 
 	// Only consider if it meets the bid value
-	if grandValue >= bidValue && grandScore > bestScore {
-		bestScore = grandScore
+	if grandValue >= bidValue && grandProb > bestProbability {
+		bestProbability = grandProb
 		bestMode = game.ModeGrand
 		bestSuit = game.NoSuit
 	}
 
 	// Evaluate all suit games
 	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
-		suitScore := evaluator.evaluateSuit(cards, suit)
+		suitProb := evaluator.evaluateSuit(cards, suit)
 		suitValue := cards.GameValue(game.ModeSuit, suit)
 
 		// Only consider if it meets the bid value
-		if suitValue >= bidValue && suitScore > bestScore {
-			bestScore = suitScore
+		if suitValue >= bidValue && suitProb > bestProbability {
+			bestProbability = suitProb
 			bestMode = game.ModeSuit
 			bestSuit = suit
+		}
+	}
+
+	// Evaluate Null game (fixed value 23)
+	if 23 >= bidValue {
+		heuristic := &HeuristicGameChoiceStrategy{}
+		nullProb := heuristic.evaluateNullStrength(cards)
+
+		if nullProb > bestProbability {
+			bestProbability = nullProb
+			bestMode = game.ModeNull
+			bestSuit = game.NoSuit
 		}
 	}
 

@@ -82,6 +82,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 	if gs.Mode == ModeNull {
 		// In null games, if declarer takes any trick, game ends immediately
 		if *gs.TrickWinner == *gs.Declarer {
+			gs.DeclarerScore = 1          // Mark that declarer won a trick (any non-zero value = loss)
 			gs.Phase = PhaseComplete      // Game ends immediately - declarer loses
 			gs.CurrentPlayerDeadline = "" // Clear deadline when game ends
 			gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)

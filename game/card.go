@@ -51,6 +51,87 @@ func (c Card) Value() int {
 	}
 }
 
+// NullRank returns the rank value in Null games (higher = stronger)
+// In Null: A > K > Q > J > 10 > 9 > 8 > 7
+func (c Card) NullRank() int {
+	return c.Rank.NullRank()
+}
+
+// NullRank returns the rank value in Null games (higher = stronger)
+// In Null: A > K > Q > J > 10 > 9 > 8 > 7
+func (r Rank) NullRank() int {
+	switch r {
+	case Seven:
+		return 1
+	case Eight:
+		return 2
+	case Nine:
+		return 3
+	case Ten:
+		return 4
+	case Jack:
+		return 5
+	case Queen:
+		return 6
+	case King:
+		return 7
+	case Ace:
+		return 8
+	default:
+		return 0
+	}
+}
+
+// SkatRank returns the rank value for non-trump cards in regular Skat games
+// Skat rank order: A > 10 > K > Q > 9 > 8 > 7
+func (r Rank) SkatRank() int {
+	switch r {
+	case Seven:
+		return 1
+	case Eight:
+		return 2
+	case Nine:
+		return 3
+	case Queen:
+		return 4
+	case King:
+		return 5
+	case Ten:
+		return 6
+	case Ace:
+		return 7
+	default:
+		return 0
+	}
+}
+
+// BeatsInNull checks if this card beats another card in Null game
+// In Null: no trumps, must follow suit, A > K > Q > J > 10 > 9 > 8 > 7
+func (c Card) BeatsInNull(other Card, leadSuit Suit) bool {
+	// Must be same suit to beat (or other is off-suit)
+	if c.Suit == leadSuit && other.Suit == leadSuit {
+		return c.NullRank() > other.NullRank()
+	}
+	// This card is lead suit, other is not
+	if c.Suit == leadSuit {
+		return true
+	}
+	// This card is not lead suit
+	return false
+}
+
+// SortByNullRank sorts cards by Null game rank (A > K > Q > J > 10 > 9 > 8 > 7)
+// Lower index = lower rank (7 is lowest)
+func SortByNullRank(cards []Card) {
+	for i := 0; i < len(cards); i++ {
+		for j := i + 1; j < len(cards); j++ {
+			if cards[i].NullRank() > cards[j].NullRank() {
+				cards[i], cards[j] = cards[j], cards[i]
+			}
+		}
+	}
+}
+
 type Cards []Card
 type SkatCards [2]Card
 

@@ -240,17 +240,21 @@ func (gs *GameState) effectiveSuit(card Card) Suit {
 	return card.Suit
 }
 
-// cardBeats returns true if card a beats card b
 // CardBeats returns true if card a beats card b in the current game context
 func (gs *GameState) CardBeats(a, b Card) bool {
-	// Null games: no trumps, Ace is highest
+	// Null games: no trumps, must follow suit, A > K > Q > J > 10 > 9 > 8 > 7
 	if gs.Mode == ModeNull {
-		return gs.cardBeatsNull(a, b)
+		// Must follow suit - if different suits, can't beat
+		if a.Suit != b.Suit {
+			return false
+		}
+		// Use the Card.NullRank() method for consistent ranking
+		return a.NullRank() > b.NullRank()
 	}
 
 	// Get trump values (higher = stronger)
-	aValue := gs.trumpValue(a)
-	bValue := gs.trumpValue(b)
+	aValue := gs.TrumpValue(a)
+	bValue := gs.TrumpValue(b)
 
 	// If both are trump, compare trump values
 	if aValue > 0 && bValue > 0 {
@@ -269,41 +273,18 @@ func (gs *GameState) CardBeats(a, b Card) bool {
 	aSuit := a.Suit
 	bSuit := b.Suit
 
-	// Same suit: compare by rank order (Ace > King > Queen > Ten > Nine > Eight > Seven)
+	// Same suit: compare by rank order (Ace > Ten > King > Queen > Nine > Eight > Seven)
 	if aSuit == bSuit {
-		return gs.compareNonTrumpRank(a.Rank, b.Rank)
+		return a.Rank.SkatRank() > b.Rank.SkatRank()
 	}
 
 	// Different non-trump suits: first card wins
 	return false
 }
 
-// cardBeatsNull handles card comparison for Null games
-// In Null: No trumps, rank order is A > K > Q > J > 10 > 9 > 8 > 7
-func (gs *GameState) cardBeatsNull(a, b Card) bool {
-	// Must follow suit
-	if a.Suit != b.Suit {
-		return false // Can't beat if different suit
-	}
-
-	// Null rank order (no special jack handling)
-	nullOrder := map[Rank]int{
-		Ace:   8,
-		King:  7,
-		Queen: 6,
-		Jack:  5,
-		Ten:   4,
-		Nine:  3,
-		Eight: 2,
-		Seven: 1,
-	}
-
-	return nullOrder[a.Rank] > nullOrder[b.Rank]
-}
-
-// trumpValue returns the trump hierarchy value (0 = not trump)
+// TrumpValue returns the trump hierarchy value (0 = not trump)
 // In Skat: ♣J (11) > ♠J (10) > ♥J (9) > ♦J (8) > trump suit cards (by rank)
-func (gs *GameState) trumpValue(card Card) int {
+func (gs *GameState) TrumpValue(card Card) int {
 	// Jacks are always trump (except in Null games)
 	if gs.Mode != ModeNull && card.Rank == Jack {
 		// Jack trump hierarchy: Clubs > Spades > Hearts > Diamonds
@@ -341,21 +322,6 @@ func (gs *GameState) trumpValue(card Card) int {
 	}
 
 	return 0 // Not trump
-}
-
-// compareNonTrumpRank compares ranks for non-trump cards
-// Skat rank order: Ace > Ten > King > Queen > Nine > Eight > Seven
-func (gs *GameState) compareNonTrumpRank(a, b Rank) bool {
-	order := map[Rank]int{
-		Ace:   7,
-		Ten:   6,
-		King:  5,
-		Queen: 4,
-		Nine:  3,
-		Eight: 2,
-		Seven: 1,
-	}
-	return order[a] > order[b]
 }
 
 // Clone creates a deep copy of the game state

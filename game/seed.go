@@ -13,6 +13,7 @@ func (gs *GameState) WithPlayerHand(pos GamePosition, hand Cards) *GameState {
 		panic("Cannot seed with declarer hand, game is not in dealing phase")
 	}
 	remaining := hand.GetRemainingCards()
+	remaining.Shuffle()
 	gs.Players[0].Hand = make(Cards, 10)
 	gs.Players[1].Hand = make(Cards, 10)
 	gs.Players[2].Hand = make(Cards, 10)

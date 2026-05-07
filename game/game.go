@@ -468,6 +468,12 @@ func (gs *GameState) IsSchwarz() bool {
 	return gs.DeclarerScore == 120 || gs.OpponentScore == 120
 }
 
+// IsZwangsspiel returns true if all three players passed during bidding,
+// forcing the listener to play a game (typically with a weak hand)
+func (gs *GameState) IsZwangsspiel() bool {
+	return gs.ListenerPassed && gs.SpeakerPassed && gs.DealerPassed
+}
+
 // GetGameResult returns the result of the game including schneider/schwarz
 func (gs *GameState) GetGameResult() (declarerWon bool, schneider bool, schwarz bool) {
 	// Handle forfeit games - winner is determined by who forfeited

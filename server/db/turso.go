@@ -547,6 +547,7 @@ func (d *TursoDatabase) GetFormattedSessionResults(sessionID string) ([]game.Ses
 
 		// Convert trump suit int to string
 		result.TrumpSuit = game.Suit(trumpSuitInt).String()
+		// SQLite returns 0/1 for boolean CASE expressions, so keep using Int64
 		result.DeclarerWon = declarerWonInt.Valid && declarerWonInt.Int64 != 0
 
 		// Convert forfeited player

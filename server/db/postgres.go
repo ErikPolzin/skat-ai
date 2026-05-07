@@ -533,6 +533,7 @@ func (d *PgDatabase) GetFormattedSessionResults(sessionID string) ([]game.Sessio
 		var result game.SessionGameResult
 		var trumpSuitInt int
 		var forfeitedPlayerPtr *int
+		var declarerWonBool sql.NullBool
 
 		if err := rows.Scan(
 			&result.GameID,
@@ -541,13 +542,15 @@ func (d *PgDatabase) GetFormattedSessionResults(sessionID string) ([]game.Sessio
 			&trumpSuitInt,
 			&forfeitedPlayerPtr,
 			&result.DeclarerName,
-			&result.DeclarerWon,
+			&declarerWonBool,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan game result: %w", err)
 		}
 
 		// Convert trump suit int to string
 		result.TrumpSuit = game.Suit(trumpSuitInt).String()
+
+		result.DeclarerWon = declarerWonBool.Valid && declarerWonBool.Bool
 
 		// Convert forfeited player
 		if forfeitedPlayerPtr != nil {

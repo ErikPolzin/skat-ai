@@ -8,7 +8,7 @@ import React, {
 import { AnimatePresence, motion } from "motion/react";
 import { Button, useMediaQuery, useTheme } from "@mui/material";
 import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
-import { Card as CardType, reportTimeout } from "../api/games";
+import { Card as CardType, reportTimeout, leaveGame } from "../api/games";
 import "./MotionCardTable.css";
 import { useGameContext } from "../context/GameContext";
 import Card from "./Card";
@@ -81,17 +81,24 @@ export function MotionCardTable() {
     game.currentPlayerDeadline || "",
   );
 
-  // Report timeout to server when deadline expires
+  // Handle timeout when deadline expires
   useEffect(() => {
     if (
       isExpired &&
       game.currentPlayerDeadline &&
-      game.phase !== "complete" &&
       game.player?.id
     ) {
-      reportTimeout(game.gameId, game.player?.id).catch((err) => {
-        console.error("Failed to report timeout:", err);
-      });
+      if (game.phase === "complete") {
+        // Game is complete, just leave the game
+        leaveGame(game.gameId, game.player?.id).catch((err) => {
+          console.error("Failed to leave game after timeout:", err);
+        });
+      } else {
+        // Game is still active, report timeout (which will forfeit)
+        reportTimeout(game.gameId, game.player?.id).catch((err) => {
+          console.error("Failed to report timeout:", err);
+        });
+      }
     }
   }, [
     isExpired,

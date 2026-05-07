@@ -214,14 +214,20 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		var declarer GamePosition
 		if !gs.ListenerPassed {
 			declarer = Listener
+			// Check if this is a Zwangsspiel (all wanted to pass)
+			if gs.SpeakerPassed && gs.DealerPassed {
+				gs.ListenerPassed = true // Mark as Zwangsspiel for tracking
+				gs.BidValue = 18 // Minimum bid
+			}
 		} else if !gs.SpeakerPassed {
 			declarer = Speaker
 		} else if !gs.DealerPassed {
 			declarer = Dealer
 		} else {
-			// All three passed - Listener must play by forehand privilege
+			// All three passed explicitly - Listener must play by forehand privilege (Zwangsspiel)
 			declarer = Listener
 			gs.BidValue = 18 // Minimum bid
+			gs.ListenerPassed = true // Mark as Zwangsspiel so it's properly tracked
 		}
 		gs.Declarer = &declarer
 		// Move to skat exchange phase
@@ -415,6 +421,7 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.ListenerPassed = false
 	gs.SpeakerPassed = false
 	gs.DealerPassed = false
+	gs.Overbid = false
 	gs.DeclarerScore = 0
 	gs.OpponentScore = 0
 	gs.Trick = nil

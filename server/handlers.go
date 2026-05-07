@@ -1016,7 +1016,40 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 
 	// Check if game is already complete
 	if gs.Phase == game.PhaseComplete {
-		http.Error(w, "Game is already complete", http.StatusBadRequest)
+		// Game is complete, just remove the player instead of forfeiting
+		// Find the player who timed out
+		var timeoutPlayerID string
+
+		// Try to identify the player from the deadline or request
+		if gs.CurrentPlayerDeadline != "" {
+			currentPlayer := gs.GetCurrentPlayer()
+			if currentPlayer != nil {
+				timeoutPlayerID = currentPlayer.ID
+			}
+		}
+
+		if timeoutPlayerID != "" {
+			position := gs.GetPositionForPlayer(timeoutPlayerID)
+			if position != -1 {
+				gs.Players[position] = nil
+				gs.CurrentPlayerDeadline = ""
+
+				// Remove player from database
+				if err := s.db.RemovePlayer(gs.ID, timeoutPlayerID); err != nil {
+					logger.Warning("Failed to remove inactive player from completed game", "game_id", gs.ID, "player_id", timeoutPlayerID, "error", err)
+				}
+
+				// Save the updated game state
+				if err := s.db.SaveGame(*gs); err != nil {
+					logger.Warning("Failed to save game after removing inactive player", "game_id", gs.ID, "error", err)
+				}
+
+				logger.Info("Removed inactive player from completed game (client-reported)", "game_id", gs.ID, "player_id", timeoutPlayerID)
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "left"})
 		return
 	}
 

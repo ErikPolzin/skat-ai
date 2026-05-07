@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"skat/agent"
+	"skat/game"
 	"skat/logger"
 	"skat/server/db"
 
@@ -231,6 +232,30 @@ func (s *Server) checkInactivityTimeouts() {
 				"inactive_player", currentPlayer.Name,
 				"player_id", currentPlayer.ID,
 				"deadline", gs.CurrentPlayerDeadline)
+
+			// If game is already complete, just remove the player instead of forfeiting
+			if gs.Phase == game.PhaseComplete {
+				// Find the player's position
+				position := gs.GetPositionForPlayer(currentPlayer.ID)
+				if position != -1 {
+					gs.Players[position] = nil
+					// Clear the deadline since we're removing the player
+					gs.CurrentPlayerDeadline = ""
+
+					// Remove player from database
+					if err := s.db.RemovePlayer(gs.ID, currentPlayer.ID); err != nil {
+						logger.Warning("Failed to remove inactive player from completed game", "game_id", gs.ID, "player_id", currentPlayer.ID, "error", err)
+					}
+
+					// Save the updated game state
+					if err := s.db.SaveGame(gs); err != nil {
+						logger.Warning("Failed to save game after removing inactive player", "game_id", gs.ID, "error", err)
+					}
+
+					logger.Info("Removed inactive player from completed game", "game_id", gs.ID, "player_id", currentPlayer.ID)
+				}
+				continue
+			}
 
 			// Forfeit the game
 			results := gs.ForfeitDueToInactivity()

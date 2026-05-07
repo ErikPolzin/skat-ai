@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"skat/agent"
@@ -12,45 +13,55 @@ import (
 )
 
 func main() {
-	agentType := flag.String("agent-type", "neural", "Agent type: neural, mcts, minimax, or heuristic")
-	component := flag.String("component", "bidding", "Component to test: bidding, game-choice, card-play, or combined")
+	agentType := flag.String("agent-type", "", "Agent type: heuristic, mcts, minimax, neural, or random (if not set, uses component flags)")
+	biddingType := flag.String("bidding-type", "heuristic", "Bidding & game choice strategy: heuristic or weighted")
+	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, mcts, minimax, or neural")
+	biddingMode := flag.String("bidding-mode", "5050", "Bidding mode: 5050 (all test agents bid, alternate declarer) or 2v1 (test vs 2 baseline)")
 	games := flag.Int("games", 500, "Number of evaluation games")
-	cardplayWeights := flag.String("cardplay-weights", ".data/models/cardplay_weights.bin", "Path to card play neural network weights")
-	threshold := flag.Float64("threshold", 0.6, "Weighted heuristic bidding threshold (0.5-0.7)")
+	cardplayWeights := flag.String("cardplay-weights", ".data/models/imitation_cardplay.weights", "Path to card play neural network weights")
+	biddingWeights := flag.String("bidding-weights", "", "Path to weighted bidding weights JSON file (optional)")
+	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, weighted default=0.70, heuristic default=0.45)")
 	minimaxDepth := flag.Int("minimax-depth", 10, "Minimax search depth for perfect-info minimax")
+	mctsSimulations := flag.Int("mcts-simulations", 500, "MCTS simulation count")
+	ignoreZwangsspiel := flag.Bool("ignore-zwangsspiel", false, "Exclude Zwangsspiel (passed) games from evaluation")
 	flag.Parse()
 
-	runEvaluation(*agentType, *component, *games, *cardplayWeights, *threshold, *minimaxDepth)
+	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *biddingWeights, *threshold, *minimaxDepth, *mctsSimulations, *ignoreZwangsspiel)
 }
 
-func runEvaluation(agentType, component string, games int, cardplayWeights string, threshold float64, minimaxDepth int) {
-	// Validate agent type
-	if agentType != "qlearning" && agentType != "neural" && agentType != "weighted" && agentType != "heuristic" && agentType != "mcts" && agentType != "minimax" {
-		fmt.Printf("Unknown agent type: %s\n", agentType)
-		fmt.Println("Valid options: qlearning, neural, weighted, heuristic, mcts, minimax")
-		os.Exit(1)
+func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights, biddingWeightsFile string, threshold float64, minimaxDepth, mctsSimulations int, ignoreZwangsspiel bool) {
+	var testAgent *agent.SkatAgent
+	var err error
+
+	// Create agent based on type or component configuration
+	if agentType != "" {
+		// Use predefined agent type
+		testAgent, err = createAgentByType(agentType, cardplayWeights, threshold, minimaxDepth, mctsSimulations)
+		if err != nil {
+			fmt.Printf("Error creating agent: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		// Build hybrid agent from component flags
+		// Game choice type always matches bidding type
+		config := agent.HybridAgentConfig{
+			BiddingType:        biddingType,
+			BiddingThreshold:   threshold,
+			BiddingWeightsPath: biddingWeightsFile,
+			GameChoiceType:     biddingType, // Always same as bidding type
+			CardPlayType:       cardPlayType,
+			NeuralWeightsPath:  cardplayWeights,
+			MinimaxDepth:       minimaxDepth,
+			MCTSSimulations:    mctsSimulations,
+		}
+		testAgent, err = agent.NewHybridAgent("Test", config)
+		if err != nil {
+			fmt.Printf("Error creating hybrid agent: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
-	// Validate component
-	if component != "bidding" && component != "game-choice" && component != "card-play" && component != "combined" {
-		fmt.Printf("Unknown component: %s\n", component)
-		fmt.Println("Valid options: bidding, game-choice, card-play, combined")
-		os.Exit(1)
-	}
-
-	// Print evaluation header
-	printEvaluationHeader(agentType, component)
-
-	// Build agent configuration based on type and component
-	config := buildAgentConfig(agentType, component, threshold, cardplayWeights, minimaxDepth)
-
-	testAgent, err := agent.NewHybridAgent("Test", config)
-	if err != nil {
-		fmt.Printf("Error creating test agent: %v\n", err)
-		os.Exit(1)
-	}
-
-	testDescription := buildAgentDescription(agentType, component, threshold)
+	testDescription := buildAgentDescription(testAgent)
 
 	fmt.Printf("Test agent: %s\n", testDescription)
 
@@ -58,49 +69,112 @@ func runEvaluation(agentType, component string, games int, cardplayWeights strin
 	baselineAgent := agent.NewHeuristicAgent("Baseline")
 	fmt.Println("Baseline agent: All heuristic")
 
+	// Choose evaluation config based on bidding mode
+	var evalConfig agent.AgentConfig
+	switch biddingMode {
+	case "5050":
+		evalConfig = agent.NewFiftyFiftySplitConfig(testAgent, baselineAgent)
+		fmt.Println("Bidding mode: All 3 test agents bid, alternate declarer/defender")
+	case "2v1":
+		evalConfig = agent.NewTwoVsOneConfig(testAgent, baselineAgent)
+		fmt.Println("Bidding mode: 1 test agent vs 2 baseline agents")
+	default:
+		fmt.Printf("Unknown bidding mode: %s (use 5050 or 2v1)\n", biddingMode)
+		os.Exit(1)
+	}
+
 	fmt.Println("\n" + strings.Repeat("=", 50))
-	fmt.Printf("Running %d games on %d CPU cores...\n", games, runtime.GOMAXPROCS(0))
+	fmt.Printf("Running %d games on %d CPU cores...\n", totalRounds, runtime.GOMAXPROCS(0))
+	if ignoreZwangsspiel {
+		fmt.Println("Ignoring Zwangsspiel (passed) games")
+	}
 	fmt.Println(strings.Repeat("=", 50) + "\n")
 
-	evalConfig := agent.NewFiftyFiftySplitConfig(testAgent, baselineAgent)
-	training.EvaluateAgents(evalConfig, games)
+	training.EvaluateAgents(evalConfig, totalRounds)
 
 	// Get agent metrics for bidding distribution
 	testMetrics := testAgent.GetMetrics()
 	baselineMetrics := baselineAgent.GetMetrics()
 
-	testGames := testMetrics.Games
-	testWins := testMetrics.Wins
-	testPoints := testMetrics.Points
-	testOverbid := testMetrics.Overbid
-	baselineGames := baselineMetrics.Games
-	baselineWins := baselineMetrics.Wins
-	baselinePoints := baselineMetrics.Points
-	baselineOverbid := baselineMetrics.Overbid
+	// Track passed games for display
+	passedGames := testMetrics.PassedGames
+
+	var testGames, testWins, testPoints, testOverbid int64
+	var baselineGames, baselineWins, baselinePoints int64
+
+	if ignoreZwangsspiel {
+		// Exclude Zwangsspiel games and wins from metrics
+		// passedGames is tracked globally, but passedGamesWon is per-agent
+		testGames = testMetrics.Games - testMetrics.PassedGamesWon
+		testWins = testMetrics.Wins - testMetrics.PassedGamesWon
+		testPoints = testMetrics.Points
+		testOverbid = testMetrics.Overbid
+		baselineGames = baselineMetrics.Games - baselineMetrics.PassedGamesWon
+		baselineWins = baselineMetrics.Wins - baselineMetrics.PassedGamesWon
+		baselinePoints = baselineMetrics.Points
+	} else {
+		testGames = testMetrics.Games
+		testWins = testMetrics.Wins
+		testPoints = testMetrics.Points
+		testOverbid = testMetrics.Overbid
+		baselineGames = baselineMetrics.Games
+		baselineWins = baselineMetrics.Wins
+		baselinePoints = baselineMetrics.Points
+	}
 
 	fmt.Println("\n" + strings.Repeat("=", 50))
 	fmt.Println("FINAL RESULTS")
 	fmt.Println(strings.Repeat("=", 50))
 
-	if testGames > 0 || testMetrics.PassedGames > 0 {
-		fmt.Printf("\nTest (%s):\n", testDescription)
-		if testGames > 0 {
-			fmt.Printf("  Declarer win rate: %.1f%% (%d/%d games as declarer)\n",
-				float64(testWins)/float64(testGames)*100, testWins, testGames)
-			fmt.Printf("  Avg points as declarer: %.1f\n", float64(testPoints)/float64(testGames))
-			fmt.Printf("  Overbid rate: %.1f%% (%d/%d)\n",
-				float64(testOverbid)/float64(testGames)*100, testOverbid, testGames)
-		}
-		if testMetrics.PassedGames > 0 {
-			fmt.Printf("  Passed games: %d (all players passed)\n", testMetrics.PassedGames)
-		}
+	// Use raw Games (not adjusted for Zwangsspiel) since DefenderGames isn't adjusted either
+	declarerGamesTotal := testMetrics.Games
+	defenderGamesTotal := testMetrics.DefenderGames
+	totalGamesPlayed := defenderGamesTotal + declarerGamesTotal
+
+	defenderPct := float64(defenderGamesTotal) / float64(totalGamesPlayed) * 100
+	declarerPct := float64(declarerGamesTotal) / float64(totalGamesPlayed) * 100
+
+	fmt.Printf("\nTest (%s):\n", testDescription)
+	fmt.Printf("    Declarer   %4d/%4d (%3.0f%%) %s Defender       %4d/%4d (%3.0f%%)\n",
+		declarerGamesTotal, totalGamesPlayed, declarerPct, makeWinRateBar(declarerPct),
+		defenderGamesTotal, totalGamesPlayed, defenderPct)
+
+	if testGames > 0 {
+		declarerWinRate := float64(testWins) / float64(testGames) * 100
+		baselineDefWinRate := 100.0 - declarerWinRate
+		fmt.Printf("    Test Decl. %4d/%4d (%3.0f%%) %s Baseline Def.  %4d/%4d (%3.0f%%)\n",
+			testWins, testGames, declarerWinRate, makeWinRateBar(declarerWinRate),
+			testGames-testWins, testGames, baselineDefWinRate)
 
 		// Defender stats
 		if testMetrics.DefenderGames > 0 {
-			fmt.Printf("  Defender win rate: %.1f%% (%d/%d games as defender)\n",
-				float64(testMetrics.DefenderWins)/float64(testMetrics.DefenderGames)*100,
-				testMetrics.DefenderWins, testMetrics.DefenderGames)
+			defenderWinRate := float64(testMetrics.DefenderWins) / float64(testMetrics.DefenderGames) * 100
+			baselineDeclWinRate := 100.0 - defenderWinRate
+			fmt.Printf("    Test Def.  %4d/%4d (%3.0f%%) %s Baseline Decl. %4d/%4d (%3.0f%%)\n",
+				testMetrics.DefenderWins, testMetrics.DefenderGames, defenderWinRate, makeWinRateBar(defenderWinRate),
+				testMetrics.DefenderGames-testMetrics.DefenderWins, testMetrics.DefenderGames, baselineDeclWinRate)
 		}
+
+		// Points comparison using sigmoid: 0 diff = 50%, larger diff = closer to 0 or 100%
+		// Sigmoid function: 1 / (1 + exp(-x/temp)) where x is point difference
+		// Temperature controls steepness - higher temp = more gradual change
+		pointsDiff := float64(testPoints - baselinePoints)
+		temperature := float64(totalRounds * 2.0) // Adjust this to control sensitivity
+		testPointsPct := 100.0 / (1.0 + math.Exp(-pointsDiff/temperature))
+		baselinePointsPct := 100.0 - testPointsPct
+
+		fmt.Printf("    Test Pts.  %9d (%3.0f%%) %s Baseline Pts.  %9d (%3.0f%%)\n",
+			testPoints, testPointsPct, makeWinRateBar(testPointsPct),
+			baselinePoints, baselinePointsPct)
+
+		fmt.Printf("  Avg points as declarer: %.1f\n", float64(testPoints)/float64(testGames))
+		fmt.Printf("  Overbid rate: %.1f%% (%d/%d)\n",
+			float64(testOverbid)/float64(testGames)*100, testOverbid, testGames)
+
+		// Calculate passed games percentage
+		passedPct := float64(passedGames) / float64(totalRounds) * 100
+		fmt.Printf("  Passed games: %.1f%% (%d/%d) - all players passed (Zwangsspiel)\n",
+			passedPct, passedGames, totalRounds)
 
 		// Game type breakdown
 		testGrand := testMetrics.GrandGames
@@ -135,59 +209,6 @@ func runEvaluation(agentType, component string, games int, cardplayWeights strin
 		}
 	}
 
-	if baselineGames > 0 || baselineMetrics.PassedGames > 0 {
-		fmt.Printf("\nBaseline (Heuristic):\n")
-		if baselineGames > 0 {
-			fmt.Printf("  Declarer win rate: %.1f%% (%d/%d games as declarer)\n",
-				float64(baselineWins)/float64(baselineGames)*100, baselineWins, baselineGames)
-			fmt.Printf("  Avg points as declarer: %.1f\n", float64(baselinePoints)/float64(baselineGames))
-			fmt.Printf("  Overbid rate: %.1f%% (%d/%d)\n",
-				float64(baselineOverbid)/float64(baselineGames)*100, baselineOverbid, baselineGames)
-		}
-		if baselineMetrics.PassedGames > 0 {
-			fmt.Printf("  Passed games: %d (all players passed)\n", baselineMetrics.PassedGames)
-		}
-
-		// Defender stats
-		if baselineMetrics.DefenderGames > 0 {
-			fmt.Printf("  Defender win rate: %.1f%% (%d/%d games as defender)\n",
-				float64(baselineMetrics.DefenderWins)/float64(baselineMetrics.DefenderGames)*100,
-				baselineMetrics.DefenderWins, baselineMetrics.DefenderGames)
-		}
-
-		// Game type breakdown
-		baseGrand := baselineMetrics.GrandGames
-		baseGrandW := baselineMetrics.GrandWins
-		baseSuit := baselineMetrics.SuitGames
-		baseSuitW := baselineMetrics.SuitWins
-		baseNull := baselineMetrics.NullGames
-		baseNullW := baselineMetrics.NullWins
-
-		fmt.Printf("  Game type breakdown:\n")
-		if baseGrand > 0 {
-			fmt.Printf("    Grand: %d games, %.1f%% win rate (%d wins)\n",
-				baseGrand, float64(baseGrandW)/float64(baseGrand)*100, baseGrandW)
-		}
-		if baseSuit > 0 {
-			fmt.Printf("    Suit:  %d games, %.1f%% win rate (%d wins)\n",
-				baseSuit, float64(baseSuitW)/float64(baseSuit)*100, baseSuitW)
-		}
-		if baseNull > 0 {
-			fmt.Printf("    Null:  %d games, %.1f%% win rate (%d wins)\n",
-				baseNull, float64(baseNullW)/float64(baseNull)*100, baseNullW)
-		}
-
-		// Bidding distribution
-		totalBids := baselineMetrics.GetTotalBids()
-		if totalBids > 0 {
-			maxBid := baselineMetrics.GetMaxBid()
-			fmt.Printf("  Bidding distribution:\n")
-			fmt.Printf("    Max bid accepted: %d\n", maxBid)
-			fmt.Printf("    Total bidding decisions: %d\n", totalBids)
-			displayBiddingDistribution(baselineMetrics.BiddingAccepts, baselineMetrics.BiddingRejects)
-		}
-	}
-
 	if testGames > 0 && baselineGames > 0 {
 		improvement := (float64(testWins)/float64(testGames) - float64(baselineWins)/float64(baselineGames)) * 100
 		pointDiff := float64(testPoints)/float64(testGames) - float64(baselinePoints)/float64(baselineGames)
@@ -195,23 +216,28 @@ func runEvaluation(agentType, component string, games int, cardplayWeights strin
 		fmt.Printf("Point difference: %+.1f points per game\n", pointDiff)
 	}
 
-	// Show example hand decisions for Q-learning strategies
-	if component == "bidding" || component == "combined" {
+	// Show calibration statistics if available
+	if len(testMetrics.PredictedProbability) > 0 {
 		fmt.Println("\n" + strings.Repeat("=", 50))
-		fmt.Println("EXAMPLE BIDDING DECISIONS")
+		fmt.Println("CALIBRATION STATISTICS")
 		fmt.Println(strings.Repeat("=", 50))
-		testExampleBiddingHands(testAgent)
+		displayCalibration(testMetrics.PredictedProbability, testMetrics.ActualOutcomes)
 	}
 
-	if component == "game-choice" || component == "combined" {
-		fmt.Println("\n" + strings.Repeat("=", 50))
-		fmt.Println("EXAMPLE GAME CHOICE DECISIONS")
-		fmt.Println(strings.Repeat("=", 50))
-		testExampleGameChoiceHands(testAgent)
-	}
+	// Show example bidding decisions
+	fmt.Println("\n" + strings.Repeat("=", 50))
+	fmt.Println("EXAMPLE BIDDING DECISIONS")
+	fmt.Println(strings.Repeat("=", 50))
+	testExampleBiddingHands(testAgent)
 
-	if (component == "card-play" || component == "combined") && agentType != "minimax" {
-		// Run game-play test with known winning games (skip for minimax - too slow)
+	// Show example game choice decisions
+	fmt.Println("\n" + strings.Repeat("=", 50))
+	fmt.Println("EXAMPLE GAME CHOICE DECISIONS")
+	fmt.Println(strings.Repeat("=", 50))
+	testExampleGameChoiceHands(testAgent)
+
+	// Run game-play test with known winning games (skip for minimax - too slow)
+	if agentType != "minimax" {
 		fmt.Println("\n" + strings.Repeat("=", 50))
 		fmt.Println("EXAMPLE GAME PLAY RESULTS")
 		fmt.Println(strings.Repeat("=", 50))
@@ -391,131 +417,133 @@ func formatGameChoice(mode game.GameMode, suit game.Suit) string {
 	return suit.String()
 }
 
-// printEvaluationHeader prints the appropriate header for the evaluation
-func printEvaluationHeader(agentType, component string) {
+// createAgentByType creates an agent using predefined agent type
+func createAgentByType(agentType, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int) (*agent.SkatAgent, error) {
 	switch agentType {
 	case "heuristic":
-		fmt.Println("Heuristic Agent Evaluation")
-		fmt.Println("===========================")
+		config := agent.HybridAgentConfig{
+			BiddingType:      "heuristic",
+			BiddingThreshold: threshold,
+			GameChoiceType:   "heuristic",
+			CardPlayType:     "heuristic",
+		}
+		return agent.NewHybridAgent("Test", config)
+	case "random":
+		return agent.NewRandomAgent("Test"), nil
 	case "mcts":
-		if component == "card-play" {
-			fmt.Println("MCTS Card Play Strategy Evaluation")
-			fmt.Println("====================================")
+		config := agent.HybridAgentConfig{
+			BiddingType:      "heuristic",
+			BiddingThreshold: threshold,
+			GameChoiceType:   "heuristic",
+			CardPlayType:     "mcts",
+			MCTSSimulations:  mctsSimulations,
 		}
-	case "neural":
-		if component == "card-play" {
-			fmt.Println("Neural Card Play Strategy Evaluation")
-			fmt.Println("======================================")
-		}
-	}
-}
-
-// buildAgentConfig creates agent configuration based on type and component
-func buildAgentConfig(agentType, component string, threshold float64, cardplayWeights string, minimaxDepth int) agent.HybridAgentConfig {
-	config := agent.HybridAgentConfig{
-		BiddingType:      "weighted",
-		BiddingThreshold: threshold,
-		GameChoiceType:   "heuristic",
-		CardPlayType:     "heuristic",
-	}
-
-	// Configure based on agent type and component
-	switch agentType {
-	case "heuristic":
-		// All heuristic - defaults are already set correctly
-		config.BiddingType = "heuristic"
-
-	case "weighted":
-		// Weighted strategies based on component
-		if component == "bidding" || component == "combined" {
-			config.BiddingType = "weighted"
-			config.BiddingThreshold = threshold
-		}
-		if component == "combined" {
-			config.GameChoiceType = "weighted"
-		}
-
-	case "mcts":
-		if component == "card-play" || component == "combined" {
-			config.CardPlayType = "mcts"
-			config.MCTSSimulations = 500
-		}
-		if component == "combined" {
-			config.GameChoiceType = "weighted"
-		}
-
+		return agent.NewHybridAgent("Test", config)
 	case "minimax":
-		if component == "card-play" || component == "combined" {
-			config.CardPlayType = "minimax"
-			config.MinimaxDepth = minimaxDepth
+		config := agent.HybridAgentConfig{
+			BiddingType:      "heuristic",
+			BiddingThreshold: threshold,
+			GameChoiceType:   "heuristic",
+			CardPlayType:     "minimax",
+			MinimaxDepth:     minimaxDepth,
 		}
-		if component == "combined" {
-			config.GameChoiceType = "weighted"
-		}
-
+		return agent.NewHybridAgent("Test", config)
 	case "neural":
-		if component == "card-play" || component == "combined" {
-			config.CardPlayType = "neural"
-			config.NeuralWeightsPath = cardplayWeights
+		config := agent.HybridAgentConfig{
+			BiddingType:       "heuristic",
+			BiddingThreshold:  threshold,
+			GameChoiceType:    "heuristic",
+			CardPlayType:      "neural",
+			NeuralWeightsPath: cardplayWeights,
 		}
-		if component == "combined" {
-			config.GameChoiceType = "weighted"
-		}
+		return agent.NewHybridAgent("Test", config)
+	default:
+		return nil, fmt.Errorf("unknown agent type: %s", agentType)
 	}
-
-	return config
 }
 
 // buildAgentDescription creates a human-readable description of the agent
-func buildAgentDescription(agentType, component string, threshold float64) string {
-	switch agentType {
-	case "heuristic":
-		return "All heuristic (baseline vs baseline)"
-	case "weighted":
-		if component == "bidding" {
-			return fmt.Sprintf("Weighted heuristic bidding (threshold=%.2f) + Heuristic game choice/play", threshold)
-		} else if component == "combined" {
-			return fmt.Sprintf("Weighted heuristic bidding+game choice (threshold=%.2f) + Heuristic play", threshold)
-		}
-	case "mcts":
-		if component == "card-play" {
-			return "Weighted bidding + Heuristic game choice + MCTS card play"
-		} else if component == "combined" {
-			return fmt.Sprintf("Weighted bidding+game choice (threshold=%.2f) + MCTS card play", threshold)
-		}
-	case "minimax":
-		if component == "card-play" {
-			return "Weighted bidding + Heuristic game choice + Minimax card play"
-		} else if component == "combined" {
-			return fmt.Sprintf("Weighted bidding+game choice (threshold=%.2f) + Minimax card play", threshold)
-		}
-	case "neural":
-		if component == "card-play" {
-			return "Weighted bidding + Heuristic game choice + DQN card play"
-		} else if component == "combined" {
-			return fmt.Sprintf("Weighted bidding+game choice (threshold=%.2f) + DQN card play", threshold)
-		}
-	}
-	return fmt.Sprintf("%s agent testing %s", agentType, component)
+func buildAgentDescription(a *agent.SkatAgent) string {
+	bidding := a.GetBiddingStrategy().GetName()
+	gameChoice := a.GetGameChoiceStrategy().GetName()
+	cardPlay := a.GetCardPlayStrategy().GetName()
+
+	return fmt.Sprintf("%s bidding + %s game choice + %s card play", bidding, gameChoice, cardPlay)
 }
 
-func loadQLearningBiddingQTable() map[int]map[int]float64 {
-	qtablePath := "bidding_qtable.gob"
-	fmt.Printf("Loading bidding Q-table from %s...\n", qtablePath)
-
-	if _, err := os.Stat(qtablePath); os.IsNotExist(err) {
-		fmt.Printf("Error: Q-table file not found: %s\n", qtablePath)
-		fmt.Println("Please train the agent first using: go run cmd/train_bidding/main.go")
-		os.Exit(1)
+func displayCalibration(predicted []float64, actual []bool) {
+	if len(predicted) == 0 || len(predicted) != len(actual) {
+		fmt.Println("No calibration data available")
+		return
 	}
 
-	data, err := agent.LoadQTableData(qtablePath, true)
-	if err != nil {
-		fmt.Printf("Error loading Q-table: %v\n", err)
-		os.Exit(1)
+	// Bin predictions into buckets [0.5-0.6), [0.6-0.7), [0.7-0.8), [0.8-0.9), [0.9-1.0]
+	type bucket struct {
+		minProb    float64
+		maxProb    float64
+		count      int
+		wins       int
+		sumProb    float64
+		avgProb    float64
+		actualRate float64
 	}
 
-	return data.QTable
+	buckets := []bucket{
+		{0.5, 0.6, 0, 0, 0, 0, 0},
+		{0.6, 0.7, 0, 0, 0, 0, 0},
+		{0.7, 0.8, 0, 0, 0, 0, 0},
+		{0.8, 0.9, 0, 0, 0, 0, 0},
+		{0.9, 1.0, 0, 0, 0, 0, 0},
+	}
+
+	for i, prob := range predicted {
+		for j := range buckets {
+			if prob >= buckets[j].minProb && prob < buckets[j].maxProb || (prob == 1.0 && j == len(buckets)-1) {
+				buckets[j].count++
+				buckets[j].sumProb += prob
+				if actual[i] {
+					buckets[j].wins++
+				}
+				break
+			}
+		}
+	}
+
+	// Calculate averages
+	totalCount := 0
+	totalWins := 0
+	for i := range buckets {
+		if buckets[i].count > 0 {
+			buckets[i].avgProb = buckets[i].sumProb / float64(buckets[i].count)
+			buckets[i].actualRate = float64(buckets[i].wins) / float64(buckets[i].count)
+			totalCount += buckets[i].count
+			totalWins += buckets[i].wins
+		}
+	}
+
+	fmt.Printf("Total games with predictions: %d\n", totalCount)
+	fmt.Printf("Overall win rate: %.1f%%\n\n", float64(totalWins)/float64(totalCount)*100)
+	fmt.Printf("%-15s %-10s %-10s %-10s %s\n", "Predicted", "Games", "Actual", "Avg Pred", "Calibration")
+	fmt.Println(strings.Repeat("-", 70))
+
+	for _, b := range buckets {
+		if b.count == 0 {
+			continue
+		}
+		rangeStr := fmt.Sprintf("%.0f%%-%.0f%%", b.minProb*100, b.maxProb*100)
+		diff := b.actualRate - b.avgProb
+		calibStr := ""
+		if diff > 0.05 {
+			calibStr = fmt.Sprintf("▲ %.1f%%", diff*100)
+		} else if diff < -0.05 {
+			calibStr = fmt.Sprintf("▼ %.1f%%", -diff*100)
+		} else {
+			calibStr = "✓"
+		}
+
+		fmt.Printf("%-15s %-10d %-10.1f%% %-10.1f%% %s\n",
+			rangeStr, b.count, b.actualRate*100, b.avgProb*100, calibStr)
+	}
 }
 
 func displayBiddingDistribution(accepts map[int]int, rejects map[int]int) {
@@ -590,25 +618,6 @@ func displayBiddingDistribution(accepts map[int]int, rejects map[int]int) {
 		fmt.Printf("    %-3d  %s  %7d  %7d  %5.1f%%\n",
 			b.bid, bar, b.accepts, b.rejects, b.acceptRate)
 	}
-}
-
-func loadQLearningGameChoiceQTable() map[int]map[int]float64 {
-	qtablePath := "game_choice_qtable.gob"
-	fmt.Printf("Loading game choice Q-table from %s...\n", qtablePath)
-
-	if _, err := os.Stat(qtablePath); os.IsNotExist(err) {
-		fmt.Printf("Error: Q-table file not found: %s\n", qtablePath)
-		fmt.Println("Please train the agent first using: go run cmd/train_game_choice/main.go")
-		os.Exit(1)
-	}
-
-	data, err := agent.LoadQTableData(qtablePath, true)
-	if err != nil {
-		fmt.Printf("Error loading Q-table: %v\n", err)
-		os.Exit(1)
-	}
-
-	return data.QTable
 }
 
 // runGamePlayTest tests that agents win known games with correct suit choices
@@ -692,19 +701,36 @@ func runGamePlayTest(testAgent *agent.SkatAgent) {
 	}
 }
 
-func playGamesWithMode(testAgent *agent.SkatAgent, declarerHand game.Cards, mode game.GameMode, trumpSuit game.Suit, numGames int) (wins, totalPoints, gamesPlayed int) {
-	baselineAgent := agent.NewHeuristicAgent("Baseline")
+func makeWinRateBar(winRate float64) string {
+	const barWidth = 40
+	filled := int(winRate / 100.0 * barWidth)
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > barWidth {
+		filled = barWidth
+	}
+	empty := barWidth - filled
+	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", empty) + "]"
+}
 
-	config := agent.NewFiftyFiftySplitConfig(testAgent, baselineAgent)
-	g := game.NewGame()
-	g = agent.WithAgentPlayers(g, config)
+func playGamesWithMode(testAgent *agent.SkatAgent, declarerHand game.Cards, mode game.GameMode, trumpSuit game.Suit, numGames int) (wins, totalPoints, gamesPlayed int) {
+	// Clone the test agent to avoid polluting the main eval metrics, but use its strategy
+	testAgentLocal := testAgent.Clone()
+	testAgentLocal.EnableMetrics() // Enable metrics tracking on the clone
+	defender1 := agent.NewHeuristicAgent("Defender1")
+	defender2 := agent.NewHeuristicAgent("Defender2")
 
 	for i := 0; i < numGames; i++ {
+		// Create a fresh game each iteration to avoid rotation issues
+		g := game.NewGame()
+		// Use three-way config to set up all players
+		config := agent.NewThreeWayConfig(defender1, defender2, testAgentLocal)
+		g = agent.WithAgentPlayers(g, config)
 		agent.PlayGameWithMode(g, config, declarerHand, mode, trumpSuit)
-		g.NextGame()
 	}
 
-	// Get metrics from the local agent
-	metrics := testAgent.GetMetrics()
+	// Get collected stats from the agent
+	metrics := testAgentLocal.GetMetrics()
 	return int(metrics.Wins), int(metrics.Points), int(metrics.Games)
 }

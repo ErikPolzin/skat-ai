@@ -1,7 +1,10 @@
 package strategies
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
+	"os"
 	"skat/game"
 )
 
@@ -36,35 +39,41 @@ type BidWeights struct {
 	// Bias terms
 	GrandBias float64 // Constant offset for grand evaluation
 	SuitBias  float64 // Constant offset for suit evaluation
+
+	// Sigmoid temperature for probability calibration
+	SigmoidTemperature float64 // Temperature parameter for score -> probability conversion (default: 50.0)
 }
 
-// DefaultBidWeights returns reasonable default weights (based on heuristic knowledge)
-// These can be replaced with learned weights from training data
+// DefaultBidWeights returns trained weights from 50k games with temperature calibration
+// Trained with threshold=0.45, excluding Zwangsspiel games, using proper player rotation
 func DefaultBidWeights() BidWeights {
 	return BidWeights{
-		// Grand weights (trained from 50k episodes)
-		GrandJacks:        12.002,
-		GrandAces:         17.977,
-		GrandTens:         4.962,
-		GrandAceTenPairs:  19.975,
-		GrandTotalWinners: 14.979,
+		// Grand weights
+		GrandJacks:        12.994,
+		GrandAces:         18.190,
+		GrandTens:         4.933,
+		GrandAceTenPairs:  19.986,
+		GrandTotalWinners: 16.183,
 
-		// Suit weights (balanced for selective but not overly conservative bidding)
-		SuitTrumpLength:   5.0,
-		SuitTrumpLengthSq: 1.5, // Moderate squared bonus
-		SuitTopTrumps:     15.0,
-		SuitSideAces:      10.0,
-		SuitVoidSuits:     15.0,
-		SuitShortSuits:    6.0,
-		SuitAceTenPairs:   15.0,
+		// Suit weights
+		SuitTrumpLength:   2.488,
+		SuitTrumpLengthSq: 1.544,
+		SuitTopTrumps:     14.903,
+		SuitSideAces:      11.624,
+		SuitVoidSuits:     15.143,
+		SuitShortSuits:    3.869,
+		SuitAceTenPairs:   15.600,
 
 		// Shared
-		Matadors:    9.892,
-		TotalPoints: -0.627,
+		Matadors:    2.307,
+		TotalPoints: -1.124,
 
 		// Bias
-		GrandBias: -20.0, // Modest penalty - Grand is viable with good jacks
-		SuitBias:  0.0,
+		GrandBias: -20.056,
+		SuitBias:  -1.096,
+
+		// Sigmoid temperature (calibrated for accurate probability estimates)
+		SigmoidTemperature: 100.009,
 	}
 }
 
@@ -84,17 +93,54 @@ func NewWeightedHeuristicBiddingStrategyWithWeights(weights BidWeights, threshol
 	}
 }
 
+// LoadBidWeights loads bid weights from a JSON file
+func LoadBidWeights(filename string) (BidWeights, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return BidWeights{}, fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	var weights BidWeights
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&weights); err != nil {
+		return BidWeights{}, fmt.Errorf("decode JSON: %w", err)
+	}
+
+	return weights, nil
+}
+
+// NewWeightedHeuristicBiddingStrategyFromFile creates strategy by loading weights from a file
+// Uses the default threshold of 0.70 unless overridden with SetBiddingThreshold
+func NewWeightedHeuristicBiddingStrategyFromFile(filename string) (*WeightedHeuristicBiddingStrategy, error) {
+	weights, err := LoadBidWeights(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	return &WeightedHeuristicBiddingStrategy{
+		weights:          weights,
+		biddingThreshold: 0.70, // Default threshold
+	}, nil
+}
+
 func (w *WeightedHeuristicBiddingStrategy) GetName() string {
 	return "WeightedHeuristicBidding"
 }
 
 func (w *WeightedHeuristicBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Card, currentBid int) bool {
+	shouldBid, _ := w.ShouldBidWithProbability(gs, hand, currentBid)
+	return shouldBid
+}
+
+// ShouldBidWithProbability returns the bidding decision and the predicted win probability
+func (w *WeightedHeuristicBiddingStrategy) ShouldBidWithProbability(gs *game.GameState, hand []game.Card, currentBid int) (bool, float64) {
 	cards := game.Cards(hand)
 
 	// Get the next bid value
 	nextBid := gs.GetNextBidValue()
 	if nextBid == 0 {
-		return false
+		return false, 0.0
 	}
 
 	// Evaluate all possible games and find the best one
@@ -121,23 +167,47 @@ func (w *WeightedHeuristicBiddingStrategy) ShouldBid(gs *game.GameState, hand []
 
 	// Normalize score to approximate win probability (sigmoid-like)
 	// Scores typically range from -100 to +200
-	// Map to [0, 1] using a sigmoid: 1 / (1 + exp(-score/50))
-	winProbability := 1.0 / (1.0 + math.Exp(-bestScore/50.0))
+	// Map to [0, 1] using a sigmoid: 1 / (1 + exp(-score/temperature))
+	temperature := w.weights.SigmoidTemperature
+	if temperature == 0 {
+		temperature = 50.0 // Fallback to default
+	}
+	winProbability := 1.0 / (1.0 + math.Exp(-bestScore/temperature))
 
 	// Apply safety margin to required game value
-	// Game value must significantly exceed the bid to account for uncertainty
-	safetyMargin := 1.2 // Need 50% more than bid value
+	// Game value must exceed the bid to account for uncertainty
+	safetyMargin := 1.05 // Need 5% more than bid value (same as heuristic)
 	requiredValue := int(float64(nextBid) * safetyMargin)
 
 	// Bid if:
 	// 1. Win probability exceeds threshold, AND
-	// 2. Game value meets the safety-adjusted requirement, AND
-	// 3. Best score is positive and exceeds minimum threshold
+	// 2. Game value meets the safety-adjusted requirement
 	meetsThreshold := winProbability >= w.biddingThreshold
 	meetsValue := bestGameValue >= requiredValue
-	meetsStrength := bestScore > 110.0 // Balanced threshold for realistic bidding
 
-	return meetsThreshold && meetsValue && meetsStrength
+	return meetsThreshold && meetsValue, winProbability
+}
+
+// EvaluateGameProbability returns the predicted win probability for a specific game type
+func (w *WeightedHeuristicBiddingStrategy) EvaluateGameProbability(cards game.Cards, mode game.GameMode, suit game.Suit) float64 {
+	var score float64
+
+	if mode == game.ModeGrand {
+		score = w.evaluateGrand(cards)
+	} else if mode == game.ModeSuit {
+		score = w.evaluateSuit(cards, suit)
+	} else {
+		// Null games - not supported by weighted heuristic, return 0
+		return 0.0
+	}
+
+	// Normalize score to win probability using the same sigmoid
+	temperature := w.weights.SigmoidTemperature
+	if temperature == 0 {
+		temperature = 50.0 // Fallback to default
+	}
+	winProbability := 1.0 / (1.0 + math.Exp(-score/temperature))
+	return winProbability
 }
 
 // evaluateGrand scores a hand for playing Grand

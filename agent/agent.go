@@ -67,10 +67,13 @@ type AgentMetrics struct {
 	defenderWins  atomic.Int64
 
 	// Bidding metrics
-	mu             sync.Mutex
-	biddingAccepts map[int]int // bid value -> count of accepts
-	biddingRejects map[int]int // bid value -> count of rejects
-	passedGames    atomic.Int64 // games where all players passed
+	mu                   sync.Mutex
+	biddingAccepts       map[int]int  // bid value -> count of accepts
+	biddingRejects       map[int]int  // bid value -> count of rejects
+	passedGames          atomic.Int64 // games where all players passed
+	passedGamesWon       atomic.Int64 // Zwangsspiel games won as declarer
+	predictedProbability []float64    // predicted win probabilities for games won
+	actualOutcomes       []bool       // actual outcomes (true = won, false = lost)
 }
 
 // SkatAgent uses strategies for different aspects of play
@@ -87,6 +90,10 @@ type SkatAgent struct {
 
 	// Cached clone for performance (lazily created on first CachedClone() call)
 	cachedClone *SkatAgent
+
+	// Last predicted win probability (for calibration tracking)
+	lastPredictedWinProb float64
+	mu                   sync.Mutex
 }
 
 // Agent interface implementation
@@ -120,7 +127,17 @@ func (sa *SkatAgent) ChooseGame(state *game.GameState) (game.GameMode, game.Suit
 	}
 	hand := state.Players[*state.Declarer].Hand
 	bidValue := int(state.BidValue)
-	return sa.gameChoiceStrategy.ChooseGame(hand, bidValue)
+	mode, suit := sa.gameChoiceStrategy.ChooseGame(hand, bidValue)
+
+	// Calculate predicted win probability for the chosen game type
+	if weightedStrat, ok := sa.biddingStrategy.(*WeightedHeuristicBiddingStrategy); ok {
+		winProb := weightedStrat.EvaluateGameProbability(game.Cards(hand), mode, suit)
+		sa.mu.Lock()
+		sa.lastPredictedWinProb = winProb
+		sa.mu.Unlock()
+	}
+
+	return mode, suit
 }
 
 func (sa *SkatAgent) SelectMove(state *game.GameState, validMoves []game.Card) game.Card {
@@ -185,13 +202,10 @@ func NewAgentWithStrategies(name string, bidding BiddingStrategy, gameChoice Gam
 }
 
 // NewHeuristicAgent creates an agent using all heuristic strategies
-// Uses weighted heuristic for bidding with a balanced threshold (0.65)
 func NewHeuristicAgent(name string) *SkatAgent {
-	weightedBidding := strategies.NewWeightedHeuristicBiddingStrategy()
-
 	return &SkatAgent{
 		name:               name,
-		biddingStrategy:    weightedBidding,
+		biddingStrategy:    strategies.NewHeuristicBiddingStrategy(),
 		gameChoiceStrategy: &HeuristicGameChoiceStrategy{},
 		cardPlayStrategy:   NewHeuristicCardPlayStrategy(),
 	}
@@ -209,15 +223,16 @@ func NewRandomAgent(name string) *SkatAgent {
 
 // HybridAgentConfig holds configuration for creating hybrid agents
 type HybridAgentConfig struct {
-	BiddingType      string
-	BiddingThreshold float64                 // For weighted heuristic bidding
-	BiddingQTable    map[int]map[int]float64 // For Q-learning bidding
+	BiddingType        string
+	BiddingThreshold   float64                 // For weighted heuristic bidding
+	BiddingWeightsPath string                  // Path to trained weights JSON file (shared by bidding and game choice)
+	BiddingQTable      map[int]map[int]float64 // For Q-learning bidding
 
 	GameChoiceType   string
 	GameChoiceQTable map[int]map[int]float64 // For Q-learning game choice
 
-	CardPlayType    string
-	MCTSSimulations int    // For MCTS card play
+	CardPlayType      string
+	MCTSSimulations   int    // For MCTS card play
 	MinimaxDepth      int    // For minimax card play
 	NeuralWeightsPath string // For neural network card play (combined declarer+defender weights)
 }
@@ -229,12 +244,27 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	// Configure bidding strategy
 	switch config.BiddingType {
 	case "heuristic":
-		agent.biddingStrategy = &HeuristicBiddingStrategy{}
+		if config.BiddingThreshold == 0 {
+			agent.biddingStrategy = strategies.NewHeuristicBiddingStrategy()
+		} else {
+			agent.biddingStrategy = strategies.NewHeuristicBiddingStrategyWithThreshold(config.BiddingThreshold)
+		}
 	case "weighted":
-		weighted := strategies.NewWeightedHeuristicBiddingStrategy()
-		threshold := config.BiddingThreshold
-		if threshold != 0 {
-			weighted.SetBiddingThreshold(threshold)
+		var weighted *strategies.WeightedHeuristicBiddingStrategy
+		var err error
+
+		// Load weights from file if provided
+		if config.BiddingWeightsPath != "" {
+			weighted, err = strategies.NewWeightedHeuristicBiddingStrategyFromFile(config.BiddingWeightsPath)
+			if err != nil {
+				return nil, fmt.Errorf("load bidding weights: %w", err)
+			}
+		} else {
+			weighted = strategies.NewWeightedHeuristicBiddingStrategy()
+		}
+		// Override threshold if specified
+		if config.BiddingThreshold != 0 {
+			weighted.SetBiddingThreshold(config.BiddingThreshold)
 		}
 		agent.biddingStrategy = weighted
 	case "random":
@@ -250,7 +280,16 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	case "heuristic":
 		agent.gameChoiceStrategy = &HeuristicGameChoiceStrategy{}
 	case "weighted":
-		agent.gameChoiceStrategy = strategies.NewWeightedHeuristicGameChoiceStrategy()
+		// Use the same weights file as bidding if provided
+		if config.BiddingWeightsPath != "" {
+			weights, err := strategies.LoadBidWeights(config.BiddingWeightsPath)
+			if err != nil {
+				return nil, fmt.Errorf("load weights for game choice: %w", err)
+			}
+			agent.gameChoiceStrategy = strategies.NewWeightedHeuristicGameChoiceStrategyWithWeights(weights)
+		} else {
+			agent.gameChoiceStrategy = strategies.NewWeightedHeuristicGameChoiceStrategy()
+		}
 	case "random":
 		agent.gameChoiceStrategy = &RandomGameChoiceStrategy{}
 	default:
@@ -293,12 +332,6 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 }
 
 // Utility methods
-
-// SetSimulations updates the simulation count for MCTS strategy
-// Note: Currently not supported with new strategy architecture
-func (sa *SkatAgent) SetSimulations(sims int) {
-	// TODO: Add setter to MCTSCardPlayStrategy if needed
-}
 
 // GetStrategyNames returns a description of the strategies being used
 func (sa *SkatAgent) GetStrategyNames() string {
@@ -367,16 +400,35 @@ func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.Play
 	}
 
 	if playerResult.IsDeclarer {
+		// Check if this is a Zwangsspiel (all players passed)
+		isZwangsspiel := gs.IsZwangsspiel()
+
 		// Declarer metrics
 		sa.metrics.games.Add(1)
 		sa.metrics.points.Add(int64(playerResult.PlayerPoints))
 
 		if playerResult.IsWinner {
 			sa.metrics.wins.Add(1)
+			if isZwangsspiel {
+				sa.metrics.passedGamesWon.Add(1)
+			}
 		}
 
 		if playerResult.IsOverbid {
 			sa.metrics.overbid.Add(1)
+		}
+
+		// Record predicted vs actual outcome for calibration
+		sa.mu.Lock()
+		lastProb := sa.lastPredictedWinProb
+		sa.lastPredictedWinProb = 0.0 // Reset for next game
+		sa.mu.Unlock()
+
+		if lastProb > 0.0 {
+			sa.metrics.mu.Lock()
+			sa.metrics.predictedProbability = append(sa.metrics.predictedProbability, lastProb)
+			sa.metrics.actualOutcomes = append(sa.metrics.actualOutcomes, playerResult.IsWinner)
+			sa.metrics.mu.Unlock()
 		}
 
 		// Track by game type
@@ -459,22 +511,31 @@ func (sa *SkatAgent) GetMetrics() AgentMetricsSnapshot {
 		biddingRejects[k] = v
 	}
 
+	// Copy calibration data
+	predictedProb := make([]float64, len(sa.metrics.predictedProbability))
+	copy(predictedProb, sa.metrics.predictedProbability)
+	actualOutcomes := make([]bool, len(sa.metrics.actualOutcomes))
+	copy(actualOutcomes, sa.metrics.actualOutcomes)
+
 	return AgentMetricsSnapshot{
-		Wins:           sa.metrics.wins.Load(),
-		Games:          sa.metrics.games.Load(),
-		Points:         sa.metrics.points.Load(),
-		Overbid:        sa.metrics.overbid.Load(),
-		GrandGames:     sa.metrics.grandGames.Load(),
-		GrandWins:      sa.metrics.grandWins.Load(),
-		SuitGames:      sa.metrics.suitGames.Load(),
-		SuitWins:       sa.metrics.suitWins.Load(),
-		NullGames:      sa.metrics.nullGames.Load(),
-		NullWins:       sa.metrics.nullWins.Load(),
-		DefenderGames:  sa.metrics.defenderGames.Load(),
-		DefenderWins:   sa.metrics.defenderWins.Load(),
-		BiddingAccepts: biddingAccepts,
-		BiddingRejects: biddingRejects,
-		PassedGames:    sa.metrics.passedGames.Load(),
+		Wins:                 sa.metrics.wins.Load(),
+		Games:                sa.metrics.games.Load(),
+		Points:               sa.metrics.points.Load(),
+		Overbid:              sa.metrics.overbid.Load(),
+		GrandGames:           sa.metrics.grandGames.Load(),
+		GrandWins:            sa.metrics.grandWins.Load(),
+		SuitGames:            sa.metrics.suitGames.Load(),
+		SuitWins:             sa.metrics.suitWins.Load(),
+		NullGames:            sa.metrics.nullGames.Load(),
+		NullWins:             sa.metrics.nullWins.Load(),
+		DefenderGames:        sa.metrics.defenderGames.Load(),
+		DefenderWins:         sa.metrics.defenderWins.Load(),
+		BiddingAccepts:       biddingAccepts,
+		BiddingRejects:       biddingRejects,
+		PassedGames:          sa.metrics.passedGames.Load(),
+		PassedGamesWon:       sa.metrics.passedGamesWon.Load(),
+		PredictedProbability: predictedProb,
+		ActualOutcomes:       actualOutcomes,
 	}
 }
 
@@ -506,21 +567,24 @@ func (sa *SkatAgent) ResetMetrics() {
 
 // AgentMetricsSnapshot is a point-in-time snapshot of agent metrics
 type AgentMetricsSnapshot struct {
-	Wins           int64
-	Games          int64
-	Points         int64
-	Overbid        int64
-	GrandGames     int64
-	GrandWins      int64
-	SuitGames      int64
-	SuitWins       int64
-	NullGames      int64
-	NullWins       int64
-	DefenderGames  int64
-	DefenderWins   int64
-	BiddingAccepts map[int]int
-	BiddingRejects map[int]int
-	PassedGames    int64
+	Wins                 int64
+	Games                int64
+	Points               int64
+	Overbid              int64
+	GrandGames           int64
+	GrandWins            int64
+	SuitGames            int64
+	SuitWins             int64
+	NullGames            int64
+	NullWins             int64
+	DefenderGames        int64
+	DefenderWins         int64
+	BiddingAccepts       map[int]int
+	BiddingRejects       map[int]int
+	PassedGames          int64
+	PassedGamesWon       int64
+	PredictedProbability []float64
+	ActualOutcomes       []bool
 }
 
 // GetMaxBid returns the highest bid value the agent accepted during evaluation

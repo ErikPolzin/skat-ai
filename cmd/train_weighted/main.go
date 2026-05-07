@@ -65,12 +65,16 @@ func collectTrainingData(episodes int) []weighted.BiddingExample {
 	g := game.NewGame()
 	g = agent.WithAgentPlayers(g, config)
 
+	skippedOverbid := 0
+	skippedZwangsspiel := 0
+
 	for i := 0; i < episodes; i++ {
-		if (i+1)%100 == 0 {
-			fmt.Printf("  Played %d/%d games\r", i+1, episodes)
+		if (i+1)%1000 == 0 {
+			fmt.Printf("  Played %d/%d games (collected %d examples, skipped %d overbid, %d zwangsspiel)\r",
+				i+1, episodes, len(examples), skippedOverbid, skippedZwangsspiel)
 		}
 
-		// Create game and save initial hands before playing
+		// Deal cards and play
 		g = g.WithCardsDealt()
 
 		// Save initial hands before the game modifies them
@@ -86,29 +90,39 @@ func collectTrainingData(episodes int) []weighted.BiddingExample {
 		g, overbid := agent.WithAgentGameChoice(g)
 		if overbid {
 			g.NextGame()
+			skippedOverbid++
 			continue
 		}
 		g = agent.WithAgentCardPlay(g)
 
 		// Collect training examples from declarers only
+		// Skip Zwangsspiel games (where all players passed) - these don't represent real bidding decisions
 		if g.Declarer != nil && g.Phase == game.PhaseComplete {
-			declarerIdx := int(*g.Declarer)
-			results := g.PlayerResults()
-			if results != nil {
-				result := results[declarerIdx]
+			if g.IsZwangsspiel() {
+				skippedZwangsspiel++
+			} else {
+				declarerIdx := int(*g.Declarer)
+				results := g.PlayerResults()
+				if results != nil {
+					result := results[declarerIdx]
 
-				example := weighted.BiddingExample{
-					Hand:    initialHands[declarerIdx],
-					DidWin:  result.IsWinner,
-					Quality: calculateQuality(result),
+					example := weighted.BiddingExample{
+						Hand:      initialHands[declarerIdx],
+						Mode:      g.Mode,
+						TrumpSuit: g.TrumpSuit,
+						DidWin:    result.IsWinner,
+						Quality:   calculateQuality(result),
+					}
+					examples = append(examples, example)
 				}
-				examples = append(examples, example)
 			}
 		}
 		g.NextGame()
 	}
 
 	fmt.Printf("  Played %d/%d games\n", episodes, episodes)
+	fmt.Printf("  Collected: %d examples\n", len(examples))
+	fmt.Printf("  Skipped: %d overbid, %d zwangsspiel\n", skippedOverbid, skippedZwangsspiel)
 	return examples
 }
 
@@ -166,4 +180,7 @@ func printWeights(w strategies.BidWeights) {
 	fmt.Println("\nShared weights:")
 	fmt.Printf("  Matadors:      %7.3f\n", w.Matadors)
 	fmt.Printf("  TotalPoints:   %7.3f\n", w.TotalPoints)
+
+	fmt.Println("\nCalibration:")
+	fmt.Printf("  Temperature:   %7.3f\n", w.SigmoidTemperature)
 }

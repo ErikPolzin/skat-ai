@@ -42,9 +42,9 @@ type MCTSCardPlayStrategy struct {
 // NewMCTSCardPlayStrategy creates a new MCTS strategy with default parameters
 func NewMCTSCardPlayStrategy() *MCTSCardPlayStrategy {
 	return &MCTSCardPlayStrategy{
-		simulations:    500,
+		simulations:    1000,
 		explorationC:   1.41,
-		deterministicC: 10,
+		deterministicC: 50,
 	}
 }
 
@@ -161,9 +161,11 @@ func (m *MCTSCardPlayStrategy) simulate(node *MCTSNode) float64 {
 }
 
 func (m *MCTSCardPlayStrategy) backpropagate(node *MCTSNode, reward float64) {
+	currentReward := reward
 	for node != nil {
 		node.Visits++
-		node.TotalReward += reward
+		node.TotalReward += currentReward
+		currentReward = -currentReward // Flip perspective for alternating players
 		node = node.Parent
 	}
 }
@@ -392,17 +394,23 @@ func (m *MCTSCardPlayStrategy) isTrump(state *game.GameState, card game.Card) bo
 }
 
 func (m *MCTSCardPlayStrategy) evaluateTerminalState(state *game.GameState, playerID game.GamePosition) float64 {
-	declarerWon := state.DeclarerScore >= 61
+	isPlayerDeclarer := state.Declarer != nil && playerID == *state.Declarer
+	declarerPoints := float64(state.DeclarerScore)
 
-	if state.Declarer != nil && playerID == *state.Declarer {
-		if declarerWon {
-			return 1.0
-		}
-		return 0.0
-	} else {
-		if declarerWon {
-			return 0.0
-		}
-		return 1.0
+	// Normalize to [-1, 1] range centered at 61 (winning threshold)
+	// Score of 61 -> 0.0, score of 120 -> ~1.0, score of 0 -> ~-1.0
+	normalizedScore := (declarerPoints - 61.0) / 60.0
+
+	// Clamp to [-1, 1]
+	if normalizedScore > 1.0 {
+		normalizedScore = 1.0
 	}
+	if normalizedScore < -1.0 {
+		normalizedScore = -1.0
+	}
+
+	if isPlayerDeclarer {
+		return normalizedScore
+	}
+	return -normalizedScore
 }

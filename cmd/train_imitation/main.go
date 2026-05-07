@@ -17,12 +17,12 @@ import (
 func main() {
 	// Parse flags
 	datasetFile := flag.String("dataset", ".data/imitation_dataset.csv", "Path to imitation dataset")
-	epochs := flag.Int("epochs", 50, "Number of training epochs")
+	epochs := flag.Int("epochs", 20, "Number of training epochs")
 	batchSize := flag.Int("batch", 128, "Batch size")
 	lr := flag.Float64("lr", 0.001, "Learning rate")
 	l2Reg := flag.Float64("l2", 0.0001, "L2 regularization")
-	evalEvery := flag.Int("eval-every", 5, "Evaluate every N epochs")
-	evalGames := flag.Int("eval-games", 200, "Number of games per evaluation")
+	evalEvery := flag.Int("eval-every", 1, "Evaluate every N epochs")
+	evalGames := flag.Int("eval-games", 500, "Number of games per evaluation")
 	outputWeights := flag.String("output", ".data/models/imitation_cardplay.weights", "Output weights file")
 
 	flag.Parse()

@@ -9,22 +9,26 @@ import (
 
 // BiddingExample represents a single bidding training example
 type BiddingExample struct {
-	Hand    []game.Card // The player's hand
-	DidWin  bool        // Whether the player won the game
-	Quality float64     // Quality score (0-1, higher is better)
+	Hand     []game.Card    // The player's hand
+	Mode     game.GameMode  // The actual game mode played
+	TrumpSuit game.Suit     // The trump suit (for suit games)
+	DidWin   bool           // Whether the player won the game
+	Quality  float64        // Quality score (0-1, higher is better)
 }
 
-// WeightTrainer trains weights for weighted heuristic bidding using linear regression
+// WeightTrainer trains weights for weighted heuristic bidding using gradient descent
 type WeightTrainer struct {
-	learningRate float64
-	epochs       int
+	learningRate     float64
+	tempLearningRate float64 // Separate learning rate for temperature (usually smaller)
+	epochs           int
 }
 
 // NewWeightTrainer creates a new weight trainer
 func NewWeightTrainer(learningRate float64, epochs int) *WeightTrainer {
 	return &WeightTrainer{
-		learningRate: learningRate,
-		epochs:       epochs,
+		learningRate:     learningRate,
+		tempLearningRate: learningRate * 0.1, // Temperature learns slower
+		epochs:           epochs,
 	}
 }
 
@@ -113,7 +117,11 @@ func (t *WeightTrainer) trainGrandWeights(weights strategies.BidWeights, feature
 			score += weights.TotalPoints * f.TotalPoints
 
 			// Convert to probability using sigmoid
-			predicted := 1.0 / (1.0 + math.Exp(-score/50.0))
+			temperature := weights.SigmoidTemperature
+			if temperature == 0 {
+				temperature = 50.0
+			}
+			predicted := 1.0 / (1.0 + math.Exp(-score/temperature))
 
 			// Target: 1.0 if won, 0.0 if lost
 			var target float64
@@ -133,8 +141,12 @@ func (t *WeightTrainer) trainGrandWeights(weights strategies.BidWeights, feature
 			}
 
 			// Compute gradient (derivative of cross-entropy w.r.t. score)
-			// d(loss)/d(score) = (predicted - target) / 50.0
-			gradient := (predicted - target) / 50.0
+			// d(loss)/d(score) = (predicted - target) / temperature
+			gradient := (predicted - target) / temperature
+
+			// Compute gradient w.r.t. temperature
+			// d(loss)/d(temperature) = (predicted - target) * score / (temperature^2)
+			tempGradient := (predicted - target) * score / (temperature * temperature)
 
 			// Update weights (gradient descent)
 			weights.GrandBias -= t.learningRate * gradient
@@ -145,6 +157,15 @@ func (t *WeightTrainer) trainGrandWeights(weights strategies.BidWeights, feature
 			weights.GrandTotalWinners -= t.learningRate * gradient * f.GrandTotalWinners
 			weights.Matadors -= t.learningRate * gradient * f.Matadors
 			weights.TotalPoints -= t.learningRate * gradient * f.TotalPoints
+
+			// Update temperature
+			weights.SigmoidTemperature -= t.tempLearningRate * tempGradient
+			// Clamp temperature to reasonable range
+			if weights.SigmoidTemperature < 10.0 {
+				weights.SigmoidTemperature = 10.0
+			} else if weights.SigmoidTemperature > 200.0 {
+				weights.SigmoidTemperature = 200.0
+			}
 		}
 
 		if epoch%10 == 0 {
@@ -179,7 +200,11 @@ func (t *WeightTrainer) trainSuitWeights(weights strategies.BidWeights, features
 			score += weights.TotalPoints * f.TotalPoints
 
 			// Convert to probability using sigmoid
-			predicted := 1.0 / (1.0 + math.Exp(-score/50.0))
+			temperature := weights.SigmoidTemperature
+			if temperature == 0 {
+				temperature = 50.0
+			}
+			predicted := 1.0 / (1.0 + math.Exp(-score/temperature))
 
 			// Target: 1.0 if won, 0.0 if lost
 			var target float64
@@ -199,7 +224,10 @@ func (t *WeightTrainer) trainSuitWeights(weights strategies.BidWeights, features
 			}
 
 			// Compute gradient
-			gradient := (predicted - target) / 50.0
+			gradient := (predicted - target) / temperature
+
+			// Compute gradient w.r.t. temperature
+			tempGradient := (predicted - target) * score / (temperature * temperature)
 
 			// Update weights
 			weights.SuitBias -= t.learningRate * gradient
@@ -212,6 +240,15 @@ func (t *WeightTrainer) trainSuitWeights(weights strategies.BidWeights, features
 			weights.SuitAceTenPairs -= t.learningRate * gradient * f.SuitAceTenPairs
 			weights.Matadors -= t.learningRate * gradient * f.Matadors
 			weights.TotalPoints -= t.learningRate * gradient * f.TotalPoints
+
+			// Update temperature
+			weights.SigmoidTemperature -= t.tempLearningRate * tempGradient
+			// Clamp temperature to reasonable range
+			if weights.SigmoidTemperature < 10.0 {
+				weights.SigmoidTemperature = 10.0
+			} else if weights.SigmoidTemperature > 200.0 {
+				weights.SigmoidTemperature = 200.0
+			}
 		}
 
 		if epoch%10 == 0 {
@@ -232,25 +269,15 @@ func (t *WeightTrainer) extractFeatures(examples []BiddingExample) []FeatureVect
 		hand := ex.Hand
 		cards := game.Cards(hand)
 
-		// Determine best game mode (highest game value)
-		bestMode := game.ModeGrand
-		bestSuit := game.NoSuit
-		bestValue := cards.GameValue(game.ModeGrand, game.NoSuit)
-
-		for suit := game.Clubs; suit <= game.Diamonds; suit++ {
-			suitValue := cards.GameValue(game.ModeSuit, suit)
-			if suitValue > bestValue {
-				bestValue = suitValue
-				bestMode = game.ModeSuit
-				bestSuit = suit
-			}
-		}
+		// Use the actual game mode that was played
+		actualMode := ex.Mode
+		actualSuit := ex.TrumpSuit
 
 		// Extract features
 		fv := FeatureVector{
-			BestGameMode: bestMode,
-			BestSuit:     bestSuit,
-			ChosenGrand:  bestMode == game.ModeGrand,
+			BestGameMode: actualMode,
+			BestSuit:     actualSuit,
+			ChosenGrand:  actualMode == game.ModeGrand,
 			DidWin:       ex.DidWin,
 		}
 
@@ -261,19 +288,19 @@ func (t *WeightTrainer) extractFeatures(examples []BiddingExample) []FeatureVect
 		fv.GrandAceTenPairs = float64(t.countAceTenPairs(hand, game.NoSuit))
 		fv.GrandTotalWinners = fv.GrandJacks + fv.GrandAces
 
-		// Extract suit features (for best suit)
-		if bestMode == game.ModeSuit {
-			fv.SuitTrumpLength = float64(t.countTrumps(hand, bestSuit))
+		// Extract suit features (for actual suit played)
+		if actualMode == game.ModeSuit {
+			fv.SuitTrumpLength = float64(t.countTrumps(hand, actualSuit))
 			fv.SuitTrumpLengthSq = fv.SuitTrumpLength * fv.SuitTrumpLength
-			fv.SuitTopTrumps = t.boolToFloat(t.hasTopTrumps(hand, bestSuit))
-			fv.SuitSideAces = float64(t.countSideAces(hand, bestSuit))
-			fv.SuitVoidSuits = float64(t.countVoidSuits(hand, bestSuit))
-			fv.SuitShortSuits = float64(t.countShortSuits(hand, bestSuit))
-			fv.SuitAceTenPairs = float64(t.countAceTenPairs(hand, bestSuit))
+			fv.SuitTopTrumps = t.boolToFloat(t.hasTopTrumps(hand, actualSuit))
+			fv.SuitSideAces = float64(t.countSideAces(hand, actualSuit))
+			fv.SuitVoidSuits = float64(t.countVoidSuits(hand, actualSuit))
+			fv.SuitShortSuits = float64(t.countShortSuits(hand, actualSuit))
+			fv.SuitAceTenPairs = float64(t.countAceTenPairs(hand, actualSuit))
 		}
 
 		// Shared features
-		fv.Matadors = float64(t.countMatadors(cards, bestMode, bestSuit))
+		fv.Matadors = float64(t.countMatadors(cards, actualMode, actualSuit))
 		fv.TotalPoints = float64(t.countPoints(hand))
 
 		features = append(features, fv)

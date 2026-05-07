@@ -1,11 +1,28 @@
 package strategies
 
 import (
+	"math"
 	"skat/game"
 )
 
 // HeuristicBiddingStrategy uses hand strength heuristics to make bidding decisions
-type HeuristicBiddingStrategy struct{}
+type HeuristicBiddingStrategy struct {
+	threshold float64 // Probability threshold for bidding (0-1), default 0.5
+}
+
+// NewHeuristicBiddingStrategy creates a new heuristic bidding strategy with default threshold
+func NewHeuristicBiddingStrategy() *HeuristicBiddingStrategy {
+	return &HeuristicBiddingStrategy{
+		threshold: 0.45, // Default 45% confidence threshold - balanced bidding
+	}
+}
+
+// NewHeuristicBiddingStrategyWithThreshold creates a strategy with custom threshold
+func NewHeuristicBiddingStrategyWithThreshold(threshold float64) *HeuristicBiddingStrategy {
+	return &HeuristicBiddingStrategy{
+		threshold: threshold,
+	}
+}
 
 func (h *HeuristicBiddingStrategy) GetName() string {
 	return "HeuristicBidding"
@@ -29,26 +46,21 @@ func (h *HeuristicBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Car
 	// Get the game value for our chosen game
 	gameValue := cards.GameValue(mode, suit)
 
-	safetyMargin := 1.05 // Just 5% safety margin
-
-	// Additionally, evaluate the hand strength using heuristics
-	// GameValue alone is unreliable (high "without" matadors can inflate value)
-	var handScore float64
+	// Evaluate the hand strength using normalized heuristics (0-1 probability)
+	var handProbability float64
 	if mode == game.ModeGrand {
-		handScore = gameChoiceStrategy.evaluateGrandStrength(cards)
+		handProbability = gameChoiceStrategy.evaluateGrandStrength(cards)
 	} else {
-		handScore = gameChoiceStrategy.evaluateSuitStrength(cards, suit)
+		handProbability = gameChoiceStrategy.evaluateSuitStrength(cards, suit)
 	}
 
 	// Bid only if:
-	// 1. Game value meets safety margin requirement, AND
-	// 2. Hand strength score is positive (indicating viable hand), AND
-	// 3. Hand strength exceeds minimum threshold for confident bidding
-	meetsValue := float64(gameValue) >= float64(nextBid)*safetyMargin
-	meetsStrength := handScore > 0
-	meetsMinimum := handScore > 110.0 // Balanced threshold for realistic bidding
+	// 1. Game value meets requirement (no safety margin needed with probability threshold), AND
+	// 2. Hand probability exceeds configured threshold (default 0.5 = 50% confidence)
+	meetsValue := float64(gameValue) >= float64(nextBid)
+	meetsThreshold := handProbability >= h.threshold
 
-	return meetsValue && meetsStrength && meetsMinimum
+	return meetsValue && meetsThreshold
 }
 
 // HeuristicGameChoiceStrategy chooses game based on hand strength heuristics
@@ -61,12 +73,12 @@ func (h *HeuristicGameChoiceStrategy) GetName() string {
 func (h *HeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int) (game.GameMode, game.Suit) {
 	cards := game.Cards(hand)
 
-	// Evaluate each possible game with refined scoring
+	// Evaluate each possible game with normalized probability scoring
 	type gameOption struct {
 		mode  game.GameMode
 		suit  game.Suit
 		value int
-		score float64 // refined heuristic score
+		score float64 // normalized probability (0-1) of winning this game
 	}
 
 	var options []gameOption
@@ -112,7 +124,7 @@ func (h *HeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int)
 		return bestMode, bestSuit
 	}
 
-	// Select game with best heuristic score
+	// Select game with highest win probability
 	best := options[0]
 	for _, opt := range options[1:] {
 		if opt.score > best.score {
@@ -176,6 +188,7 @@ func (h *HeuristicGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode g
 }
 
 // evaluateGrandStrength scores a hand for playing Grand
+// Returns normalized probability (0-1) of winning the Grand game
 func (h *HeuristicGameChoiceStrategy) evaluateGrandStrength(cards game.Cards) float64 {
 	score := 0.0
 
@@ -201,71 +214,74 @@ func (h *HeuristicGameChoiceStrategy) evaluateGrandStrength(cards game.Cards) fl
 	// Grand requires good trump control
 	// With fewer than 3 jacks, Grand is very difficult
 	if jackCount < 3 {
-		return -150.0 // Massive penalty - Grand nearly impossible with <3 jacks
-	}
-	// 3 jacks is viable for Grand with good side suits
-	// Don't add extra penalty - let the evaluation handle it
+		score = -150.0 // Massive penalty - Grand nearly impossible with <3 jacks
+	} else {
+		// 3 jacks is viable for Grand with good side suits
+		// Base score starts low - Grand must prove itself
+		score = 0.0
 
-	// Base score starts low - Grand must prove itself
-	score = 0.0
+		// Bonus for jacks - very high value since they're critical for Grand
+		score += float64(jackCount * 30) // Increased from 25
 
-	// Bonus for jacks - very high value since they're critical for Grand
-	score += float64(jackCount * 30) // Increased from 25
-
-	// Count Aces and estimate tricks
-	aceCount := 0
-	tenCount := 0
-	for _, card := range cards {
-		if card.Rank == game.Ace {
-			aceCount++
-			score += 30 // Increased from 25
-		}
-		if card.Rank == game.Ten {
-			tenCount++
-		}
-	}
-
-	// Grand requires solid winners - 6+ jacks+aces
-	totalWinners := jackCount + aceCount
-	if totalWinners < 6 {
-		score -= float64((6 - totalWinners) * 15) // Further reduced to allow more Grands
-	} else if totalWinners == 7 {
-		score += 60 // Excellent
-	} else if totalWinners == 8 {
-		score += 100 // Perfect Grand hand
-	}
-
-	// Bonus for having Ace-10 combinations (protected tens)
-	aceTenPairs := 0
-	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
-		hasAce, hasTen := false, false
+		// Count Aces and estimate tricks
+		aceCount := 0
+		tenCount := 0
 		for _, card := range cards {
-			if card.Suit == suit {
-				if card.Rank == game.Ace {
-					hasAce = true
-				}
-				if card.Rank == game.Ten {
-					hasTen = true
-				}
+			if card.Rank == game.Ace {
+				aceCount++
+				score += 30 // Increased from 25
+			}
+			if card.Rank == game.Ten {
+				tenCount++
 			}
 		}
-		if hasAce && hasTen {
-			score += 20
-			aceTenPairs++
+
+		// Grand requires solid winners - 6+ jacks+aces
+		totalWinners := jackCount + aceCount
+		if totalWinners < 6 {
+			score -= float64((6 - totalWinners) * 15) // Further reduced to allow more Grands
+		} else if totalWinners == 7 {
+			score += 60 // Excellent
+		} else if totalWinners == 8 {
+			score += 100 // Perfect Grand hand
+		}
+
+		// Bonus for having Ace-10 combinations (protected tens)
+		aceTenPairs := 0
+		for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+			hasAce, hasTen := false, false
+			for _, card := range cards {
+				if card.Suit == suit {
+					if card.Rank == game.Ace {
+						hasAce = true
+					}
+					if card.Rank == game.Ten {
+						hasTen = true
+					}
+				}
+			}
+			if hasAce && hasTen {
+				score += 20
+				aceTenPairs++
+			}
+		}
+
+		// Grand needs balanced distribution
+		if aceTenPairs >= 3 {
+			score += 30 // Excellent for Grand
+		} else if aceTenPairs < 2 {
+			score -= 20 // Risky - unprotected tens or missing aces
 		}
 	}
 
-	// Grand needs balanced distribution
-	if aceTenPairs >= 3 {
-		score += 30 // Excellent for Grand
-	} else if aceTenPairs < 2 {
-		score -= 20 // Risky - unprotected tens or missing aces
-	}
-
-	return score
+	// Normalize to 0-1 probability using sigmoid
+	// Typical Grand scores range from -150 (impossible) to +200 (excellent)
+	// Center sigmoid at score=50 (reasonable Grand), temperature=100 for calibration
+	return sigmoid(score, 50.0, 100.0)
 }
 
 // evaluateSuitStrength scores a hand for playing a specific suit
+// Returns normalized probability (0-1) of winning the suit game
 func (h *HeuristicGameChoiceStrategy) evaluateSuitStrength(cards game.Cards, trumpSuit game.Suit) float64 {
 	score := 0.0
 
@@ -351,7 +367,10 @@ func (h *HeuristicGameChoiceStrategy) evaluateSuitStrength(cards game.Cards, tru
 	// Bonus for side suit aces (tricks outside trumps)
 	score += float64(sideAces * 5)
 
-	return score
+	// Normalize to 0-1 probability using sigmoid
+	// Typical suit scores range from -100 (weak) to +200 (excellent)
+	// Center sigmoid at score=60 (reasonable suit game), temperature=100 for calibration
+	return sigmoid(score, 60.0, 100.0)
 }
 
 // evaluateDiscardScore scores how good a card is to discard (higher = better to discard)
@@ -1047,4 +1066,11 @@ func getDefenderPartner(gs *game.GameState) game.GamePosition {
 		}
 	}
 	return game.Dealer
+}
+
+// sigmoid converts a raw score to a probability using a sigmoid function
+// center: the score value that maps to 0.5 probability
+// temperature: controls the steepness (higher = more gradual)
+func sigmoid(score, center, temperature float64) float64 {
+	return 1.0 / (1.0 + math.Exp(-(score-center)/temperature))
 }

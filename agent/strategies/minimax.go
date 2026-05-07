@@ -276,11 +276,34 @@ func (m *PerfectInfoMinimaxStrategy) evaluate(state *game.GameState) float64 {
 		return 0.0
 	}
 
+	declarer := *state.Declarer
+
+	// Material score (points already won + projected points)
+	materialScore := m.evaluateMaterial(state, declarer)
+
+	// Positional score (hand strength, trick control, etc.)
+	positionalScore := m.evaluatePosition(state, declarer)
+
+	// Weighted combination
+	// Material dominates endgame, position matters in opening/midgame
+	tricksRemaining := 0
+	for p := 0; p < 3; p++ {
+		tricksRemaining += len(state.Players[p].Hand)
+	}
+	tricksRemaining = tricksRemaining / 3 // Total tricks remaining
+
+	materialWeight := 1.0
+	positionalWeight := float64(tricksRemaining) / 10.0 // Decreases as game progresses
+
+	return materialWeight*materialScore + positionalWeight*positionalScore
+}
+
+// evaluateMaterial calculates material advantage (points)
+func (m *PerfectInfoMinimaxStrategy) evaluateMaterial(state *game.GameState, declarer game.GamePosition) float64 {
 	// Start with current score
 	score := float64(state.DeclarerScore)
 
 	// Add remaining card values in hands
-	declarer := *state.Declarer
 	for p := 0; p < 3; p++ {
 		pos := game.GamePosition(p)
 		for _, card := range state.Players[p].Hand {
@@ -293,16 +316,15 @@ func (m *PerfectInfoMinimaxStrategy) evaluate(state *game.GameState) float64 {
 		}
 	}
 
-	// Add cards in the current trick (not yet scored)
-	// But we need to determine WHO would win this trick
+	// Add cards in the current trick
 	if len(state.Trick) > 0 {
 		trickValue := 0
 		for _, card := range state.Trick {
 			trickValue += card.Value()
 		}
 
-		// Find the winning card so far using the same logic as PlayCard
-		winner := game.Dealer // Relative position (0, 1, or 2 within the trick)
+		// Find the winning card so far
+		winner := game.Dealer
 		winCard := state.Trick[0]
 		for i := game.Listener; i < game.GamePosition(len(state.Trick)); i++ {
 			if state.CardBeats(state.Trick[i], winCard) {
@@ -311,14 +333,148 @@ func (m *PerfectInfoMinimaxStrategy) evaluate(state *game.GameState) float64 {
 			}
 		}
 
-		// Convert relative position to absolute player position
 		actualWinner := (state.TrickStarter + winner) % 3
 
-		// Add trick value based on who's currently winning
 		if actualWinner == declarer {
 			score += float64(trickValue)
 		} else {
 			score -= float64(trickValue)
+		}
+	}
+
+	return score
+}
+
+// evaluatePosition calculates positional advantage (hand strength, control)
+func (m *PerfectInfoMinimaxStrategy) evaluatePosition(state *game.GameState, declarer game.GamePosition) float64 {
+	score := 0.0
+
+	// Evaluate trump control
+	trumpControl := m.evaluateTrumpControl(state, declarer)
+	score += trumpControl * 20.0 // Trump control is very important
+
+	// Evaluate high card control (Aces and Tens)
+	highCardControl := m.evaluateHighCardControl(state, declarer)
+	score += highCardControl * 15.0
+
+	// Evaluate suit length advantages
+	suitControl := m.evaluateSuitControl(state, declarer)
+	score += suitControl * 10.0
+
+	return score
+}
+
+// evaluateTrumpControl returns -1 to +1 (negative favors defenders)
+func (m *PerfectInfoMinimaxStrategy) evaluateTrumpControl(state *game.GameState, declarer game.GamePosition) float64 {
+	declarerTrumps := 0
+	defenderTrumps := 0
+
+	for p := 0; p < 3; p++ {
+		pos := game.GamePosition(p)
+		for _, card := range state.Players[p].Hand {
+			isTrump := card.Rank == game.Jack || (state.Mode == game.ModeSuit && card.Suit == state.TrumpSuit)
+			if isTrump {
+				if pos == declarer {
+					declarerTrumps++
+					// Weight by card strength (Jacks more valuable)
+					if card.Rank == game.Jack {
+						if card.Suit == game.Clubs {
+							declarerTrumps += 2 // J♣ is strongest
+						} else if card.Suit == game.Spades {
+							declarerTrumps += 1
+						}
+					}
+				} else {
+					defenderTrumps++
+					if card.Rank == game.Jack {
+						if card.Suit == game.Clubs {
+							defenderTrumps += 2
+						} else if card.Suit == game.Spades {
+							defenderTrumps += 1
+						}
+					}
+				}
+			}
+		}
+	}
+
+	totalTrumps := declarerTrumps + defenderTrumps
+	if totalTrumps == 0 {
+		return 0.0
+	}
+
+	// Normalize to -1..+1 range
+	return (float64(declarerTrumps) - float64(defenderTrumps)) / float64(totalTrumps+4)
+}
+
+// evaluateHighCardControl returns -1 to +1 (negative favors defenders)
+func (m *PerfectInfoMinimaxStrategy) evaluateHighCardControl(state *game.GameState, declarer game.GamePosition) float64 {
+	declarerHighCards := 0
+	defenderHighCards := 0
+
+	for p := 0; p < 3; p++ {
+		pos := game.GamePosition(p)
+		for _, card := range state.Players[p].Hand {
+			// Count Aces and Tens (high-value cards)
+			if card.Rank == game.Ace {
+				if pos == declarer {
+					declarerHighCards += 2
+				} else {
+					defenderHighCards += 2
+				}
+			} else if card.Rank == game.Ten {
+				if pos == declarer {
+					declarerHighCards += 1
+				} else {
+					defenderHighCards += 1
+				}
+			}
+		}
+	}
+
+	total := declarerHighCards + defenderHighCards
+	if total == 0 {
+		return 0.0
+	}
+
+	return (float64(declarerHighCards) - float64(defenderHighCards)) / float64(total)
+}
+
+// evaluateSuitControl returns -1 to +1 (negative favors defenders)
+func (m *PerfectInfoMinimaxStrategy) evaluateSuitControl(state *game.GameState, declarer game.GamePosition) float64 {
+	score := 0.0
+
+	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+		declarerCards := 0
+		defenderCards := 0
+
+		for p := 0; p < 3; p++ {
+			pos := game.GamePosition(p)
+			for _, card := range state.Players[p].Hand {
+				if card.Suit == suit && card.Rank != game.Jack {
+					if pos == declarer {
+						declarerCards++
+					} else {
+						defenderCards++
+					}
+				}
+			}
+		}
+
+		// Long suits are valuable (can force opponents, set up tricks)
+		// For declarer: long suits good for control
+		// For defenders: long suits good for forcing declarer to use trumps
+		if declarerCards >= 3 {
+			score += 0.2 // Declarer has length advantage
+		}
+		if defenderCards >= 4 {
+			score -= 0.3 // Defenders have strong suit to pressure declarer
+		}
+
+		// Voids are also valuable (can trump in)
+		if declarerCards == 0 && state.Mode == game.ModeSuit {
+			// Declarer void in side suit = can trump
+			score += 0.3
 		}
 	}
 

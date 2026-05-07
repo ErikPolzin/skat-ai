@@ -7,62 +7,87 @@ import (
 	"skat/game"
 )
 
-type BiddingConfiguration int
+type BiddingMode int
+type PlayingMode int
 
 const (
-	FiftyFiftySplit BiddingConfiguration = iota
-	ThreeWay
+	// Bidding modes
+	BiddingThreeTest BiddingMode = iota // All three test agents bid
+	BiddingTwoVsOne                     // Two baseline agents vs one test agent bid
+	BiddingThreeWay                     // Three different agents bid
+)
+
+const (
+	// Playing modes (how agents are assigned after bidding)
+	PlayingFiftyFifty PlayingMode = iota // Alternate declarer between test and baseline
+	PlayingAsIs                           // Keep agents as-is from bidding
 )
 
 // AgentConfig specifies how agents should be positioned during a game
 type AgentConfig struct {
-	// For FiftyFiftySplit mode
+	// For test vs baseline modes
 	TestAgent     *SkatAgent
 	BaselineAgent *SkatAgent
 
-	// For ThreeWay mode
+	// For three-way mode
 	Agent1 *SkatAgent
 	Agent2 *SkatAgent
 	Agent3 *SkatAgent
 
-	// Configuration mode
-	Mode BiddingConfiguration
+	// Configuration modes
+	Bidding BiddingMode
+	Playing PlayingMode
 }
 
 // NewFiftyFiftySplitConfig creates a config for 50/50 declarer/defender split
+// All three test agents bid, then alternate who becomes declarer
 func NewFiftyFiftySplitConfig(testAgent, baselineAgent *SkatAgent) AgentConfig {
 	return AgentConfig{
 		TestAgent:     testAgent,
 		BaselineAgent: baselineAgent,
-		Mode:          FiftyFiftySplit,
+		Bidding:       BiddingThreeTest,
+		Playing:       PlayingFiftyFifty,
+	}
+}
+
+// NewTwoVsOneConfig creates a config for 2 baseline agents vs 1 test agent
+// Test agent competes in bidding against two baseline agents
+func NewTwoVsOneConfig(testAgent, baselineAgent *SkatAgent) AgentConfig {
+	return AgentConfig{
+		TestAgent:     testAgent,
+		BaselineAgent: baselineAgent,
+		Bidding:       BiddingTwoVsOne,
+		Playing:       PlayingAsIs,
 	}
 }
 
 // NewThreeWayConfig creates a config for three different agents
 func NewThreeWayConfig(agent1, agent2, agent3 *SkatAgent) AgentConfig {
 	return AgentConfig{
-		Agent1: agent1,
-		Agent2: agent2,
-		Agent3: agent3,
-		Mode:   ThreeWay,
+		Agent1:  agent1,
+		Agent2:  agent2,
+		Agent3:  agent3,
+		Bidding: BiddingThreeWay,
+		Playing: PlayingAsIs,
 	}
 }
 
 // CloneAll creates a new AgentConfig with all agents cloned
 func (c AgentConfig) CloneAll() AgentConfig {
 	cloned := AgentConfig{
-		Mode: c.Mode,
+		Bidding: c.Bidding,
+		Playing: c.Playing,
 	}
 
-	switch c.Mode {
-	case FiftyFiftySplit:
+	switch c.Bidding {
+	case BiddingThreeTest, BiddingTwoVsOne:
 		if c.TestAgent != nil {
 			cloned.TestAgent = c.TestAgent.Clone()
 		}
 		if c.BaselineAgent != nil {
 			cloned.BaselineAgent = c.BaselineAgent.Clone()
 		}
-	case ThreeWay:
+	case BiddingThreeWay:
 		if c.Agent1 != nil {
 			cloned.Agent1 = c.Agent1.Clone()
 		}
@@ -79,15 +104,15 @@ func (c AgentConfig) CloneAll() AgentConfig {
 
 // EnableMetrics enables metrics collection on all agents in the config
 func (c AgentConfig) EnableMetrics() {
-	switch c.Mode {
-	case FiftyFiftySplit:
+	switch c.Bidding {
+	case BiddingThreeTest, BiddingTwoVsOne:
 		if c.TestAgent != nil {
 			c.TestAgent.EnableMetrics()
 		}
 		if c.BaselineAgent != nil {
 			c.BaselineAgent.EnableMetrics()
 		}
-	case ThreeWay:
+	case BiddingThreeWay:
 		if c.Agent1 != nil {
 			c.Agent1.EnableMetrics()
 		}
@@ -102,15 +127,15 @@ func (c AgentConfig) EnableMetrics() {
 
 // MergeMetrics merges metrics from another config into this config
 func (c AgentConfig) MergeMetrics(other AgentConfig) {
-	switch c.Mode {
-	case FiftyFiftySplit:
+	switch c.Bidding {
+	case BiddingThreeTest, BiddingTwoVsOne:
 		if c.TestAgent != nil && other.TestAgent != nil {
 			c.TestAgent.MergeMetrics(other.TestAgent.GetMetrics())
 		}
 		if c.BaselineAgent != nil && other.BaselineAgent != nil {
 			c.BaselineAgent.MergeMetrics(other.BaselineAgent.GetMetrics())
 		}
-	case ThreeWay:
+	case BiddingThreeWay:
 		if c.Agent1 != nil && other.Agent1 != nil {
 			c.Agent1.MergeMetrics(other.Agent1.GetMetrics())
 		}
@@ -137,13 +162,18 @@ func WithAgentPlayers(gs *game.GameState, config AgentConfig) *game.GameState {
 	// Initialize agents array based on configuration
 	agents := make([]*SkatAgent, 3)
 
-	switch config.Mode {
-	case FiftyFiftySplit:
-		// All three test agents bid (no baseline during bidding)
+	switch config.Bidding {
+	case BiddingThreeTest:
+		// All three test agents bid
 		agents[0] = config.TestAgent
 		agents[1] = config.TestAgent
 		agents[2] = config.TestAgent
-	case ThreeWay:
+	case BiddingTwoVsOne:
+		// One test agent vs two baseline agents
+		agents[0] = config.TestAgent
+		agents[1] = config.BaselineAgent
+		agents[2] = config.BaselineAgent
+	case BiddingThreeWay:
 		// Three different agents
 		agents[0] = config.Agent1
 		agents[1] = config.Agent2
@@ -177,14 +207,14 @@ func WithAgentBidding(gs *game.GameState, config AgentConfig) *game.GameState {
 			panic(fmt.Sprintf("Bid error: %v", err))
 		}
 	}
-	// After bidding, set up agents for cardplay based on configuration
+	// After bidding, set up agents for cardplay based on playing mode
 	declarerPos := *gs.Declarer
 	declarer := gs.GetPlayerByPosition(declarerPos)
 	defender1 := gs.GetPlayerByPosition((declarerPos + 1) % 3)
 	defender2 := gs.GetPlayerByPosition((declarerPos + 2) % 3)
 
-	switch config.Mode {
-	case FiftyFiftySplit:
+	switch config.Playing {
+	case PlayingFiftyFifty:
 		// Alternate based on gameNum: even games = test as declarer, odd games = baseline as declarer
 		if gs.GameNumber%2 == 0 {
 			// Want test agent as declarer - fill defenders with baseline
@@ -197,8 +227,8 @@ func WithAgentBidding(gs *game.GameState, config AgentConfig) *game.GameState {
 			SetAgentForPlayer(defender1, config.TestAgent)
 			SetAgentForPlayer(defender2, config.TestAgent.CachedClone())
 		}
-	case ThreeWay:
-		// No repositioning needed - agents stay as they are
+	case PlayingAsIs:
+		// No repositioning needed - agents stay as they are from bidding
 	}
 	return gs
 }
@@ -291,13 +321,16 @@ func PlayGameWithMode(gs *game.GameState, config AgentConfig, declarerHand game.
 func recordGameResults(g *game.GameState) {
 	// Check if all players passed (Zwangspiel - forced game)
 	// In Skat, when all pass, listener is forced to play at bid 18
-	if g.SpeakerPassed && g.ListenerPassed && g.DealerPassed {
+	allPassed := g.SpeakerPassed && g.ListenerPassed && g.DealerPassed
 
+	if allPassed {
 		// Record passed game (Zwangspiel) for all agents
 		for _, player := range g.Players {
 			if player != nil && player.IsAgent {
 				agent := GetAgentForPlayerID(player.ID)
-				agent.RecordPassedGame()
+				if agent != nil {
+					agent.RecordPassedGame()
+				}
 			}
 		}
 		// Still record the actual game result since listener was forced to play
@@ -306,7 +339,9 @@ func recordGameResults(g *game.GameState) {
 			if playerResults != nil {
 				for _, r := range playerResults {
 					agent := GetAgentForPlayerID(r.PlayerID)
-					agent.RecordGameResult(g, r)
+					if agent != nil {
+						agent.RecordGameResult(g, r)
+					}
 				}
 			}
 		}

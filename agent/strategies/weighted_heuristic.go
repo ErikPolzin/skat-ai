@@ -49,28 +49,28 @@ type BidWeights struct {
 func DefaultBidWeights() BidWeights {
 	return BidWeights{
 		// Grand weights
-		GrandJacks:        12.994,
-		GrandAces:         18.190,
-		GrandTens:         4.933,
-		GrandAceTenPairs:  19.986,
-		GrandTotalWinners: 16.183,
+		GrandJacks:        13.25,
+		GrandAces:         18.37,
+		GrandTens:         5.11,
+		GrandAceTenPairs:  20.03,
+		GrandTotalWinners: 16.62,
 
 		// Suit weights
-		SuitTrumpLength:   2.488,
-		SuitTrumpLengthSq: 1.544,
-		SuitTopTrumps:     14.903,
-		SuitSideAces:      11.624,
-		SuitVoidSuits:     15.143,
-		SuitShortSuits:    3.869,
-		SuitAceTenPairs:   15.600,
+		SuitTrumpLength:   4.95,
+		SuitTrumpLengthSq: 12.31,
+		SuitTopTrumps:     15.37,
+		SuitSideAces:      12.15,
+		SuitVoidSuits:     15.22,
+		SuitShortSuits:    5.07,
+		SuitAceTenPairs:   15.72,
 
 		// Shared
-		Matadors:    2.307,
-		TotalPoints: -1.124,
+		Matadors:    2.72,
+		TotalPoints: -0.92,
 
 		// Bias
-		GrandBias: -20.056,
-		SuitBias:  -1.096,
+		GrandBias: -19.91,
+		SuitBias:  -1.16,
 
 		// Sigmoid temperature (calibrated for accurate probability estimates)
 		SigmoidTemperature: 100.009,
@@ -86,10 +86,10 @@ func NewWeightedHeuristicBiddingStrategy() *WeightedHeuristicBiddingStrategy {
 }
 
 // NewWeightedHeuristicBiddingStrategyWithWeights creates strategy with custom weights
-func NewWeightedHeuristicBiddingStrategyWithWeights(weights BidWeights, threshold float64) *WeightedHeuristicBiddingStrategy {
+func NewWeightedHeuristicBiddingStrategyWithWeights(weights BidWeights) *WeightedHeuristicBiddingStrategy {
 	return &WeightedHeuristicBiddingStrategy{
 		weights:          weights,
-		biddingThreshold: threshold,
+		biddingThreshold: 0.70,
 	}
 }
 

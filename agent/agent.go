@@ -385,23 +385,19 @@ func (sa *SkatAgent) EnableMetrics() {
 	}
 }
 
-// RecordPassedGame records when all players passed (no one bid)
-func (sa *SkatAgent) RecordPassedGame() {
-	if sa.metrics == nil {
-		return
-	}
-	sa.metrics.passedGames.Add(1)
-}
-
 // RecordGameResult records the result of a game for this agent (declarer or defender)
 func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.PlayerResultState) {
 	if sa.metrics == nil {
 		return
 	}
 
+	// Check if this is a Zwangsspiel (all players passed)
+	isZwangsspiel := gs.IsZwangsspiel()
+	if isZwangsspiel {
+		sa.metrics.passedGames.Add(1)
+	}
+
 	if playerResult.IsDeclarer {
-		// Check if this is a Zwangsspiel (all players passed)
-		isZwangsspiel := gs.IsZwangsspiel()
 
 		// Declarer metrics
 		sa.metrics.games.Add(1)

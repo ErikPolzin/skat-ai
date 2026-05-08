@@ -93,28 +93,29 @@ func collectTrainingData(episodes int) []weighted.BiddingExample {
 			skippedOverbid++
 			continue
 		}
+		if g.IsZwangsspiel() {
+			g.NextGame()
+			skippedZwangsspiel++
+			continue
+		}
 		g = agent.WithAgentCardPlay(g)
 
 		// Collect training examples from declarers only
 		// Skip Zwangsspiel games (where all players passed) - these don't represent real bidding decisions
 		if g.Declarer != nil && g.Phase == game.PhaseComplete {
-			if g.IsZwangsspiel() {
-				skippedZwangsspiel++
-			} else {
-				declarerIdx := int(*g.Declarer)
-				results := g.PlayerResults()
-				if results != nil {
-					result := results[declarerIdx]
+			declarerIdx := int(*g.Declarer)
+			results := g.PlayerResults()
+			if results != nil {
+				result := results[declarerIdx]
 
-					example := weighted.BiddingExample{
-						Hand:      initialHands[declarerIdx],
-						Mode:      g.Mode,
-						TrumpSuit: g.TrumpSuit,
-						DidWin:    result.IsWinner,
-						Quality:   calculateQuality(result),
-					}
-					examples = append(examples, example)
+				example := weighted.BiddingExample{
+					Hand:      initialHands[declarerIdx],
+					Mode:      g.Mode,
+					TrumpSuit: g.TrumpSuit,
+					DidWin:    result.IsWinner,
+					Quality:   calculateQuality(result),
 				}
+				examples = append(examples, example)
 			}
 		}
 		g.NextGame()

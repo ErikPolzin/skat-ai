@@ -20,7 +20,7 @@ const (
 const (
 	// Playing modes (how agents are assigned after bidding)
 	PlayingFiftyFifty PlayingMode = iota // Alternate declarer between test and baseline
-	PlayingAsIs                           // Keep agents as-is from bidding
+	PlayingAsIs                          // Keep agents as-is from bidding
 )
 
 // AgentConfig specifies how agents should be positioned during a game
@@ -319,43 +319,19 @@ func PlayGameWithMode(gs *game.GameState, config AgentConfig, declarerHand game.
 }
 
 func recordGameResults(g *game.GameState) {
-	// Check if all players passed (Zwangspiel - forced game)
-	// In Skat, when all pass, listener is forced to play at bid 18
-	allPassed := g.SpeakerPassed && g.ListenerPassed && g.DealerPassed
-
-	if allPassed {
-		// Record passed game (Zwangspiel) for all agents
-		for _, player := range g.Players {
-			if player != nil && player.IsAgent {
-				agent := GetAgentForPlayerID(player.ID)
-				if agent != nil {
-					agent.RecordPassedGame()
-				}
-			}
-		}
-		// Still record the actual game result since listener was forced to play
-		if g.Declarer != nil {
-			playerResults := g.PlayerResults()
-			if playerResults != nil {
-				for _, r := range playerResults {
-					agent := GetAgentForPlayerID(r.PlayerID)
-					if agent != nil {
-						agent.RecordGameResult(g, r)
-					}
-				}
-			}
-		}
-		return
-	}
-
-	// Record normal game results if agents have them enabled
 	if g.Declarer != nil {
 		playerResults := g.PlayerResults()
 		if playerResults != nil {
 			for _, r := range playerResults {
 				agent := GetAgentForPlayerID(r.PlayerID)
-				agent.RecordGameResult(g, r)
+				if agent != nil {
+					agent.RecordGameResult(g, r)
+				}
 			}
+		} else {
+			panic("cannot record results, no results")
 		}
+	} else {
+		panic("cannot record results, no declarer")
 	}
 }

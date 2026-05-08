@@ -56,7 +56,7 @@ func main() {
 		},
 	}
 
-	strategy := strategies.NewWeightedHeuristicBiddingStrategyWithWeights(weights, 0.70)
+	strategy := strategies.NewWeightedHeuristicBiddingStrategyWithWeights(weights)
 
 	// Test each hand
 	for _, th := range testHands {

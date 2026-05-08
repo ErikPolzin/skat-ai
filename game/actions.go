@@ -131,6 +131,7 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 	}
 
 	bidValue := gs.BidValue
+	var declarer *GamePosition
 
 	if !accept {
 		// Player passes
@@ -139,98 +140,89 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 			// Speaker passes in Phase 1 - Listener wins Phase 1
 			gs.SpeakerPassed = true
 			// Move to Phase 2: Dealer now sets the bid value
-			gs.CurrentPlayer = Dealer
+			if !gs.DealerPassed {
+				gs.CurrentPlayer = Dealer
+			} else if !gs.ListenerPassed {
+				gs.CurrentPlayer = Listener
+			}
 		case Listener:
 			// Listener passes
 			gs.ListenerPassed = true
-			if !gs.SpeakerPassed {
+			if !gs.DealerPassed {
 				// Phase 1: Listener passed, Speaker wins Phase 1
 				// Move to Phase 2: Dealer now sets the bid value
 				gs.CurrentPlayer = Dealer
+			} else if !gs.SpeakerPassed {
+				gs.CurrentPlayer = Speaker // Not sure if this can even happen
 			}
 			// Both Speaker and Listener passed - bidding will end after pass count check
 		case Dealer:
 			// Dealer passes in Phase 2
 			gs.DealerPassed = true
 			// The Phase 1 winner wins overall - bidding will end after pass count check
+			if !gs.ListenerPassed {
+				gs.CurrentPlayer = Listener
+			} else if !gs.SpeakerPassed {
+				gs.CurrentPlayer = Speaker
+			}
 		}
 	} else {
+		nextBidValue := gs.getNextBidValue()
+		// This is a sanity check if the bid goes too high
+		if nextBidValue == 0 {
+			gs.SpeakerPassed = true
+			gs.ListenerPassed = true
+			gs.DealerPassed = true
+		}
 		// Player accepts or raises
 		switch gs.CurrentPlayer {
 		case Speaker:
 			if !gs.ListenerPassed {
 				// Phase 1: Speaker is bidding against Listener
 				// Speaker names a value (either first bid or raise after Listener held)
-				gs.BidValue = gs.getNextBidValue()
-				if gs.BidValue == 0 {
-					// No higher bid available - force pass
-					gs.SpeakerPassed = true
-				}
+				gs.BidValue = nextBidValue
 				gs.CurrentPlayer = Listener
-			} else {
+			} else if !gs.DealerPassed {
 				// Phase 2: Speaker responds to Dealer by holding
 				// Speaker holds, turn back to Dealer who must raise
 				gs.CurrentPlayer = Dealer
+			} else {
+				declarer = &gs.CurrentPlayer
 			}
 		case Listener:
 			if !gs.SpeakerPassed {
 				// Phase 1: Listener responds to Speaker by holding
 				// Listener holds, turn back to Speaker who must raise
 				gs.CurrentPlayer = Speaker
-			} else {
+			} else if !gs.DealerPassed {
 				// Phase 2: Listener responds to Dealer by holding
 				// Listener holds, turn back to Dealer who must raise
 				gs.CurrentPlayer = Dealer
+			} else {
+				declarer = &gs.CurrentPlayer
 			}
 		case Dealer:
 			// Phase 2: Dealer bids (names a value) against the Phase 1 winner
-			gs.BidValue = gs.getNextBidValue()
-			if gs.BidValue == 0 {
-				// No higher bid available - force pass
-				gs.DealerPassed = true
-			}
+			gs.BidValue = nextBidValue
 			// Turn passes to Phase 1 winner to respond (hold or pass)
 			if !gs.ListenerPassed {
 				gs.CurrentPlayer = Listener
-			} else {
+			} else if !gs.SpeakerPassed {
 				gs.CurrentPlayer = Speaker
+			} else {
+				declarer = &gs.CurrentPlayer
 			}
 		}
 	}
 
-	// Check if bidding is over
-	passCount := 0
-	if gs.ListenerPassed {
-		passCount++
+	if gs.IsZwangsspiel() {
+		// All three passed explicitly - Listener must play by forehand privilege (Zwangsspiel)
+		forcedDeclarer := Listener
+		declarer = &forcedDeclarer
+		gs.BidValue = 18 // Minimum bid
 	}
-	if gs.SpeakerPassed {
-		passCount++
-	}
-	if gs.DealerPassed {
-		passCount++
-	}
-
-	if passCount >= 2 {
-		// Bidding is over, determine declarer
-		var declarer GamePosition
-		if !gs.ListenerPassed {
-			declarer = Listener
-			// Check if this is a Zwangsspiel (all wanted to pass)
-			if gs.SpeakerPassed && gs.DealerPassed {
-				gs.ListenerPassed = true // Mark as Zwangsspiel for tracking
-				gs.BidValue = 18 // Minimum bid
-			}
-		} else if !gs.SpeakerPassed {
-			declarer = Speaker
-		} else if !gs.DealerPassed {
-			declarer = Dealer
-		} else {
-			// All three passed explicitly - Listener must play by forehand privilege (Zwangsspiel)
-			declarer = Listener
-			gs.BidValue = 18 // Minimum bid
-			gs.ListenerPassed = true // Mark as Zwangsspiel so it's properly tracked
-		}
-		gs.Declarer = &declarer
+	if declarer != nil {
+		gs.Declarer = declarer
 		// Move to skat exchange phase
 		gs.Phase = PhaseSkatExchange
 		gs.CurrentPlayer = *gs.Declarer

@@ -5,20 +5,11 @@ import {
   Button,
   Paper,
   CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemAvatar,
-  Avatar,
-  ListItemText,
-  Chip,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
 import { leaveGame, getAvailableAgents, type AgentInfo } from "../api/games";
+import { AIPlayerSelector } from "./AIPlayerSelector";
 
 export function GameLobbyWaiting() {
   const game = useGameContext();
@@ -62,15 +53,9 @@ export function GameLobbyWaiting() {
     handleCloseDialog();
   };
 
-  const getAgentTypeLabel = (agent: AgentInfo): string => {
-    if (agent.card_play_type === "neural") return "Neural";
-    if (agent.card_play_type === "mcts") return "MCTS";
-    return "Heuristic";
-  };
-
-  // Filter out agents that are already in the game
-  const availableAgents = agents.filter(
-    (agent) => !game.players.some((player) => player?.id === agent.id),
+  // Get agent IDs that are already in the game
+  const agentIdsInGame = new Set(
+    game.players.map((player) => player?.id).filter(Boolean),
   );
 
   return (
@@ -184,48 +169,13 @@ export function GameLobbyWaiting() {
             </Button>
           </Box>
 
-          <Dialog
+          <AIPlayerSelector
             open={dialogOpen}
             onClose={handleCloseDialog}
-            maxWidth="xs"
-            fullWidth
-          >
-            <DialogTitle>Select AI Player</DialogTitle>
-            <DialogContent sx={{ p: 0 }}>
-              <List>
-                {availableAgents.map((agent) => (
-                  <ListItem key={agent.id} disablePadding>
-                    <ListItemButton onClick={() => handleSelectAgent(agent.id)}>
-                      <ListItemAvatar>
-                        <Avatar src={agent.profile_icon || undefined}>
-                          {agent.name.charAt(0)}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={agent.name}
-                        secondary={
-                          <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
-                            <Chip
-                              label={getAgentTypeLabel(agent)}
-                              size="small"
-                              color={
-                                agent.card_play_type === "neural"
-                                  ? "primary"
-                                  : agent.card_play_type === "mcts"
-                                    ? "secondary"
-                                    : "default"
-                              }
-                              sx={{ height: 20, fontSize: "0.7rem" }}
-                            />
-                          </Box>
-                        }
-                      />
-                    </ListItemButton>
-                  </ListItem>
-                ))}
-              </List>
-            </DialogContent>
-          </Dialog>
+            agents={agents}
+            agentIdsInGame={agentIdsInGame}
+            onSelectAgent={handleSelectAgent}
+          />
         </>
       )}
     </Box>

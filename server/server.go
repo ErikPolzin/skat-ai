@@ -82,7 +82,7 @@ func (s *Server) IsCloudRun() bool {
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		logger.Error("WebSocket upgrade failed", "error", err)
+		logger.Error("WebSocket upgrade failed: %e", err)
 		return
 	}
 
@@ -123,13 +123,13 @@ func (c *Client) readPump(s *Server) {
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			logger.Debug("WebSocket read error", "error", err, "profile_id", c.profileID)
+			logger.Debug("WebSocket read error: %e", err)
 			break
 		}
 
 		var msg Message
 		if err := json.Unmarshal(message, &msg); err != nil {
-			logger.Warning("JSON unmarshal error", "error", err, "profile_id", c.profileID)
+			logger.Warning("JSON unmarshal error: %e", err)
 			continue
 		}
 
@@ -143,7 +143,7 @@ func (c *Client) writePump() {
 
 	for message := range c.send {
 		if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
-			logger.Debug("WebSocket write error", "error", err, "profile_id", c.profileID)
+			logger.Debug("WebSocket write error: %e", err)
 			break
 		}
 	}
@@ -169,7 +169,7 @@ func (s *Server) notifyPlayerOffline(profileID string) {
 	// Find all active games this player is in
 	games, err := s.db.GetActiveGamesByPlayer(profileID)
 	if err != nil {
-		logger.Warning("Error finding games for offline player", "profile_id", profileID, "error", err)
+		logger.Warning("Error finding games for offline player: %e", err)
 		return
 	}
 
@@ -178,7 +178,7 @@ func (s *Server) notifyPlayerOffline(profileID string) {
 		// Get profile info for the offline player
 		profile, err := s.db.GetProfile(profileID)
 		if err != nil {
-			logger.Warning("Error getting profile for offline player", "profile_id", profileID, "error", err)
+			logger.Warning("Error getting profile for offline player: %e", err)
 			continue
 		}
 
@@ -196,8 +196,6 @@ func (s *Server) notifyPlayerOffline(profileID string) {
 			}
 		}
 	}
-
-	logger.Info("Player went offline", "profile_id", profileID, "games_notified", len(games))
 }
 
 // StartCleanupTask starts a background task that periodically cleans up stale games and checks for timeouts
@@ -209,14 +207,14 @@ func (s *Server) StartCleanupTask(intervalMinutes int, inactiveMinutes int) {
 			s.checkInactivityTimeouts()
 		}
 	}()
-	logger.Info("Started cleanup task (includes timeout checking)", "check_interval_minutes", intervalMinutes, "inactive_threshold_minutes", inactiveMinutes)
+	logger.Info("Started cleanup task (includes timeout checking)")
 }
 
 // checkInactivityTimeouts checks all active games for inactivity and forfeits if needed
 func (s *Server) checkInactivityTimeouts() {
 	games, err := s.db.GetAllExpiredGames()
 	if err != nil {
-		logger.Warning("Failed to get expired games for timeout check", "error", err)
+		logger.Warning("Failed to get expired games for timeout check: %e", err)
 		return
 	}
 
@@ -227,11 +225,7 @@ func (s *Server) checkInactivityTimeouts() {
 				continue
 			}
 
-			logger.Info("Game timed out - player deadline passed",
-				"game_id", gs.ID,
-				"inactive_player", currentPlayer.Name,
-				"player_id", currentPlayer.ID,
-				"deadline", gs.CurrentPlayerDeadline)
+			logger.Info("Game %s timed out - player %s deadline passed", gs.Code, currentPlayer.ID)
 
 			// If game is already complete, just remove the player instead of forfeiting
 			if gs.Phase == game.PhaseComplete {
@@ -244,15 +238,15 @@ func (s *Server) checkInactivityTimeouts() {
 
 					// Remove player from database
 					if err := s.db.RemovePlayer(gs.ID, currentPlayer.ID); err != nil {
-						logger.Warning("Failed to remove inactive player from completed game", "game_id", gs.ID, "player_id", currentPlayer.ID, "error", err)
+						logger.Warning("Failed to remove inactive player from completed game: %e", err)
 					}
 
 					// Save the updated game state
 					if err := s.db.SaveGame(gs); err != nil {
-						logger.Warning("Failed to save game after removing inactive player", "game_id", gs.ID, "error", err)
+						logger.Warning("Failed to save game after removing inactive player: %e", err)
 					}
 
-					logger.Info("Removed inactive player from completed game", "game_id", gs.ID, "player_id", currentPlayer.ID)
+					logger.Info("Removed inactive player from completed game %s", gs.Code)
 				}
 				continue
 			}
@@ -262,19 +256,19 @@ func (s *Server) checkInactivityTimeouts() {
 
 			// Save results to database
 			if err := s.db.SavePlayerResults(results); err != nil {
-				logger.Warning("Failed to save timeout forfeit results", "game_id", gs.ID, "error", err)
+				logger.Warning("Failed to save timeout forfeit results: %e", err)
 			}
 
 			// Save the updated game state
 			if err := s.db.SaveGame(gs); err != nil {
-				logger.Warning("Failed to save game after timeout", "game_id", gs.ID, "error", err)
+				logger.Warning("Failed to save game after timeout: %e", err)
 			}
 
 			// Broadcast the updated game state so clients show game over screen
 			timeoutMsg := fmt.Sprintf("%s was inactive for 2 minutes and has forfeited the game", currentPlayer.Name)
 			s.clients.BroadcastStateChange(&gs, timeoutMsg, gs.CurrentPlayer)
 
-			logger.Info("Game forfeited due to timeout", "game_id", gs.ID, "player_id", currentPlayer.ID)
+			logger.Info("Game %s forfeited due to timeout from %s", gs.Code, currentPlayer.ID)
 		}
 	}
 }
@@ -287,11 +281,11 @@ func (s *Server) cleanupStaleGames(inactiveMinutes int) {
 	// Call database cleanup
 	deleted, err := s.db.CleanupStaleGames(inactiveMinutes, onlinePlayerIDs)
 	if err != nil {
-		logger.Error("Error during cleanup", "error", err)
+		logger.Error("Error during cleanup: %s", err)
 		return
 	}
 
 	if deleted > 0 {
-		logger.Info("Cleaned up stale games", "count", deleted)
+		logger.Info("Cleaned up %d stale games", deleted)
 	}
 }

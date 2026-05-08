@@ -34,13 +34,12 @@ func (cm *ClientManager) RegisterClient(profileID string, conn *websocket.Conn) 
 	if existingClient, exists := cm.clients[profileID]; exists {
 		// Close old connection if it exists
 		if existingClient.conn != nil {
-			logger.Info("Closing existing connection for profile", "profile_id", profileID)
+			logger.Info("Closing existing connection for profile")
 			existingClient.conn.Close()
 		}
 		// Update connection
 		existingClient.conn = conn
 		existingClient.send = make(chan []byte, 256)
-		logger.Info("Updated connection for profile", "profile_id", profileID)
 
 		// Update online status in database
 		cm.updateOnlineStatus(profileID, true)
@@ -55,7 +54,7 @@ func (cm *ClientManager) RegisterClient(profileID string, conn *websocket.Conn) 
 		send:      make(chan []byte, 256),
 	}
 	cm.clients[profileID] = client
-	logger.Info("Registered new client for profile", "profile_id", profileID)
+	logger.Info("Player %s connected at %s", profileID, conn.RemoteAddr())
 
 	// Update online status in database
 	cm.updateOnlineStatus(profileID, true)
@@ -80,7 +79,7 @@ func (cm *ClientManager) RemoveClient(profileID string) {
 	if client, exists := cm.clients[profileID]; exists {
 		close(client.send)
 		delete(cm.clients, profileID)
-		logger.Info("Removed client for profile", "profile_id", profileID)
+		logger.Info("Removed client for profile %s", profileID)
 
 		// Update online status in database
 		cm.updateOnlineStatus(profileID, false)
@@ -153,15 +152,19 @@ func (cm *ClientManager) updateOnlineStatus(profileID string, isOnline bool) {
 	// Get the profile from database
 	profile, err := cm.db.GetProfile(profileID)
 	if err != nil {
-		logger.Warning("Failed to get profile for online status update", "profile_id", profileID, "error", err)
+		logger.Warning("Failed to get profile for online status update: %e", err)
 		return
 	}
 
 	// Update the online status
 	profile.IsOnline = isOnline
 	if err := cm.db.SaveProfile(*profile); err != nil {
-		logger.Warning("Failed to update online status", "profile_id", profileID, "is_online", isOnline, "error", err)
+		logger.Warning("Failed to update online status: %e", err)
 	} else {
-		logger.Info("Updated online status", "profile_id", profileID, "is_online", isOnline)
+		if isOnline {
+			logger.Info("Player %s came online", profileID)
+		} else {
+			logger.Info("Player %s went offline", profileID)
+		}
 	}
 }

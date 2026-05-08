@@ -233,7 +233,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Return the existing profile
-			logger.Info("Returning existing profile", "player_id", existingProfile.ID, "player_name", existingProfile.Name)
+			logger.Info("Returning existing profile %s for %s", existingProfile.ID, existingProfile.Name)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
 				"player_id":    existingProfile.ID,
@@ -245,7 +245,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 
 		// No existing profile, create a new one
 		playerID = uuid.New().String()
-		logger.Info("Creating new profile", "player_id", playerID, "player_name", playerName)
+		logger.Info("Creating new profile %s for %s", playerID, playerName)
 
 		// Store the new profile
 		profile := db.ProfileEntry{
@@ -253,7 +253,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 			Name: playerName,
 		}
 		if err := s.db.SaveProfile(profile); err != nil {
-			logger.Warning("Failed to store player profile", "error", err)
+			logger.Warning("Failed to store player profile: %e", err)
 		}
 	} else {
 		// Existing player ID - retrieve or update name
@@ -264,7 +264,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 			if profile.Name != playerName && playerName != "" {
 				profile.Name = playerName
 				if err := s.db.SaveProfile(*profile); err != nil {
-					logger.Warning("Failed to update player profile", "error", err)
+					logger.Warning("Failed to update player profile: %e", err)
 				}
 			} else if profile.Name != "" {
 				// Use the stored name if no new name provided
@@ -277,9 +277,9 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 				Name: playerName,
 			}
 			if err := s.db.SaveProfile(profile); err != nil {
-				logger.Warning("Failed to store player profile", "error", err)
+				logger.Warning("Failed to store player profile: %e", err)
 			}
-			logger.Info("Created profile for existing ID", "player_id", playerID, "player_name", playerName)
+			logger.Info("Updated existing profile %s for %s", playerID, playerName)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -359,7 +359,7 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 		"game_id": gs.ID,
 	})
 
-	logger.Info("Player joined game via HTTP", "player_id", playerID, "player_name", profile.Name, "game_id", gs.ID)
+	logger.Info("Player %s joined game %s via HTTP", profile.Name, gs.Code)
 }
 
 // handleLeaveGame removes a player from a game
@@ -418,22 +418,22 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 
-		logger.Info("Player forfeited game", "player_id", playerID, "game_id", gs.ID)
+		logger.Info("Player %s forfeited game %s", playerID, gs.Code)
 	} else {
 		// Game hasn't started yet - just remove the player
 		gs.Players[position] = nil
 
 		// Remove player from database
 		if err := s.db.RemovePlayer(gs.ID, playerID); err != nil {
-			logger.Warning("Failed to remove player from database", "game_id", gs.ID, "player_id", playerID, "error", err)
+			logger.Warning("Failed to remove player from database: %e", err)
 		}
 
 		// If no players left, delete the game
 		if gs.PlayerCount() == 0 {
 			if err := s.db.DeleteGame(gs.ID); err != nil {
-				logger.Warning("Failed to delete empty game", "game_id", gs.ID, "error", err)
+				logger.Warning("Failed to delete empty game: %e", err)
 			}
-			logger.Info("Player left game, game deleted (no players remaining)", "player_id", playerID, "game_id", gs.ID)
+			logger.Info("All players left game %s, deleted", gs.Code)
 		} else {
 			// Save the updated game
 			s.db.SaveGame(*gs)
@@ -448,7 +448,7 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 				},
 			})
 
-			logger.Info("Player left game (lobby)", "player_id", playerID, "game_id", gs.ID, "remaining_players", gs.PlayerCount())
+			logger.Info("Player %s left game %s (lobby). Remaining players: %d", playerID, gs.Code, gs.PlayerCount())
 		}
 	}
 
@@ -567,7 +567,7 @@ func (s *Server) handleGetPlayerHistory(w http.ResponseWriter, r *http.Request) 
 
 	results, err := s.db.GetPlayerResults(playerID, limit)
 	if err != nil {
-		logger.Warning("Failed to get player results", "player_id", playerID, "error", err)
+		logger.Warning("Failed to get player results: %e", err)
 		// Return empty array on error rather than failing
 		results = []game.PlayerResultState{}
 	}
@@ -584,7 +584,7 @@ func (s *Server) handleGetActiveGames(w http.ResponseWriter, r *http.Request) {
 
 	games, err := s.db.GetActiveGamesByPlayer(playerID)
 	if err != nil {
-		logger.Warning("Failed to get active games", "player_id", playerID, "error", err)
+		logger.Warning("Failed to get active games: %e", err)
 		// Return empty array on error rather than failing
 		games = []game.GameState{}
 	}
@@ -632,7 +632,7 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 
 	results, err := s.db.GetFormattedSessionResults(sessionID)
 	if err != nil {
-		logger.Warning("Failed to get session results", "session_id", sessionID, "error", err)
+		logger.Warning("Failed to get session results: %e", err)
 		http.Error(w, fmt.Sprintf("Failed to get session results: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -692,7 +692,7 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 		client, err := storage.NewClient(ctx)
 		if err != nil {
-			logger.Warning("Failed to create GCS client", "error", err)
+			logger.Warning("Failed to create GCS client: %e", err)
 			http.Error(w, "Failed to upload avatar", http.StatusInternalServerError)
 			return
 		}
@@ -706,29 +706,29 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 
 		if _, err := io.Copy(writer, file); err != nil {
 			writer.Close()
-			logger.Warning("Failed to upload to GCS", "error", err)
+			logger.Warning("Failed to upload to GCS: %e", err)
 			http.Error(w, "Failed to upload avatar", http.StatusInternalServerError)
 			return
 		}
 
 		if err := writer.Close(); err != nil {
-			logger.Warning("Failed to close GCS writer", "error", err)
+			logger.Warning("Failed to close GCS writer: %e", err)
 			http.Error(w, "Failed to upload avatar", http.StatusInternalServerError)
 			return
 		}
 
 		// Make the object publicly readable
 		if err := obj.ACL().Set(ctx, storage.AllUsers, storage.RoleReader); err != nil {
-			logger.Warning("Failed to set ACL", "error", err)
+			logger.Warning("Failed to set ACL: %e", err)
 		}
 
 		avatarURL = fmt.Sprintf("https://storage.googleapis.com/%s/%s", gcsBucket, objectPath)
-		logger.Info("Avatar uploaded to GCS", "player_id", playerID, "url", avatarURL)
+		logger.Info("Avatar uploaded to GCS at %s", avatarURL)
 	} else {
 		// Store locally in frontend/public/res/avatars
 		uploadDir := "./frontend/public/res/avatars"
 		if err := os.MkdirAll(uploadDir, 0755); err != nil {
-			logger.Warning("Failed to create avatars directory", "error", err)
+			logger.Warning("Failed to create avatars directory: %e", err)
 			http.Error(w, "Failed to save avatar", http.StatusInternalServerError)
 			return
 		}
@@ -736,26 +736,26 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		localPath := filepath.Join(uploadDir, filename)
 		outFile, err := os.Create(localPath)
 		if err != nil {
-			logger.Warning("Failed to create file", "error", err)
+			logger.Warning("Failed to create file: %e", err)
 			http.Error(w, "Failed to save avatar", http.StatusInternalServerError)
 			return
 		}
 		defer outFile.Close()
 
 		if _, err := io.Copy(outFile, file); err != nil {
-			logger.Warning("Failed to write file", "error", err)
+			logger.Warning("Failed to write file: %e", err)
 			http.Error(w, "Failed to save avatar", http.StatusInternalServerError)
 			return
 		}
 
 		avatarURL = fmt.Sprintf("/res/avatars/%s", filename)
-		logger.Info("Avatar saved locally", "player_id", playerID, "path", localPath)
+		logger.Info("Avatar saved locally at %s", localPath)
 	}
 
 	// Update profile with avatar URL
 	profile.ProfileIcon = avatarURL
 	if err := s.db.SaveProfile(*profile); err != nil {
-		logger.Warning("Failed to update profile", "error", err)
+		logger.Warning("Failed to update profile: %e", err)
 		http.Error(w, "Failed to save profile", http.StatusInternalServerError)
 		return
 	}
@@ -1036,15 +1036,15 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 
 				// Remove player from database
 				if err := s.db.RemovePlayer(gs.ID, timeoutPlayerID); err != nil {
-					logger.Warning("Failed to remove inactive player from completed game", "game_id", gs.ID, "player_id", timeoutPlayerID, "error", err)
+					logger.Warning("Failed to remove inactive player from completed game: %e", err)
 				}
 
 				// Save the updated game state
 				if err := s.db.SaveGame(*gs); err != nil {
-					logger.Warning("Failed to save game after removing inactive player", "game_id", gs.ID, "error", err)
+					logger.Warning("Failed to save game after removing inactive player: %e", err)
 				}
 
-				logger.Info("Removed inactive player from completed game (client-reported)", "game_id", gs.ID, "player_id", timeoutPlayerID)
+				logger.Info("Removed inactive player %s from completed game %s (client-reported)", timeoutPlayerID, gs.Code)
 			}
 		}
 
@@ -1065,33 +1065,29 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Info("Game timeout reported by client",
-		"game_id", gs.ID,
-		"inactive_player", currentPlayer.Name,
-		"player_id", currentPlayer.ID,
-		"deadline", gs.CurrentPlayerDeadline)
+	logger.Info("Game %s timeout reported by client for %s", gs.Code, currentPlayer.Name)
 
 	// Forfeit the game
 	results := gs.ForfeitDueToInactivity()
-	logger.Info("Set game phase to complete", "game_id", gs.ID, "phase", gs.Phase)
+	logger.Info("Set game %s phase to complete", gs.Code)
 
 	// Save results to database
 	if err := s.db.SavePlayerResults(results); err != nil {
-		logger.Warning("Failed to save timeout forfeit results", "game_id", gs.ID, "error", err)
+		logger.Warning("Failed to save timeout forfeit results: %e", err)
 	}
 
 	// Save the updated game state
 	if err := s.db.SaveGame(*gs); err != nil {
-		logger.Warning("Failed to save game after timeout", "game_id", gs.ID, "error", err)
+		logger.Warning("Failed to save game after timeout: %e", err)
 	} else {
-		logger.Info("Saved game with phase complete", "game_id", gs.ID)
+		logger.Info("Saved game %s with phase complete", gs.Code)
 	}
 
 	// Broadcast the updated game state so clients show game over screen
 	timeoutMsg := fmt.Sprintf("%s was inactive for 2 minutes and has forfeited the game", currentPlayer.Name)
 	s.clients.BroadcastStateChange(gs, timeoutMsg, gs.CurrentPlayer)
 
-	logger.Info("Game forfeited due to timeout (client-reported)", "game_id", gs.ID, "player_id", currentPlayer.ID, "phase", gs.Phase)
+	logger.Info("Game %s forfeited due to timeout from %s (client-reported)", gs.Code, currentPlayer.Name)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -1225,7 +1221,7 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	for _, agent := range agents {
 		config, err := s.db.GetAgentConfig(agent.ID)
 		if err != nil {
-			logger.Warning("Failed to get agent config", "agent_id", agent.ID, "error", err)
+			logger.Warning("Failed to get agent config: %e", err)
 			continue
 		}
 

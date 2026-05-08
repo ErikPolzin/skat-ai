@@ -38,20 +38,17 @@ export function useWebSocket() {
     [],
   );
 
-  const sendMessage = useCallback(
-    (type: string, data: any) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type, data }));
-      } else {
-        console.error(
-          "Cannot send message, socket is",
-          wsRef.current?.readyState,
-          ", not open",
-        );
-      }
-    },
-    [],
-  );
+  const sendMessage = useCallback((type: string, data: any) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type, data }));
+    } else {
+      console.error(
+        "Cannot send message, socket is",
+        wsRef.current?.readyState,
+        ", not open",
+      );
+    }
+  }, []);
 
   const scheduleReconnect = useCallback(() => {
     if (manualDisconnectRef.current) {
@@ -72,11 +69,6 @@ export function useWebSocket() {
       MAX_RETRY_DELAY,
     );
 
-    const delaySeconds = (delay / 1000).toFixed(1);
-    console.log(
-      `Reconnecting in ${delaySeconds}s (attempt ${reconnectAttemptsRef.current + 1}/${MAX_RECONNECT_ATTEMPTS})`,
-    );
-
     const startTime = Date.now();
     setReconnectCountdown(delay / 1000);
 
@@ -86,7 +78,6 @@ export function useWebSocket() {
       const remaining = Math.max(0, (delay - elapsed) / 1000);
       if (remaining > 0) {
         setReconnectCountdown(remaining);
-        console.log(`Reconnecting in ${remaining.toFixed(1)}s...`);
       }
     }, 100);
 
@@ -171,9 +162,10 @@ export function useWebSocket() {
         console.log("WebSocket closed:", event.code, event.reason);
         wsRef.current = null;
         notifySubscribers();
-
-        // Attempt to reconnect unless it was a manual disconnect
-        scheduleReconnect();
+        if (manualDisconnectRef.current) {
+          // Attempt to reconnect unless it was a manual disconnect
+          scheduleReconnect();
+        }
       };
     },
     [scheduleReconnect],

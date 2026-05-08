@@ -12,6 +12,7 @@ export const WebSocketProvider: React.FC<{
 
   // Connect WebSocket when we have a profile ID
   useEffect(() => {
+    console.log("PLAYER ID CHANGED", playerId);
     if (playerId) {
       value.connect(playerId);
       return () => {

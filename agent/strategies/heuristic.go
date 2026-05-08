@@ -993,7 +993,6 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 	return validMoves[0]
 }
 
-
 func (h *HeuristicCardPlayStrategy) wouldWinTrick(gs *game.GameState, card game.Card, trick []game.Card) bool {
 	for _, trickCard := range trick {
 		if !gs.CardBeats(card, trickCard) {
@@ -1042,7 +1041,6 @@ func sortByValue(cards []game.Card) {
 		}
 	}
 }
-
 
 // heuristicOrder orders moves by the sequence the heuristic agent would play them
 // Optimized for minimax: avoids allocations and uses in-place sorting

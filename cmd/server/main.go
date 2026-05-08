@@ -46,23 +46,23 @@ func main() {
 			// Turso/LibSQL database
 			database, err = db.NewTursoDatabase(dbURL)
 			if err != nil {
-				logger.Warning("Failed to connect to Turso database", "error", err)
+				logger.Warning("Failed to connect to Turso database: %e", err)
 			}
 		} else if strings.HasPrefix(dbURL, "postgres://") || strings.HasPrefix(dbURL, "postgresql://") || strings.Contains(dbURL, "host=") {
 			// PostgreSQL database
 			database, err = db.NewPgDatabase(dbURL)
 			if err != nil {
-				logger.Warning("Failed to connect to PostgreSQL database", "error", err)
+				logger.Warning("Failed to connect to PostgreSQL database: %e", err)
 			}
 		} else {
-			logger.Warning("Unknown database URL scheme", "dbURL", dbURL)
+			logger.Warning("Unknown database URL scheme %s", dbURL)
 		}
 
 		if database != nil {
 			defer database.Close()
 			// Initialize schema
 			if err := database.InitSchema(); err != nil {
-				logger.Warning("Failed to initialize database schema", "error", err)
+				logger.Warning("Failed to initialize database schema: %e", err)
 			}
 		}
 	}
@@ -85,8 +85,8 @@ func main() {
 	// Start cleanup task: check every 5 minutes for stale games and timeouts
 	srv.StartCleanupTask(5, 15)
 
-	logger.Info("Starting Skat server", "port", port)
+	logger.Info("Starting Skat server on port %s", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {
-		logger.Fatal("Server failed", "error", err)
+		logger.Fatal("Server failed: %e", err)
 	}
 }

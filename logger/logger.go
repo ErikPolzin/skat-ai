@@ -136,11 +136,7 @@ func (l *Logger) log(severity logging.Severity, msg string, fields ...interface{
 	if l.local {
 		// Local logging with standard log package
 		prefix := severityPrefix(severity)
-		if len(fields) > 0 {
-			log.Printf("%s %s %v", prefix, msg, fields)
-		} else {
-			log.Printf("%s %s", prefix, msg)
-		}
+		log.Printf("%s %s", prefix, fmt.Sprintf(msg, fields...))
 	} else {
 		// GCP Cloud Logging with structured fields
 		payload := map[string]interface{}{

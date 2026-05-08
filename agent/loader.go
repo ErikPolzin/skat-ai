@@ -43,8 +43,8 @@ func BuildAgentFromConfig(config *AgentConfigData) (*SkatAgent, error) {
 	}
 
 	hybridConfig := HybridAgentConfig{
-		BiddingType:      config.BiddingType,
-		BiddingThreshold: config.BiddingThreshold,
+		BiddingType:       config.BiddingType,
+		BiddingThreshold:  config.BiddingThreshold,
 		GameChoiceType:    config.GameChoiceType,
 		CardPlayType:      config.CardPlayType,
 		MCTSSimulations:   config.MCTSSimulations,
@@ -88,7 +88,7 @@ func GetAgentForPlayerID(playerID string) *SkatAgent {
 
 	config, err := loader(playerID)
 	if err != nil {
-		logger.Error("Failed to load agent config", "playerID", playerID, "error", err)
+		logger.Error("Failed to load agent config for profile %s", playerID)
 		logger.Warning("Using default heuristic agent")
 		agent := NewHeuristicAgent(playerID)
 		agentCacheMu.Lock()
@@ -99,11 +99,9 @@ func GetAgentForPlayerID(playerID string) *SkatAgent {
 
 	agent, err := BuildAgentFromConfig(config)
 	if err != nil {
-		logger.Error("Failed to build agent from config", "playerID", playerID, "error", err)
+		logger.Error("Failed to build agent from config: %e", err)
 		logger.Warning("Using default heuristic agent")
 		agent = NewHeuristicAgent(playerID)
-	} else {
-		logger.Info("Built agent from config", "playerID", playerID, "bidding", config.BiddingType, "cardPlay", config.CardPlayType)
 	}
 
 	// Cache the agent

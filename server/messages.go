@@ -18,7 +18,6 @@ type Message struct {
 // Note: Most game actions are now handled via HTTP endpoints.
 // This is kept for potential future use.
 func (s *Server) handleMessage(client *Client, msg *Message) {
-	logger.Debug("Received message", "type", msg.Type, "profile_id", client.profileID)
 
 	// Add 2 second delay for local development to test loading states
 	if !s.IsCloudRun() {
@@ -27,7 +26,7 @@ func (s *Server) handleMessage(client *Client, msg *Message) {
 
 	switch msg.Type {
 	default:
-		logger.Warning("Unknown message type", "type", msg.Type)
+		logger.Warning("Unknown message type %s", msg.Type)
 	}
 }
 
@@ -49,7 +48,7 @@ func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fr
 	if gs.Phase == game.PhaseComplete && gs.SessionID != "" {
 		results, err := cm.db.GetFormattedSessionResults(gs.SessionID)
 		if err != nil {
-			logger.Warning("Failed to fetch session results for broadcast", "session_id", gs.SessionID, "error", err)
+			logger.Warning("Failed to fetch session results for broadcast: %e", err)
 		} else {
 			sessionResults = results
 			gamesPlayed = len(results)
@@ -91,12 +90,12 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) {
 		// Update player ratings and populate rating fields in results
 		err := rating.UpdateRatings(gs, s.db, results)
 		if err != nil {
-			logger.Warning("Failed to update player ratings", "error", err)
+			logger.Warning("Failed to update player ratings: %e", err)
 		}
 
 		// Save results with rating information
 		if err := s.db.SavePlayerResults(results[:]); err != nil {
-			logger.Warning("Failed to save player results", "error", err)
+			logger.Warning("Failed to save player results: %e", err)
 		}
 	}
 }
@@ -114,7 +113,7 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 
 		response, err := action()
 		if err != nil {
-			logger.Error("Agent encountered an error", err)
+			logger.Error("Agent encountered an error: %e", err)
 			s.clients.BroadcastToPlayers(gs, &Message{
 				Type: "error",
 				Data: map[string]any{"message": err.Error()},

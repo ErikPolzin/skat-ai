@@ -20,12 +20,6 @@ func NextAction(gs *game.GameState) Action {
 		return generateResolveTrickAction(gs)
 	}
 
-	if currentPlayer != nil {
-		logger.Debug("Game loop", "phase", phase, "currentPlayer", currentPlayer.Name, "position", gs.CurrentPlayer, "isAgent", currentPlayer.IsAgent)
-	} else {
-		logger.Debug("Game loop", "phase", phase, "currentPlayer", "nil")
-		return nil
-	}
 	if !currentPlayer.IsAgent {
 		logger.Debug("Skipping game loop: waiting for human player input")
 		return nil
@@ -43,7 +37,7 @@ func NextAction(gs *game.GameState) Action {
 	case game.PhasePlaying:
 		return generateAgentPlayAction(gs, currentPlayer)
 	default:
-		logger.Error("Unknown agent game phase", phase)
+		logger.Error("Unknown agent game phase %s", phase)
 		return nil
 	}
 }
@@ -140,14 +134,14 @@ func generateAgentPlayAction(gs *game.GameState, player *game.PlayerState) Actio
 	validMoves := gs.GetValidMoves()
 
 	if len(validMoves) == 0 {
-		logger.Warning("No valid moves for AI", "player", player.Name)
+		logger.Warning("No valid moves for AI %s", player.Name)
 		return nil
 	}
 
 	// Get the agent for this player
 	agent := GetAgentForPlayer(player)
 	if agent == nil {
-		logger.Warning("No agent found for player", "player", player.Name)
+		logger.Warning("No agent found for player %s", player.Name)
 		return nil
 	}
 	move := agent.SelectMove(gs, validMoves)
@@ -161,14 +155,13 @@ func generateAgentBidAction(gs *game.GameState, player *game.PlayerState) Action
 	// Get the agent for this player
 	agent := GetAgentForPlayer(player)
 	if agent == nil {
-		logger.Warning("No agent found for player", "player", player.Name)
+		logger.Warning("No agent found for player %s", player.Name)
 		return nil
 	}
 	// Get a copy of the game state for the agent
 	stateCopy := gs // Make a copy
 	// Call the agent's Bid method
 	accept := agent.Bid(stateCopy)
-	logger.Debug("AI choosing bid", "player", player.Name, "accept", accept, "currentBid", gs.BidValue)
 
 	return func() (string, error) {
 		return gs.Bid(accept)

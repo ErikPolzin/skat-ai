@@ -18,7 +18,7 @@ func main() {
 	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, mcts, minimax, or neural")
 	biddingMode := flag.String("bidding-mode", "5050", "Bidding mode: 5050 (all test agents bid, alternate declarer) or 2v1 (test vs 2 baseline)")
 	games := flag.Int("games", 500, "Number of evaluation games")
-	cardplayWeights := flag.String("cardplay-weights", ".data/models/imitation_cardplay.weights", "Path to card play neural network weights")
+	cardplayWeights := flag.String("cardplay-weights", ".data/models/cardplay.weights", "Path to card play neural network weights")
 	biddingWeights := flag.String("bidding-weights", "", "Path to weighted bidding weights JSON file (optional)")
 	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, weighted default=0.70, heuristic default=0.45)")
 	minimaxDepth := flag.Int("minimax-depth", 10, "Minimax search depth for perfect-info minimax")

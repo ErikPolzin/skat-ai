@@ -437,7 +437,7 @@ func (gs *GameState) IsSchwarz() bool {
 // IsZwangsspiel returns true if all three players passed during bidding,
 // forcing the listener to play a game (typically with a weak hand)
 func (gs *GameState) IsZwangsspiel() bool {
-	return gs.ListenerPassed && gs.SpeakerPassed && gs.DealerPassed
+	return gs.ListenerPassed && gs.SpeakerPassed && gs.DealerPassed && gs.BidValue == 0
 }
 
 // GetGameResult returns the result of the game including schneider/schwarz

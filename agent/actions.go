@@ -16,6 +16,10 @@ func NextAction(gs *game.GameState) Action {
 	phase := gs.Phase
 	currentPlayer := gs.GetCurrentPlayer()
 
+	if currentPlayer == nil {
+		return nil
+	}
+
 	if len(gs.Trick) == 3 && phase == game.PhasePlaying {
 		return generateResolveTrickAction(gs)
 	}

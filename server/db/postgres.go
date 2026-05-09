@@ -131,6 +131,8 @@ func (d *PgDatabase) GetGameSession(sessionID string) (*game.GameSessionState, e
 func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	var skatString, trickString, cardsPlayedString string
 	var deadline sql.NullString
+	var declarer sql.NullInt64
+	var trickWinner sql.NullInt64
 	var gs game.GameState
 	err := d.DB.QueryRow(
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
@@ -145,7 +147,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		gameID,
 	).Scan(
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
-		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
+		&gs.TrickStarter, &trickWinner, &gs.CurrentPlayer, &declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
@@ -177,6 +179,20 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		gs.CurrentPlayerDeadline = ""
 	}
 
+	if declarer.Valid {
+		d := game.GamePosition(declarer.Int64)
+		gs.Declarer = &d
+	} else {
+		gs.Declarer = nil
+	}
+
+	if trickWinner.Valid {
+		d := game.GamePosition(trickWinner.Int64)
+		gs.TrickWinner = &d
+	} else {
+		gs.TrickWinner = nil
+	}
+
 	// Load players
 	gs.Players, err = d.ListPlayers(gs.ID)
 	if err != nil {
@@ -190,6 +206,8 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 	var gs game.GameState
 	var skatString, trickString, cardsPlayedString string
 	var deadline sql.NullString
+	var declarer sql.NullInt64
+	var trickWinner sql.NullInt64
 	err := d.DB.QueryRow(
 		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
@@ -205,7 +223,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		sessionCode,
 	).Scan(
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
-		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
+		&gs.TrickStarter, &trickWinner, &gs.CurrentPlayer, &declarer,
 		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
@@ -238,6 +256,20 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		gs.CurrentPlayerDeadline = ""
 	}
 
+	if declarer.Valid {
+		d := game.GamePosition(declarer.Int64)
+		gs.Declarer = &d
+	} else {
+		gs.Declarer = nil
+	}
+
+	if trickWinner.Valid {
+		d := game.GamePosition(trickWinner.Int64)
+		gs.TrickWinner = &d
+	} else {
+		gs.TrickWinner = nil
+	}
+
 	// Load players
 	gs.Players, err = d.ListPlayers(gs.ID)
 	if err != nil {
@@ -254,11 +286,23 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 	cardsPlayedString := game.SerializeCardsPlayed(gs.CardsPlayed)
 
 	// Handle empty deadline as NULL
-	var deadline interface{}
+	var deadline any
 	if gs.CurrentPlayerDeadline == "" {
 		deadline = nil
 	} else {
 		deadline = gs.CurrentPlayerDeadline
+	}
+	var declarer any
+	if gs.Declarer != nil {
+		declarer = int(*gs.Declarer)
+	} else {
+		declarer = nil
+	}
+	var trickWinner any
+	if gs.TrickWinner != nil {
+		trickWinner = int(*gs.TrickWinner)
+	} else {
+		trickWinner = nil
 	}
 
 	_, err := d.DB.Exec(
@@ -283,8 +327,8 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 			current_player_deadline = $24, forfeited_player = $25, cards_played = $26,
 			updated_at = NOW()`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
-		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
-		gs.Declarer, gs.DeclarerScore, gs.OpponentScore,
+		gs.TrickStarter, trickWinner, gs.CurrentPlayer,
+		declarer, gs.DeclarerScore, gs.OpponentScore,
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
 		gs.PlayedHand, gs.AnnouncedSchneider, gs.AnnouncedSchwarz,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,

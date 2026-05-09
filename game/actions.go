@@ -124,7 +124,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 // HandleBid processes a bidding action
 // Bidding in Skat has two phases:
 // Phase 1: Speaker (middlehand) bids, Listener (forehand) responds
-// Phase 2: Winner of Phase 1 bids, Dealer (rearhand) responds
+// Phase 2: Winner of Phase 1 responds, Dealer (rearhand) bids
 func (gs *GameState) Bid(accept bool) (string, error) {
 	if gs.Phase != PhaseBidding {
 		return "", fmt.Errorf("not in bidding phase")
@@ -139,31 +139,41 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		case Speaker:
 			// Speaker passes in Phase 1 - Listener wins Phase 1
 			gs.SpeakerPassed = true
-			// Move to Phase 2: Dealer now sets the bid value
-			if !gs.DealerPassed {
+			if !gs.ListenerPassed {
+				// Move to Phase 2: Dealer now sets the bid value
 				gs.CurrentPlayer = Dealer
-			} else if !gs.ListenerPassed {
-				gs.CurrentPlayer = Listener
+			} else {
+				// Speaker passed in Phase 2 against the dealer, dealer wins the bid
+				d := Dealer
+				declarer = &d
 			}
 		case Listener:
 			// Listener passes
 			gs.ListenerPassed = true
-			if !gs.DealerPassed {
+			if !gs.SpeakerPassed {
 				// Phase 1: Listener passed, Speaker wins Phase 1
-				// Move to Phase 2: Dealer now sets the bid value
+				// Move to Phase 2: Dealer now sets the bid value against the Speaker
 				gs.CurrentPlayer = Dealer
-			} else if !gs.SpeakerPassed {
-				gs.CurrentPlayer = Speaker // Not sure if this can even happen
+			} else if !gs.DealerPassed {
+				// Phase 2: Listener passed, if the dealer set the bid (i.e. didn't pass)
+				// then the dealer becomes declarer.
+				d := Dealer
+				declarer = &d
+			} else {
+				// We have Zwangsspiel
 			}
 			// Both Speaker and Listener passed - bidding will end after pass count check
 		case Dealer:
 			// Dealer passes in Phase 2
 			gs.DealerPassed = true
 			// The Phase 1 winner wins overall - bidding will end after pass count check
-			if !gs.ListenerPassed {
+			if !gs.SpeakerPassed {
+				d := Speaker
+				declarer = &d
+			} else if !gs.ListenerPassed {
 				gs.CurrentPlayer = Listener
-			} else if !gs.SpeakerPassed {
-				gs.CurrentPlayer = Speaker
+			} else {
+				// We have Zwangsspiel
 			}
 		}
 	} else {
@@ -187,7 +197,8 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 				// Speaker holds, turn back to Dealer who must raise
 				gs.CurrentPlayer = Dealer
 			} else {
-				declarer = &gs.CurrentPlayer
+				d := gs.CurrentPlayer
+				declarer = &d
 			}
 		case Listener:
 			if !gs.SpeakerPassed {
@@ -199,7 +210,8 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 				// Listener holds, turn back to Dealer who must raise
 				gs.CurrentPlayer = Dealer
 			} else {
-				declarer = &gs.CurrentPlayer
+				d := gs.CurrentPlayer
+				declarer = &d
 			}
 		case Dealer:
 			// Phase 2: Dealer bids (names a value) against the Phase 1 winner
@@ -210,7 +222,8 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 			} else if !gs.SpeakerPassed {
 				gs.CurrentPlayer = Speaker
 			} else {
-				declarer = &gs.CurrentPlayer
+				d := gs.CurrentPlayer
+				declarer = &d
 			}
 		}
 	}
@@ -219,7 +232,6 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		// All three passed explicitly - Listener must play by forehand privilege (Zwangsspiel)
 		forcedDeclarer := Listener
 		declarer = &forcedDeclarer
-		gs.BidValue = 18 // Minimum bid
 	}
 	if declarer != nil {
 		gs.Declarer = declarer

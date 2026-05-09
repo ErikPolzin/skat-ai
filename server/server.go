@@ -24,12 +24,14 @@ var upgrader = websocket.Upgrader{
 // Server manages all game sessions and client connections
 type Server struct {
 	db      db.Database
+	cache   *Cache
 	clients *ClientManager // Centralized client management
 }
 
 func NewServer(database db.Database) *Server {
 	server := &Server{
 		db:      database,
+		cache:   NewCache(database),
 		clients: NewClientManager(database),
 	}
 
@@ -242,7 +244,7 @@ func (s *Server) checkInactivityTimeouts() {
 					}
 
 					// Save the updated game state
-					if err := s.db.SaveGame(gs); err != nil {
+					if err := s.cache.SaveGame(gs); err != nil {
 						logger.Warning("Failed to save game after removing inactive player: %e", err)
 					}
 
@@ -260,7 +262,7 @@ func (s *Server) checkInactivityTimeouts() {
 			}
 
 			// Save the updated game state
-			if err := s.db.SaveGame(gs); err != nil {
+			if err := s.cache.SaveGame(gs); err != nil {
 				logger.Warning("Failed to save game after timeout: %e", err)
 			}
 

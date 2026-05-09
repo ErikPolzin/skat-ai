@@ -18,12 +18,6 @@ type Message struct {
 // Note: Most game actions are now handled via HTTP endpoints.
 // This is kept for potential future use.
 func (s *Server) handleMessage(client *Client, msg *Message) {
-
-	// Add 2 second delay for local development to test loading states
-	if !s.IsCloudRun() {
-		time.Sleep(2 * time.Second)
-	}
-
 	switch msg.Type {
 	default:
 		logger.Warning("Unknown message type %s", msg.Type)
@@ -120,7 +114,7 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 			})
 			return
 		}
-		s.db.SaveGame(*gs)
+		s.cache.SaveGame(*gs)
 		s.maybeSaveGameResults(gs)
 		s.clients.BroadcastStateChange(gs, response, currentPlayer)
 	}

@@ -26,7 +26,7 @@ import (
 func (s *Server) cloudRunDelayMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.IsCloudRun() {
-			time.Sleep(1 * time.Second)
+			time.Sleep(0 * time.Second)
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -179,10 +179,7 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save to database
-	if err := s.db.SaveGame(*gs); err != nil {
-		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
-		return
-	}
+	go s.cache.SaveGame(*gs)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -197,7 +194,7 @@ func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 	gameID := vars["id"]
 	playerID := r.URL.Query().Get("player_id")
 
-	gs, err := s.db.GetGameByID(gameID)
+	gs, err := s.cache.GetGameByID(gameID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -334,7 +331,7 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Fetch game
-	gs, game_err := s.db.GetGameBySessionCode(code)
+	gs, game_err := s.cache.GetGameBySessionCode(code)
 	if game_err != nil {
 		http.Error(w, game_err.Error(), http.StatusNotFound)
 		return
@@ -350,7 +347,7 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.db.SaveGame(*gs)
+	go s.cache.SaveGame(*gs)
 	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(playerID))
 	go s.BroadcastAIActions(gs)
 
@@ -382,7 +379,7 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch game
-	gs, err := s.db.GetGameByID(gameID)
+	gs, err := s.cache.GetGameByID(gameID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -405,7 +402,7 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 		gs.Phase = game.PhaseComplete
 		gs.ForfeitedPlayer = &position
 
-		s.db.SaveGame(*gs)
+		go s.cache.SaveGame(*gs)
 		s.maybeSaveGameResults(gs)
 
 		// Broadcast forfeit to other players
@@ -436,7 +433,7 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 			logger.Info("All players left game %s, deleted", gs.Code)
 		} else {
 			// Save the updated game
-			s.db.SaveGame(*gs)
+			go s.cache.SaveGame(*gs)
 
 			// Broadcast to other players that someone left
 			s.clients.BroadcastToPlayers(gs, &Message{
@@ -470,7 +467,7 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gs, err := s.db.GetGameByID(gameID)
+	gs, err := s.cache.GetGameByID(gameID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -541,7 +538,7 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.db.SaveGame(*gs)
+	go s.cache.SaveGame(*gs)
 	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(agentProfile.ID))
 	go s.BroadcastAIActions(gs)
 
@@ -796,7 +793,7 @@ func (s *Server) handleGameAction(w http.ResponseWriter, r *http.Request, valida
 		return
 	}
 
-	gs, err := s.db.GetGameByID(gameID)
+	gs, err := s.cache.GetGameByID(gameID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -818,7 +815,7 @@ func (s *Server) handleGameAction(w http.ResponseWriter, r *http.Request, valida
 		return
 	}
 
-	s.db.SaveGame(*gs)
+	go s.cache.SaveGame(*gs)
 	s.clients.BroadcastStateChange(gs, response, currentPosition)
 	go s.BroadcastAIActions(gs)
 
@@ -935,7 +932,7 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gs, err := s.db.GetGameByID(gameID)
+	gs, err := s.cache.GetGameByID(gameID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -963,7 +960,7 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 	// Broadcast the updated state to all players BEFORE checking if all are ready
 	s.clients.BroadcastStateChange(gs, fmt.Sprintf("%s is ready for the next game", player.Name), gs.CurrentPlayer)
 
-	s.db.SaveGame(*gs)
+	go s.cache.SaveGame(*gs)
 
 	// If all human players are ready, automatically start the next game
 	if allReady {
@@ -974,7 +971,7 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		}
 
 		newGameID := gs.ID
-		s.db.SaveGame(*gs)
+		go s.cache.SaveGame(*gs)
 
 		// Send start_next_game message to trigger navigation
 		s.clients.BroadcastToPlayers(gs, &Message{
@@ -1008,7 +1005,7 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gs, err := s.db.GetGameByID(gameID)
+	gs, err := s.cache.GetGameByID(gameID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -1038,11 +1035,8 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 				if err := s.db.RemovePlayer(gs.ID, timeoutPlayerID); err != nil {
 					logger.Warning("Failed to remove inactive player from completed game: %e", err)
 				}
-
 				// Save the updated game state
-				if err := s.db.SaveGame(*gs); err != nil {
-					logger.Warning("Failed to save game after removing inactive player: %e", err)
-				}
+				go s.cache.SaveGame(*gs)
 
 				logger.Info("Removed inactive player %s from completed game %s (client-reported)", timeoutPlayerID, gs.Code)
 			}
@@ -1077,11 +1071,7 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save the updated game state
-	if err := s.db.SaveGame(*gs); err != nil {
-		logger.Warning("Failed to save game after timeout: %e", err)
-	} else {
-		logger.Info("Saved game %s with phase complete", gs.Code)
-	}
+	go s.cache.SaveGame(*gs)
 
 	// Broadcast the updated game state so clients show game over screen
 	timeoutMsg := fmt.Sprintf("%s was inactive for 2 minutes and has forfeited the game", currentPlayer.Name)

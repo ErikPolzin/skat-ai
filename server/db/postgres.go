@@ -153,7 +153,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("game not found")
+		return nil, fmt.Errorf("game with ID %s not found", gameID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to load game: %w", err)
@@ -229,7 +229,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("game not found")
+		return nil, fmt.Errorf("game with session code %s not found", sessionCode)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to load game: %w", err)

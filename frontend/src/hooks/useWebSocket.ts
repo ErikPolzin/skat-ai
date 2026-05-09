@@ -51,11 +51,6 @@ export function useWebSocket() {
   }, []);
 
   const scheduleReconnect = useCallback(() => {
-    if (manualDisconnectRef.current) {
-      console.log("Manual disconnect, not reconnecting");
-      return;
-    }
-
     if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
       console.error(
         `Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`,
@@ -162,7 +157,7 @@ export function useWebSocket() {
         console.log("WebSocket closed:", event.code, event.reason);
         wsRef.current = null;
         notifySubscribers();
-        if (manualDisconnectRef.current) {
+        if (!manualDisconnectRef.current) {
           // Attempt to reconnect unless it was a manual disconnect
           scheduleReconnect();
         }

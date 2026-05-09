@@ -45,6 +45,9 @@ function calculateGameValue(
   trumpSuit: string,
   hand: Card[],
   skatCards: Card[],
+  playedHand: boolean,
+  schneiderAnnounced: boolean,
+  schwarzAnnounced: boolean,
 ): number {
   let baseValue = 0;
 
@@ -66,7 +69,10 @@ function calculateGameValue(
   }
 
   const matadorCount = countMatadors(hand, skatCards);
-  const multiplier = 1 + matadorCount; // 1 for "game" + matadors
+  let multiplier = 1 + matadorCount; // 1 for "game" + matadors
+  if (playedHand) multiplier += 1;
+  if (schneiderAnnounced) multiplier += 1;
+  if (schwarzAnnounced) multiplier += 1;
 
   return baseValue * multiplier;
 }
@@ -81,10 +87,6 @@ export function GameModeSelector() {
   // Check if everyone passed (minimum bid of 18 was assigned)
   const everyonePassed = game.bidValue === 0;
 
-  // Check if player is playing hand (didn't pick up skat)
-  // Only true if skat cards are available but player hasn't picked them up
-  const isPlayingHand = game.playedHand;
-
   // Calculate game value for current selection
   const gameValue = useMemo(() => {
     return calculateGameValue(
@@ -92,8 +94,19 @@ export function GameModeSelector() {
       selectedTrump,
       game.hand,
       game.skatCards,
+      game.playedHand,
+      game.schneiderAnnounced,
+      game.schwarzAnnounced,
     );
-  }, [selectedMode, selectedTrump, game.hand, game.skatCards]);
+  }, [
+    selectedMode,
+    selectedTrump,
+    game.hand,
+    game.skatCards,
+    game.playedHand,
+    game.schneiderAnnounced,
+    game.schwarzAnnounced,
+  ]);
 
   const isDisabled = !game.controls.isConnected || game.controls.isLoading;
 
@@ -172,7 +185,7 @@ export function GameModeSelector() {
         </button>
       </div>
 
-      {isPlayingHand && selectedMode !== "null" && (
+      {game.playedHand && selectedMode !== "null" && (
         <div className="announcements">
           <label className="announcement-option">
             <input

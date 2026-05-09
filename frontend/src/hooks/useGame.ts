@@ -343,6 +343,8 @@ export function useGame(
     dealerPassed: state.dealer_passed,
     phase: state.phase,
     playedHand: state.played_hand,
+    schneiderAnnounced: state.announced_schneider,
+    schwarzAnnounced: state.announced_schwarz,
     gameOver,
     gameMode: state.mode,
     trumpSuit: state.trump_suit,

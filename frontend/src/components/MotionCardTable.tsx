@@ -58,6 +58,10 @@ function getGameModeDisplay(gameMode: string, trumpSuit?: string): string {
   }
 }
 
+function getGameModeSVG(gameMode: string, trumpSuit?: string): string {
+  return `/res/${getGameModeDisplay(gameMode, trumpSuit)}.svg`;
+}
+
 export function MotionCardTable() {
   const game = useGameContext();
   const theme = useTheme();
@@ -83,11 +87,7 @@ export function MotionCardTable() {
 
   // Handle timeout when deadline expires
   useEffect(() => {
-    if (
-      isExpired &&
-      game.currentPlayerDeadline &&
-      game.player?.id
-    ) {
+    if (isExpired && game.currentPlayerDeadline && game.player?.id) {
       if (game.phase === "complete") {
         // Game is complete, just leave the game
         leaveGame(game.gameId, game.player?.id).catch((err) => {
@@ -521,7 +521,12 @@ export function MotionCardTable() {
           <GameOverScreen />
         ) : game.gameMode ? (
           <div className="game-mode-display">
-            <span className="mode-value">{game.trumpSuit}</span>
+            <img
+              src={getGameModeSVG(game.gameMode, game.trumpSuit)}
+              width="200"
+              height="200"
+              alt={game.trumpSuit}
+            />
             <span className="mode-title">
               {getGameModeDisplay(game.gameMode, game.trumpSuit)}
             </span>

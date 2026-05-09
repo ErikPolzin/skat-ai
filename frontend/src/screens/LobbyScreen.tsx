@@ -16,7 +16,10 @@ import {
   useTheme,
   Grid,
   Container,
+  Stack,
 } from "@mui/material";
+import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
+import { lineClasses } from "@mui/x-charts/LineChart";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import { createGame, joinGame, uploadAvatar } from "../api/games";
 import {
@@ -33,6 +36,7 @@ import { getPlayerRating, type PlayerRating } from "../api/games";
 import AvailableGames from "../components/AvailableGames";
 
 const Header = () => {
+  const theme = useTheme();
   const profileId = useProfileStore(selectPlayerId);
   const profileIcon = useProfileStore(selectProfileIcon);
   const username = useProfileStore(selectUsername);
@@ -41,6 +45,7 @@ const Header = () => {
   const [playerRating, setPlayerRating] = useState<PlayerRating | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   useEffect(() => {
     if (profileId) {
@@ -93,75 +98,89 @@ const Header = () => {
     }
   };
   return (
-    <Box
+    <Stack
+      direction={isMobile ? "column" : "row"}
       sx={{
-        display: "flex",
         alignItems: "center",
-        gap: 2,
         px: 2,
         pt: 1,
         mb: { xs: 0, lg: 2 },
       }}
     >
-      <Badge
-        overlap="circular"
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-        badgeContent={
-          <IconButton
-            size="small"
-            onClick={handleAvatarClick}
-            disabled={isUploadingAvatar || !profileId}
+      <Box sx={{ display: "flex", flexDirection: "row", gap: 2, flexGrow: 1 }}>
+        <Badge
+          overlap="circular"
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          badgeContent={
+            <IconButton
+              size="small"
+              onClick={handleAvatarClick}
+              disabled={isUploadingAvatar || !profileId}
+              sx={{
+                bgcolor: "primary.main",
+                color: "white",
+                "&:hover": { bgcolor: "primary.dark" },
+                width: 32,
+                height: 32,
+              }}
+            >
+              {isUploadingAvatar ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <PhotoCameraIcon sx={{ fontSize: 16 }} />
+              )}
+            </IconButton>
+          }
+        >
+          <Avatar
+            src={profileIcon || undefined}
+            alt={username ?? "No username"}
             sx={{
-              bgcolor: "primary.main",
-              color: "white",
-              "&:hover": { bgcolor: "primary.dark" },
-              width: 32,
-              height: 32,
+              width: 60,
+              height: 60,
+              fontSize: "2rem",
+              bgcolor: "secondary.main",
             }}
           >
-            {isUploadingAvatar ? (
-              <CircularProgress size={16} color="inherit" />
-            ) : (
-              <PhotoCameraIcon sx={{ fontSize: 16 }} />
-            )}
-          </IconButton>
-        }
-      >
-        <Avatar
-          src={profileIcon || undefined}
-          alt={username ?? "No username"}
-          sx={{
-            width: 60,
-            height: 60,
-            fontSize: "2rem",
-            bgcolor: "secondary.main",
-          }}
-        >
-          {(username || "-").charAt(0).toUpperCase()}
-        </Avatar>
-      </Badge>
-      <Box>
-        <Typography
-          variant="h4"
-          component="h1"
-          sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
-        >
-          Welcome, {username}!
-        </Typography>
-        {playerRating && (
-          <Typography variant="body2" color="text.secondary">
-            Rating: {playerRating.rating} • Rank: #{playerRating.rank || "N/A"}
+            {(username || "-").charAt(0).toUpperCase()}
+          </Avatar>
+        </Badge>
+        <Box>
+          <Typography
+            variant="h4"
+            component="h1"
+            sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
+          >
+            Welcome, {username}!
           </Typography>
-        )}
+          {playerRating && (
+            <Typography variant="body2" color="text.secondary">
+              Rating: {playerRating.rating} • Rank: #
+              {playerRating.rank || "N/A"}
+            </Typography>
+          )}
+        </Box>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={handleAvatarChange}
+        />
       </Box>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={handleAvatarChange}
+      <SparkLineChart
+        sx={{
+          [`& .${lineClasses.area}`]: { opacity: 0.2 },
+          [`& .${lineClasses.line}`]: { strokeWidth: 3 },
+        }}
+        area
+        color="rgb(224, 101, 255)"
+        width={300}
+        height={isMobile ? 50 : 100}
+        showHighlight
+        data={playerRating?.timeline || []}
       />
-    </Box>
+    </Stack>
   );
 };
 
@@ -255,7 +274,13 @@ export default function LobbyScreen() {
 
   if (isMobile) {
     return (
-      <Box sx={{ bgcolor: "background.default", height: "100vh" }}>
+      <Box
+        sx={{
+          bgcolor: "background.default",
+          height: "100vh",
+          overflowY: "auto",
+        }}
+      >
         <Box sx={{ bgcolor: "background.paper" }}>
           <Header />
           <Tabs

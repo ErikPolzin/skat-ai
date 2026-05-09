@@ -238,6 +238,7 @@ export interface PlayerRating {
   losses: number;
   peak_rating: number;
   rank?: number;
+  timeline?: number[];
 }
 
 export interface LeaderboardEntry {

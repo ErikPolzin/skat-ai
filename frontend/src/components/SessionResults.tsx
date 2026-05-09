@@ -13,8 +13,6 @@ import {
   useMediaQuery,
   useTheme,
   Backdrop,
-  Button,
-  CircularProgress,
 } from "@mui/material";
 import { ExpandMore, ExpandLess, ExitToApp } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
@@ -111,21 +109,14 @@ export function SessionResults({
           Session Results ({gamesPlayed}/{maxGames})
         </Typography>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-          {!isMobile && (
-            <Button
-              variant="contained"
-              color="error"
-              size="small"
-              onClick={handleLeaveSession}
-              disabled={isLeaving}
-              startIcon={
-                isLeaving ? <CircularProgress size={16} /> : <ExitToApp />
-              }
-              sx={{ textTransform: "none" }}
-            >
-              {isLeaving ? "Leaving..." : "Leave"}
-            </Button>
-          )}
+          <IconButton
+            onClick={handleLeaveSession}
+            loading={isLeaving}
+            size="small"
+            sx={{ color: "rgba(255, 255, 255, 0.7)" }}
+          >
+            <ExitToApp />
+          </IconButton>
           {isMobile && (
             <IconButton
               onClick={(e) => {

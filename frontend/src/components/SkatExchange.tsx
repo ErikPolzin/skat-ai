@@ -48,7 +48,6 @@ export function SkatExchange({
               onClick={game.controls.pickUpSkat}
               disabled={isDisabled}
               style={{
-                opacity: isDisabled ? 0.5 : 1,
                 cursor: isDisabled ? "not-allowed" : "pointer",
               }}
             >
@@ -63,7 +62,6 @@ export function SkatExchange({
               onClick={game.controls.playHand}
               disabled={isDisabled}
               style={{
-                opacity: isDisabled ? 0.5 : 1,
                 cursor: isDisabled ? "not-allowed" : "pointer",
               }}
             >

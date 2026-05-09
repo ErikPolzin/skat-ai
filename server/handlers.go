@@ -1126,6 +1126,17 @@ func (s *Server) handleGetPlayerRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	results, err := s.db.GetPlayerResults(playerID, 200)
+	if err != nil {
+		logger.Warning("Failed to get player results: %e", err)
+		// Return empty array on error rather than failing
+		results = []game.PlayerResultState{}
+	}
+	timeline := make([]int, 200)
+	for _, r := range results {
+		timeline = append(timeline, r.RatingBefore)
+	}
+
 	response := map[string]any{
 		"profile_id":   rating.ProfileID,
 		"name":         profile.Name,
@@ -1135,6 +1146,7 @@ func (s *Server) handleGetPlayerRating(w http.ResponseWriter, r *http.Request) {
 		"losses":       rating.Losses,
 		"peak_rating":  rating.PeakRating,
 		"rank":         rank,
+		"timeline":     timeline,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

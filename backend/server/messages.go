@@ -1,10 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"skat/agent"
 	"skat/game"
+	"skat/game/rating"
 	"skat/logger"
-	"skat/rating"
+	"skat/server/db"
 	"time"
 )
 
@@ -73,18 +75,36 @@ func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fr
 }
 
 // saveGameResults saves player results when a game completes
-func (s *Server) maybeSaveGameResults(gs *game.GameState) {
+func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
 	if gs.Phase == game.PhaseComplete {
 		results := gs.PlayerResults()
 		if results == nil {
 			logger.Warning("Failed to update player ratings, no results")
-			return
+			return nil
+		}
+
+		playerRatings := make(map[string]*rating.PlayerRating)
+
+		for _, player := range gs.Players {
+			if player != nil {
+				rating, err := s.db.GetPlayerRating(player.ID)
+				if err != nil {
+					return fmt.Errorf("failed to get player rating: %w", err)
+				}
+				playerRatings[player.ID] = rating.ToGamePlayerRating()
+			}
 		}
 
 		// Update player ratings and populate rating fields in results
-		err := rating.UpdateRatings(gs, s.db, results)
+		err := rating.UpdateRatings(gs, results, playerRatings)
 		if err != nil {
 			logger.Warning("Failed to update player ratings: %e", err)
+		}
+
+		for _, rat := range playerRatings {
+			if err := s.db.SavePlayerRating(db.NewPlayerRating(rat)); err != nil {
+				return fmt.Errorf("failed to save player rating: %w", err)
+			}
 		}
 
 		// Save results with rating information
@@ -92,6 +112,7 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) {
 			logger.Warning("Failed to save player results: %e", err)
 		}
 	}
+	return nil
 }
 
 func (s *Server) BroadcastAIActions(gs *game.GameState) {

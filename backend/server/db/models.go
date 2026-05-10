@@ -2,6 +2,7 @@ package db
 
 import (
 	"skat/game"
+	"skat/game/rating"
 	"time"
 )
 
@@ -58,6 +59,29 @@ type PlayerRating struct {
 	LastUpdated time.Time
 }
 
+func (pr *PlayerRating) ToGamePlayerRating() *rating.PlayerRating {
+	return &rating.PlayerRating{
+		ProfileID:   pr.ProfileID,
+		Rating:      pr.Rating,
+		GamesPlayed: pr.GamesPlayed,
+		Wins:        pr.Wins,
+		Losses:      pr.Losses,
+		PeakRating:  pr.PeakRating,
+	}
+}
+
+func NewPlayerRating(pr *rating.PlayerRating) PlayerRating {
+	return PlayerRating{
+		ProfileID:   pr.ProfileID,
+		Rating:      pr.Rating,
+		GamesPlayed: pr.GamesPlayed,
+		Wins:        pr.Wins,
+		Losses:      pr.Losses,
+		PeakRating:  pr.PeakRating,
+		LastUpdated: time.Now(),
+	}
+}
+
 type AgentConfig struct {
 	ProfileID string
 	// Bidding strategy configuration
@@ -66,9 +90,9 @@ type AgentConfig struct {
 	// Game choice strategy configuration
 	GameChoiceType string
 	// Card play strategy configuration
-	CardPlayType         string
-	MCTSSimulations      *int    // For MCTS card play (nullable)
-	CardplayWeightsPath  *string // Path to combined neural network weights (nullable)
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	CardPlayType        string
+	MCTSSimulations     *int    // For MCTS card play (nullable)
+	CardplayWeightsPath *string // Path to combined neural network weights (nullable)
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }

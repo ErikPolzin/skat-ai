@@ -3,11 +3,18 @@ package rating
 import (
 	"fmt"
 	"math"
-	"time"
 
 	"skat/game"
-	"skat/server/db"
 )
+
+type PlayerRating struct {
+	ProfileID   string
+	Rating      int
+	GamesPlayed int
+	Wins        int
+	Losses      int
+	PeakRating  int
+}
 
 // CalculateExpectedScore calculates the expected score for a player
 // using the standard ELO formula
@@ -55,7 +62,7 @@ func CalculateRatingChange(rating, opponentRating int, actualScore float64, game
 
 // UpdateRatings updates ratings for all players and populates rating fields in results
 // In Skat, the declarer plays against two opponents as a team
-func UpdateRatings(gameState *game.GameState, database db.Database, results *[3]game.PlayerResultState) error {
+func UpdateRatings(gameState *game.GameState, results *[3]game.PlayerResultState, ratings map[string]*PlayerRating) error {
 	if gameState.Phase != game.PhaseComplete {
 		return fmt.Errorf("game is not complete")
 	}
@@ -89,26 +96,13 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results *[3]
 		aiMultiplier = 0.25
 	}
 
-	// Get ratings for all players and build a map
-	playerRatings := make(map[string]*db.PlayerRating)
-
-	for _, player := range gameState.Players {
-		if player != nil {
-			rating, err := database.GetPlayerRating(player.ID)
-			if err != nil {
-				return fmt.Errorf("failed to get player rating: %w", err)
-			}
-			playerRatings[player.ID] = rating
-		}
-	}
-
 	// Get opponents and calculate average opponent rating
 	var opponents []*game.PlayerState
 	var opponentRatings []int
 	for pos, player := range gameState.Players {
 		if player != nil && game.GamePosition(pos) != *gameState.Declarer {
 			opponents = append(opponents, player)
-			opponentRatings = append(opponentRatings, playerRatings[player.ID].Rating)
+			opponentRatings = append(opponentRatings, ratings[player.ID].Rating)
 		}
 	}
 
@@ -129,7 +123,7 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results *[3]
 	ratingChanges := make(map[string]int)
 
 	// Calculate declarer's rating change
-	declarerRating := playerRatings[declarer.ID]
+	declarerRating := ratings[declarer.ID]
 	declarerChange := CalculateRatingChange(
 		declarerRating.Rating,
 		avgOpponentRating,
@@ -151,18 +145,12 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results *[3]
 	if declarerRating.Rating > declarerRating.PeakRating {
 		declarerRating.PeakRating = declarerRating.Rating
 	}
-	declarerRating.LastUpdated = time.Now()
-
-	// Save declarer rating
-	if err := database.SavePlayerRating(*declarerRating); err != nil {
-		return fmt.Errorf("failed to save declarer rating: %w", err)
-	}
 
 	// Update opponent ratings
 	// Note: Opponents who passed don't get wins/losses/games_played updated
 	// Only their rating is adjusted to reflect the declarer's performance
 	for _, opponent := range opponents {
-		opponentRating := playerRatings[opponent.ID]
+		opponentRating := ratings[opponent.ID]
 
 		// Opponents play as a team, so they share the result
 		opponentChange := CalculateRatingChange(
@@ -181,19 +169,13 @@ func UpdateRatings(gameState *game.GameState, database db.Database, results *[3]
 		if opponentRating.Rating > opponentRating.PeakRating {
 			opponentRating.PeakRating = opponentRating.Rating
 		}
-		opponentRating.LastUpdated = time.Now()
-
-		// Save opponent rating
-		if err := database.SavePlayerRating(*opponentRating); err != nil {
-			return fmt.Errorf("failed to save opponent rating: %w", err)
-		}
 	}
 
 	// Update results with rating information
 	for i := range results {
 		playerID := results[i].PlayerID
 		if change, ok := ratingChanges[playerID]; ok {
-			rating := playerRatings[playerID]
+			rating := ratings[playerID]
 			results[i].RatingBefore = rating.Rating - change
 			results[i].RatingAfter = rating.Rating
 			results[i].RatingChange = change

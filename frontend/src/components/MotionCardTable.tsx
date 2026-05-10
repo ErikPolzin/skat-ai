@@ -6,7 +6,7 @@ import React, {
   useRef,
 } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Button, useMediaQuery, useTheme } from "@mui/material";
+import { Button, Chip, useMediaQuery, useTheme } from "@mui/material";
 import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
 import { Card as CardType, reportTimeout, leaveGame } from "../api/games";
 import "./MotionCardTable.css";
@@ -588,12 +588,12 @@ export function MotionCardTable() {
               </div>
             </div>
             <div className="avatar-info">
-              <div
-                className={`opponent-name ${!game.controls.isConnected || !game.topPlayer.is_online ? "offline" : ""}`}
-              >
-                {game.topPlayer.name}
-                {game.declarer === game.topPlayer && " (D)"}
-              </div>
+              <Chip
+                label={`${game.topPlayer.name} ${game.declarer === game.topPlayer ? "(D)" : ""}`}
+                sx={{
+                  bgcolor: "background.paper",
+                }}
+              ></Chip>
               {game.getRole(game.topPlayer.position) && (
                 <div className="player-role">
                   {game.getRole(game.topPlayer.position)}
@@ -651,12 +651,12 @@ export function MotionCardTable() {
               </div>
             </div>
             <div className="avatar-info">
-              <div
-                className={`opponent-name ${!game.controls.isConnected || !game.leftPlayer.is_online ? "offline" : ""}`}
-              >
-                {game.leftPlayer.name}
-                {game.declarer === game.leftPlayer && " (D)"}
-              </div>
+              <Chip
+                label={`${game.leftPlayer.name} ${game.declarer === game.leftPlayer ? "(D)" : ""}`}
+                sx={{
+                  bgcolor: "background.paper",
+                }}
+              ></Chip>
               {game.getRole(game.leftPlayer.position) && (
                 <div className="player-role">
                   {game.getRole(game.leftPlayer.position)}
@@ -708,10 +708,12 @@ export function MotionCardTable() {
             </div>
           </div>
           <div className="avatar-info">
-            <div className="player-name">
-              {game.player?.name}
-              {game.isDeclarer && " (D)"}
-            </div>
+            <Chip
+              label={`${game.player?.name} ${game.isDeclarer ? "(D)" : ""}`}
+              sx={{
+                bgcolor: "background.paper",
+              }}
+            ></Chip>
             {game.getRole(game.playerPosition) && (
               <div className="player-role">
                 {game.getRole(game.playerPosition)}
@@ -818,7 +820,7 @@ export function MotionCardTable() {
                 initial={initialPosition}
                 skipInitialAnimation={!shouldAnimateFromDeck}
                 whileHover={
-                  canClickCard
+                  canClickCard && !isMobile
                     ? { y: basePosition.y + declarerOffset - 20 }
                     : undefined
                 }
@@ -834,7 +836,6 @@ export function MotionCardTable() {
                           (game.phase === "playing" && !isValidMove)
                         ? "not-allowed"
                         : "pointer",
-                  opacity: !game.controls.isConnected ? 0.6 : 1,
                   zIndex: 300 + index,
                 }}
               />
@@ -852,6 +853,7 @@ export function MotionCardTable() {
             const animatePosition = {
               ...basePosition,
               y: basePosition.y + declarerOffset,
+              // opacity: isMobile ? 0 : 1,
             };
             const initialPosition = getOpponentCardInitialPosition(
               index,
@@ -886,6 +888,7 @@ export function MotionCardTable() {
             const animatePosition = {
               ...basePosition,
               x: basePosition.x + declarerOffset,
+              opacity: isMobile ? 0 : 1,
             };
             const initialPosition = getOpponentCardInitialPosition(
               index,

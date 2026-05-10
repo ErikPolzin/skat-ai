@@ -68,7 +68,7 @@ export function CircularTimer({
         width: size,
         height: size,
         pointerEvents: "none",
-        zIndex: 100,
+        zIndex: 0,
       }}
     >
       <svg
@@ -82,7 +82,7 @@ export function CircularTimer({
         <path
           d={`M ${center} ${center} L ${center} 0 A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x} ${y} Z`}
           fill={color}
-          opacity="0.4"
+          opacity="0.7"
           style={{
             transition: "fill 0.3s ease",
           }}

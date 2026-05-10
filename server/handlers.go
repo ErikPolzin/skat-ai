@@ -1122,9 +1122,11 @@ func (s *Server) handleGetPlayerRating(w http.ResponseWriter, r *http.Request) {
 		// Return empty array on error rather than failing
 		results = []game.PlayerResultState{}
 	}
-	timeline := make([]int, 200)
+	var timeline = []int{}
 	for _, r := range results {
-		timeline = append(timeline, r.RatingBefore)
+		if r.RatingBefore > 0 {
+			timeline = append(timeline, r.RatingBefore)
+		}
 	}
 
 	response := map[string]any{

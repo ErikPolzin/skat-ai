@@ -16,7 +16,6 @@ import {
   useTheme,
   Grid,
   Container,
-  Stack,
 } from "@mui/material";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 import { lineClasses } from "@mui/x-charts/LineChart";
@@ -25,6 +24,9 @@ import { createGame, joinGame, uploadAvatar } from "../api/games";
 import {
   selectPlayerId,
   selectProfileIcon,
+  selectRating,
+  selectSetProfileIcon,
+  selectSetRating,
   selectUsername,
   useProfileStore,
 } from "../stores/profileStore";
@@ -32,7 +34,7 @@ import { useSnackbarStore } from "../stores/snackbarStore";
 import ActiveGames from "../components/ActiveGames";
 import PlayerHistory from "../components/PlayerHistory";
 import Leaderboard from "../components/Leaderboard";
-import { getPlayerRating, type PlayerRating } from "../api/games";
+import { getPlayerRating } from "../api/games";
 import AvailableGames from "../components/AvailableGames";
 
 const Header = () => {
@@ -40,9 +42,10 @@ const Header = () => {
   const profileId = useProfileStore(selectPlayerId);
   const profileIcon = useProfileStore(selectProfileIcon);
   const username = useProfileStore(selectUsername);
-  const setProfileIcon = useProfileStore((state) => state.setProfileIcon);
+  const rating = useProfileStore(selectRating);
+  const setRating = useProfileStore(selectSetRating);
+  const setProfileIcon = useProfileStore(selectSetProfileIcon);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [playerRating, setPlayerRating] = useState<PlayerRating | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -58,8 +61,7 @@ const Header = () => {
     if (!profileId) return;
 
     try {
-      const rating = await getPlayerRating(profileId);
-      setPlayerRating(rating);
+      setRating(await getPlayerRating(profileId));
     } catch (error) {
       console.error("Failed to fetch player rating:", error);
       showSnackbar("Failed to fetch player rating", "error");
@@ -98,89 +100,76 @@ const Header = () => {
     }
   };
   return (
-    <Stack
-      direction={isMobile ? "column" : "row"}
+    <Box
       sx={{
-        alignItems: "center",
-        px: 2,
-        pt: 1,
-        mb: { xs: 0, lg: 2 },
+        display: "flex",
+        flexDirection: "row",
+        gap: 2,
+        flexGrow: 1,
+        py: isMobile ? 1 : 0,
+        px: isMobile ? 2 : 0,
+        mb: isMobile ? 0 : 2,
       }}
     >
-      <Box sx={{ display: "flex", flexDirection: "row", gap: 2, flexGrow: 1 }}>
-        <Badge
-          overlap="circular"
-          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-          badgeContent={
-            <IconButton
-              size="small"
-              onClick={handleAvatarClick}
-              disabled={isUploadingAvatar || !profileId}
-              sx={{
-                bgcolor: "primary.main",
-                color: "white",
-                "&:hover": { bgcolor: "primary.dark" },
-                width: 32,
-                height: 32,
-              }}
-            >
-              {isUploadingAvatar ? (
-                <CircularProgress size={16} color="inherit" />
-              ) : (
-                <PhotoCameraIcon sx={{ fontSize: 16 }} />
-              )}
-            </IconButton>
-          }
-        >
-          <Avatar
-            src={profileIcon || undefined}
-            alt={username ?? "No username"}
+      <Badge
+        overlap="circular"
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        badgeContent={
+          <IconButton
+            size="small"
+            onClick={handleAvatarClick}
+            disabled={isUploadingAvatar || !profileId}
             sx={{
-              width: 60,
-              height: 60,
-              fontSize: "2rem",
-              bgcolor: "secondary.main",
+              bgcolor: "primary.main",
+              color: "white",
+              "&:hover": { bgcolor: "primary.dark" },
+              width: 32,
+              height: 32,
             }}
           >
-            {(username || "-").charAt(0).toUpperCase()}
-          </Avatar>
-        </Badge>
-        <Box>
-          <Typography
-            variant="h4"
-            component="h1"
-            sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
-          >
-            Welcome, {username}!
+            {isUploadingAvatar ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : (
+              <PhotoCameraIcon sx={{ fontSize: 16 }} />
+            )}
+          </IconButton>
+        }
+      >
+        <Avatar
+          src={profileIcon || undefined}
+          alt={username ?? "No username"}
+          sx={{
+            width: 60,
+            height: 60,
+            fontSize: "2rem",
+            bgcolor: "secondary.main",
+          }}
+        >
+          {(username || "-").charAt(0).toUpperCase()}
+        </Avatar>
+      </Badge>
+      <Box>
+        <Typography
+          variant="h4"
+          component="h1"
+          sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
+        >
+          Welcome, {username}!
+        </Typography>
+        {rating && (
+          <Typography variant="body2" color="text.secondary">
+            Rating: {rating.rating} • Rank: #{rating.rank || "N/A"}
           </Typography>
-          {playerRating && (
-            <Typography variant="body2" color="text.secondary">
-              Rating: {playerRating.rating} • Rank: #
-              {playerRating.rank || "N/A"}
-            </Typography>
-          )}
-        </Box>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={handleAvatarChange}
-        />
+        )}
       </Box>
-      <SparkLineChart
-        sx={{
-          [`& .${lineClasses.area}`]: { opacity: 0.2 },
-          [`& .${lineClasses.line}`]: { strokeWidth: 3 },
-        }}
-        area
-        color="rgb(224, 101, 255)"
-        width={300}
-        height={isMobile ? 50 : 100}
-        showHighlight
-        data={playerRating?.timeline || []}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handleAvatarChange}
       />
-    </Stack>
+    </Box>
   );
 };
 
@@ -267,6 +256,35 @@ const GamesTab = () => {
   );
 };
 
+const LeaderboardTab = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const rating = useProfileStore(selectRating);
+  const minY = Math.min(...(rating?.timeline ?? []));
+  const maxY = Math.max(...(rating?.timeline ?? []));
+  return (
+    <Box>
+      <SparkLineChart
+        sx={{
+          [`& .${lineClasses.area}`]: { opacity: 0.2 },
+          [`& .${lineClasses.line}`]: { strokeWidth: 3 },
+        }}
+        area
+        color="rgb(224, 101, 255)"
+        height={isMobile ? 50 : 100}
+        showHighlight
+        showTooltip
+        data={rating?.timeline || []}
+        yAxis={{
+          min: minY,
+          max: maxY,
+        }}
+      />
+      <Leaderboard />
+    </Box>
+  );
+};
+
 export default function LobbyScreen() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -298,7 +316,7 @@ export default function LobbyScreen() {
         <Box sx={{ px: 1 }}>
           {currentTab === 0 && <GamesTab />}
           {currentTab === 1 && <PlayerHistory />}
-          {currentTab === 2 && <Leaderboard />}
+          {currentTab === 2 && <LeaderboardTab />}
         </Box>
       </Box>
     );
@@ -330,7 +348,7 @@ export default function LobbyScreen() {
             </Grid>
           </Grid>
           <Grid size={{ sm: 12, md: 6, xl: 4 }}>
-            <Leaderboard />
+            <LeaderboardTab />
           </Grid>
         </Grid>
       </Paper>

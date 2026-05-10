@@ -201,15 +201,6 @@ export function useGame(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, playerId]);
 
-  const removeCardFromHand = useCallback((card: Card) => {
-    setGameInfo((prev) => ({
-      ...prev,
-      hand: (prev.hand || []).filter(
-        (c) => !(c.rank === card.rank && c.suit === card.suit),
-      ),
-    }));
-  }, []);
-
   const optimisticallyPlayCard = useCallback((card: Card) => {
     setGameInfo((prev) => ({
       ...prev,
@@ -380,7 +371,6 @@ export function useGame(
     // Getters
     getRole,
     // Actions
-    removeCardFromHand,
     optimisticallyPlayCard,
     undoOptimisticPlayCard,
     setGameInfo,

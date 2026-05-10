@@ -35,7 +35,8 @@ func (cm *ClientManager) RegisterClient(profileID string, conn *websocket.Conn) 
 		// Close old connection if it exists
 		if existingClient.conn != nil {
 			logger.Info("Closing existing connection for profile")
-			existingClient.conn.Close()
+			closeHandler := existingClient.conn.CloseHandler()
+			closeHandler(1000, "closed existing connection")
 		}
 		// Update connection
 		existingClient.conn = conn

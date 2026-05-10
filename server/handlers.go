@@ -68,21 +68,8 @@ func (s *Server) SetupRoutes() http.Handler {
 	api.HandleFunc("/leaderboard", s.handleGetLeaderboard).Methods("GET")
 	api.HandleFunc("/agents", s.handleListAgents).Methods("GET")
 
-	// Serve React build files (must be last - catch-all)
-	spa := http.FileServer(http.Dir("./frontend/build"))
-	r.PathPrefix("/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Try to serve the requested file
-		path := "./frontend/build" + r.URL.Path
-		if r.URL.Path == "/" || !fileExists(path) {
-			// Serve index.html for root or non-existent files (SPA routing)
-			http.ServeFile(w, r, "./frontend/build/index.html")
-		} else {
-			spa.ServeHTTP(w, r)
-		}
-	}))
-
 	// Wrap with CORS middleware
-	allowedOrigins := []string{"http://localhost:3000", "http://192.168.1.125:3000", "https://skat.erikpolzin.com"}
+	allowedOrigins := []string{"http://localhost:5173", "https://skat.erikpolzin.com"}
 
 	// Add production CORS origins from environment variable (comma-separated)
 	if corsOrigins := os.Getenv("CORS_ORIGIN"); corsOrigins != "" {

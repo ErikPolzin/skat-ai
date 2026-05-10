@@ -147,8 +147,8 @@ jobs:
       - name: Create production env file
         working-directory: frontend
         run: |
-          echo "REACT_APP_API_URL=${{ steps.backend-url.outputs.url }}" > .env.production
-          echo "REACT_APP_WS_URL=${{ steps.backend-url.outputs.url }}" | sed 's/https/wss/g' >> .env.production
+          echo "VITE_API_URL=${{ steps.backend-url.outputs.url }}" > .env.production
+          echo "VITE_WS_URL=${{ steps.backend-url.outputs.url }}" | sed 's/https/wss/g' >> .env.production
           cat .env.production
 
       - name: Build frontend

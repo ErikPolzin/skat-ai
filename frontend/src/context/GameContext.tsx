@@ -5,13 +5,21 @@ import React, {
   useCallback,
   type ReactNode,
 } from "react";
-import { Game, useGame } from "../hooks/useGame";
+import { type Game, useGame } from "../hooks/useGame";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProfileStore } from "../stores/profileStore";
 import { useWebSocketContext } from "./WebSocketContext";
-import { GameControls, useControls } from "../hooks/useControls";
-import { Message } from "../types";
-import { GamePosition, type GameInfo } from "../api/games";
+import { type GameControls, useControls } from "../hooks/useControls";
+import {
+  type ErrorMessage,
+  type Message,
+  type PlayerForfeitMessage,
+  type PlayerLeftMessage,
+  type PlayerOfflineMessage,
+  type StartNextGameMessage,
+  type StateUpdateMessage,
+} from "../types";
+import { type GamePosition, type GameInfo } from "../api/games";
 
 const GameContext = createContext<
   | (Game & {
@@ -43,7 +51,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   });
 
   // Handle incoming WebSocket messages
-  const handleGameMessage = useCallback((message: Message) => {
+  const handleGameMessage = useCallback((message: Message<unknown>) => {
     const {
       setGameInfo,
       addMessage,
@@ -54,9 +62,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     switch (message.type) {
       case "state_update":
-        // Handle the new state diff format
-        if (message.data.diff) {
-          const diff = message.data.diff as GameInfo;
+        {
+          const data = (message as StateUpdateMessage).data;
+          // Handle the new state diff format
+          const diff = data.diff as GameInfo;
 
           // If trick is complete (3 cards) or being cleared, update the ref
           // This allows exit animations to access the correct winner
@@ -74,60 +83,73 @@ export function GameProvider({ children }: { children: ReactNode }) {
           setGameInfo(diff);
 
           // Handle session results if included (from game complete or session_updated)
-          if (message.data.session_results) {
-            setSessionResults(message.data.session_results);
+          if (data.session_results) {
+            setSessionResults(data.session_results);
           }
-          if (message.data.games_played !== undefined) {
-            setGamesPlayed(message.data.games_played);
+          if (data.games_played !== undefined) {
+            setGamesPlayed(data.games_played);
           }
 
           // Show the action description in the message log AFTER state is updated
           // (but not for session_updated events which are silent)
           if (
-            message.data.description &&
-            message.data.description.trim() !== "" &&
-            message.data.action_type !== "session_updated"
+            data.description &&
+            data.description.trim() !== "" &&
+            data.action_type !== "session_updated"
           ) {
-            const fromPlayer = message.data.from_player;
-            addMessage(message.data.description, false, fromPlayer);
+            const fromPlayer = data.from_player;
+            addMessage(data.description, false, fromPlayer);
           }
         }
+
         break;
       case "start_next_game":
-        navigate(`/game/${message.data.game_id}`, { replace: true });
+        {
+          const data = (message as StartNextGameMessage).data;
+          navigate(`/game/${data.game_id}`, { replace: true });
+        }
         break;
       case "player_offline":
-        // Update player's online status in state
-        if (message.data.player_id) {
-          updatePlayerOnlineStatus(message.data.player_id, false);
-          if (message.data.player_name) {
-            addMessage(`${message.data.player_name} went offline`, false);
+        {
+          const data = (message as PlayerOfflineMessage).data;
+          // Update player's online status in state
+          if (data.player_id) {
+            updatePlayerOnlineStatus(data.player_id, false);
+            if (data.player_name) {
+              addMessage(`${data.player_name} went offline`, false);
+            }
           }
         }
         break;
       case "player_left":
-        // Player left the game lobby
-        if (message.data.player_name) {
-          addMessage(`${message.data.player_name} left the game`, false);
-        } else {
-          addMessage(`A player left the game`, false);
+        {
+          const data = (message as PlayerLeftMessage).data;
+          // Player left the game lobby
+          if (data.player_name) {
+            addMessage(`${data.player_name} left the game`, false);
+          } else {
+            addMessage(`A player left the game`, false);
+          }
         }
         // The server will send a state_update with the new player list
         break;
       case "player_forfeit":
-        // Player forfeited an active game
-        if (message.data.player_name) {
-          addMessage(
-            `${message.data.player_name} has forfeited. Game ended.`,
-            true,
-          );
-        } else {
-          addMessage(`A player has forfeited. Game ended.`, true);
+        {
+          const data = (message as PlayerForfeitMessage).data;
+          // Player forfeited an active game
+          if (data.player_name) {
+            addMessage(`${data.player_name} has forfeited. Game ended.`, true);
+          } else {
+            addMessage(`A player has forfeited. Game ended.`, true);
+          }
         }
         // The server will send a state_update with game complete status
         break;
       case "error":
-        addMessage(message.data.message, true);
+        {
+          const data = (message as ErrorMessage).data;
+          addMessage(data.message, true);
+        }
         break;
 
       default:
@@ -161,6 +183,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useGameContext() {
   const game = useContext(GameContext);
   if (!game) {

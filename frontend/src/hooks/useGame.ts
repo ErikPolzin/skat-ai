@@ -158,6 +158,7 @@ export function useGame(
   // Fetch game state from server only when gameId changes
   useEffect(() => {
     if (!gameId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsLoading(false);
       setError("No game ID provided");
       return;

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Paper,
   Typography,
@@ -85,7 +85,7 @@ export function SessionResults({
   playerIds.forEach((id) => (runningTotals[id] = 0));
 
   if (results && results.length > 0) {
-    results.forEach((result, index) => {
+    results.forEach((result) => {
       playerIds.forEach((id) => {
         runningTotals[id] += result.player_results[id] || 0;
       });

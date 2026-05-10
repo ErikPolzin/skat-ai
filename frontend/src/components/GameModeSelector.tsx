@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { CircularProgress } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
-import { Card } from "../types";
+import { type Card } from "../types";
 import "./GameModeSelector.css";
 
 // Calculate matadors from hand (including skat cards)
@@ -39,6 +39,13 @@ function countMatadors(hand: Card[], skatCards: Card[]): number {
   return matadors;
 }
 
+const suitMap: Record<string, number> = {
+  "♦": 9,
+  "♥": 10,
+  "♠": 11,
+  "♣": 12,
+};
+
 // Calculate potential game value
 function calculateGameValue(
   mode: string,
@@ -56,12 +63,6 @@ function calculateGameValue(
       baseValue = 24;
       break;
     case "suit":
-      const suitMap: Record<string, number> = {
-        "♦": 9,
-        "♥": 10,
-        "♠": 11,
-        "♣": 12,
-      };
       baseValue = suitMap[trumpSuit] || 9;
       break;
     case "null":

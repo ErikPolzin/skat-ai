@@ -1,25 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Container, Typography, TextField, Button, Paper } from '@mui/material';
+import React, { useState, useEffect } from "react";
+import {
+  Box,
+  Container,
+  Typography,
+  TextField,
+  Button,
+  Paper,
+} from "@mui/material";
 
 interface UsernameScreenProps {
   onSubmit: (username: string) => void;
 }
 
 export default function UsernameScreen({ onSubmit }: UsernameScreenProps) {
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState("");
 
   useEffect(() => {
     // Load saved username from localStorage
-    const savedUsername = localStorage.getItem('skat-username');
+    const savedUsername = localStorage.getItem("skat-username");
     if (savedUsername) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUsername(savedUsername);
     }
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const name = username.trim() || 'Player';
-    localStorage.setItem('skat-username', name);
+    const name = username.trim() || "Player";
+    localStorage.setItem("skat-username", name);
     onSubmit(name);
   };
 
@@ -30,10 +38,11 @@ export default function UsernameScreen({ onSubmit }: UsernameScreenProps) {
         alignItems: "center",
         justifyContent: "center",
         minHeight: "100vh",
-        px: 2
-      }}>
+        px: 2,
+      }}
+    >
       <Container maxWidth="sm">
-        <Paper elevation={3} sx={{ p: 5, textAlign: 'center' }}>
+        <Paper elevation={3} sx={{ p: 5, textAlign: "center" }}>
           <Typography variant="h3" component="h1" gutterBottom>
             Welcome to Skat
           </Typography>

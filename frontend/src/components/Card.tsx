@@ -1,5 +1,9 @@
 import React from "react";
-import { motion, HTMLMotionProps, TargetAndTransition } from "motion/react";
+import {
+  motion,
+  type HTMLMotionProps,
+  type TargetAndTransition,
+} from "motion/react";
 
 export default function Card({
   rank,

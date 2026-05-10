@@ -15,7 +15,7 @@ import {
   selectUsername,
   useProfileStore,
 } from "../stores/profileStore";
-import { GameSession, getGames, joinGame } from "../api/games";
+import { type GameSession, getGames, joinGame } from "../api/games";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { useNavigate } from "react-router-dom";
 import { useSnackbarStore } from "../stores/snackbarStore";
@@ -31,6 +31,7 @@ const AvailableGames = () => {
 
   useEffect(() => {
     if (profileId) {
+      // eslint-disable-next-line react-hooks/immutability
       fetchGames();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

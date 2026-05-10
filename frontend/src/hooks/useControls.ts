@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import type { Card as CardType } from "../types";
-import { Game } from "./useGame";
-import { SkatWebSocket } from "./useWebSocket";
+import { type Game } from "./useGame";
+import { type SkatWebSocket } from "./useWebSocket";
 import { useProfileStore } from "../stores/profileStore";
 import { useSnackbarStore } from "../stores/snackbarStore";
 import * as api from "../api/games";
@@ -35,52 +35,60 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
         }
       }
     },
-    [game, isLoading, playerId, showSnackbar]
+    [game, isLoading, playerId, showSnackbar],
   );
 
-  const pickUpSkat = useCallback(
-    async () => {
-      if (
-        game.isSkatExchange &&
-        game.isDeclarer &&
-        !game.hasPickedUpSkat &&
-        !isLoading &&
-        playerId
-      ) {
-        setIsLoading(true);
-        try {
-          await api.skatDecision(game.gameId, playerId, true);
-        } catch (error) {
-          console.error("Pick up skat action failed:", error);
-        } finally {
-          setIsLoading(false);
-        }
+  const pickUpSkat = useCallback(async () => {
+    if (
+      game.isSkatExchange &&
+      game.isDeclarer &&
+      !game.hasPickedUpSkat &&
+      !isLoading &&
+      playerId
+    ) {
+      setIsLoading(true);
+      try {
+        await api.skatDecision(game.gameId, playerId, true);
+      } catch (error) {
+        console.error("Pick up skat action failed:", error);
+      } finally {
+        setIsLoading(false);
       }
-    },
-    [game.isSkatExchange, game.isDeclarer, game.hasPickedUpSkat, game.gameId, isLoading, playerId]
-  );
+    }
+  }, [
+    game.isSkatExchange,
+    game.isDeclarer,
+    game.hasPickedUpSkat,
+    game.gameId,
+    isLoading,
+    playerId,
+  ]);
 
-  const playHand = useCallback(
-    async () => {
-      if (
-        game.isSkatExchange &&
-        game.isDeclarer &&
-        !game.hasPickedUpSkat &&
-        !isLoading &&
-        playerId
-      ) {
-        setIsLoading(true);
-        try {
-          await api.skatDecision(game.gameId, playerId, false);
-        } catch (error) {
-          console.error("Play hand action failed:", error);
-        } finally {
-          setIsLoading(false);
-        }
+  const playHand = useCallback(async () => {
+    if (
+      game.isSkatExchange &&
+      game.isDeclarer &&
+      !game.hasPickedUpSkat &&
+      !isLoading &&
+      playerId
+    ) {
+      setIsLoading(true);
+      try {
+        await api.skatDecision(game.gameId, playerId, false);
+      } catch (error) {
+        console.error("Play hand action failed:", error);
+      } finally {
+        setIsLoading(false);
       }
-    },
-    [game.isSkatExchange, game.isDeclarer, game.hasPickedUpSkat, game.gameId, isLoading, playerId]
-  );
+    }
+  }, [
+    game.isSkatExchange,
+    game.isDeclarer,
+    game.hasPickedUpSkat,
+    game.gameId,
+    isLoading,
+    playerId,
+  ]);
 
   const discardCards = useCallback(
     async (cards: CardType[]) => {
@@ -96,7 +104,7 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
         }
       }
     },
-    [game.gameId, isLoading, playerId]
+    [game.gameId, isLoading, playerId],
   );
 
   const bid = useCallback(
@@ -114,33 +122,42 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
         console.error("Cannot bid, it is not your turn");
       }
     },
-    [game.isMyTurn, game.gameId, isLoading, playerId]
+    [game.isMyTurn, game.gameId, isLoading, playerId],
   );
 
-  const deal = useCallback(
-    async () => {
-      if (game.isDealer && !isLoading && playerId) {
-        setIsLoading(true);
-        try {
-          await api.dealCards(game.gameId, playerId);
-        } catch (error) {
-          console.error("Deal action failed:", error);
-        } finally {
-          setIsLoading(false);
-        }
-      } else if (!game.isDealer) {
-        console.error("Cannot deal, you are not the dealer");
+  const deal = useCallback(async () => {
+    if (game.isDealer && !isLoading && playerId) {
+      setIsLoading(true);
+      try {
+        await api.dealCards(game.gameId, playerId);
+      } catch (error) {
+        console.error("Deal action failed:", error);
+      } finally {
+        setIsLoading(false);
       }
-    },
-    [game.isDealer, game.gameId, isLoading, playerId]
-  );
+    } else if (!game.isDealer) {
+      console.error("Cannot deal, you are not the dealer");
+    }
+  }, [game.isDealer, game.gameId, isLoading, playerId]);
 
   const declareGame = useCallback(
-    async (mode: string, trump: string, announceSchneider: boolean = false, announceSchwarz: boolean = false) => {
+    async (
+      mode: string,
+      trump: string,
+      announceSchneider: boolean = false,
+      announceSchwarz: boolean = false,
+    ) => {
       if (game.isDeclarer && game.isDeclarerChoice && !isLoading && playerId) {
         setIsLoading(true);
         try {
-          await api.chooseGame(game.gameId, playerId, mode, trump, announceSchneider, announceSchwarz);
+          await api.chooseGame(
+            game.gameId,
+            playerId,
+            mode,
+            trump,
+            announceSchneider,
+            announceSchwarz,
+          );
         } catch (error) {
           console.error("Declare game action failed:", error);
         } finally {
@@ -150,7 +167,7 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
         console.error("Cannot declare the game, you are not the declarer");
       }
     },
-    [game.isDeclarer, game.isDeclarerChoice, game.gameId, isLoading, playerId]
+    [game.isDeclarer, game.isDeclarerChoice, game.gameId, isLoading, playerId],
   );
 
   const playNextGame = useCallback(async () => {

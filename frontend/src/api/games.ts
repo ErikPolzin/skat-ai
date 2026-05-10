@@ -24,7 +24,7 @@ export interface Player {
 
 export type { Card } from "../types";
 
-const getApiUrl = () => process.env.REACT_APP_API_URL || "";
+const getApiUrl = () => import.meta.env.VITE_API_URL;
 
 export type GameMode = "grand" | "suit" | "null";
 export type TrumpSuit = "♣" | "♠" | "♥" | "♦";
@@ -355,7 +355,7 @@ async function gameAction(
   gameId: string,
   action: string,
   playerId: string,
-  body?: any,
+  body?: object,
 ): Promise<void> {
   const url = `${getApiUrl()}/api/games/${gameId}/${action}?player_id=${encodeURIComponent(playerId)}`;
   const response = await fetch(url, {

@@ -1,3 +1,5 @@
+import type { GameInfo } from "./api/games";
+
 export interface Card {
   suit: string;
   rank: string;
@@ -26,9 +28,51 @@ export interface SessionGameResult {
   player_names: { [playerId: string]: string };
 }
 
-export interface Message {
+export interface Message<T> {
   type: string;
-  data: any;
+  data: T;
+}
+
+export interface StateUpdateMessage extends Message<{
+  diff: GameInfo;
+  description?: string;
+  action_type: string;
+  session_results: SessionGameResult[];
+  games_played?: number;
+  from_player?: number;
+}> {
+  type: "state_update";
+}
+
+export interface StartNextGameMessage extends Message<{
+  game_id: string;
+}> {
+  type: "start_next_game";
+}
+
+export interface PlayerOfflineMessage extends Message<{
+  player_id?: string;
+  player_name?: string;
+}> {
+  type: "player_offline";
+}
+
+export interface PlayerLeftMessage extends Message<{
+  player_name?: string;
+}> {
+  type: "player_left";
+}
+
+export interface PlayerForfeitMessage extends Message<{
+  player_name?: string;
+}> {
+  type: "player_forfeit";
+}
+
+export interface ErrorMessage extends Message<{
+  message: string;
+}> {
+  type: "error";
 }
 
 export interface RoomInfo {

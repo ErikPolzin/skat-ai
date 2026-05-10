@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { PlayerRating } from "../api/games";
+import { type PlayerRating } from "../api/games";
 
 interface ProfileState {
   username: string | null;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -32,6 +32,7 @@ export default function PlayerHistory() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId]);

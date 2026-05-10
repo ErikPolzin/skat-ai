@@ -1,7 +1,6 @@
-import React from "react";
 import { CircularProgress } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
-import { Card as CardType } from "../api/games";
+import { type Card as CardType } from "../api/games";
 import Card from "./Card";
 import "./SkatExchange.css";
 
@@ -32,7 +31,7 @@ export function SkatExchange({
             </p>
           )}
           <div className="skat-cards">
-            {Array.from({ length: 2 }).map((card, index) => (
+            {Array.from({ length: 2 }).map((_, index) => (
               <Card
                 key={index}
                 index={index}

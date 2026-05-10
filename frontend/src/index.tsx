@@ -13,7 +13,7 @@ root.render(
 );
 
 // Register service worker for PWA functionality (disabled in dev to avoid cache issues)
-if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/service-worker.js")

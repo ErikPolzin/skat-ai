@@ -43,6 +43,7 @@ export default function ActiveGames() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchActiveGames();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId]);

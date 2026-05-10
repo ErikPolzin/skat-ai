@@ -22,6 +22,7 @@ export function useDeadlineTimer(deadlineISO: string): DeadlineState {
   useEffect(() => {
     // No deadline set
     if (!deadlineISO || deadlineISO === "") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSecondsRemaining(null);
       return;
     }
@@ -52,7 +53,8 @@ export function useDeadlineTimer(deadlineISO: string): DeadlineState {
 
   // Derive state from secondsRemaining
   const isExpired = secondsRemaining !== null && secondsRemaining <= 0;
-  const isApproaching = secondsRemaining !== null && secondsRemaining > 0 && secondsRemaining <= 60;
+  const isApproaching =
+    secondsRemaining !== null && secondsRemaining > 0 && secondsRemaining <= 60;
 
   // Format time as MM:SS
   const formattedTime =

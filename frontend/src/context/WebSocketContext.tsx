@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect } from "react";
-import { SkatWebSocket, useWebSocket } from "../hooks/useWebSocket";
+import { type SkatWebSocket, useWebSocket } from "../hooks/useWebSocket";
 import { selectPlayerId, useProfileStore } from "../stores/profileStore";
 
 const WebSocketContext = createContext<SkatWebSocket | null>(null);
@@ -30,6 +30,7 @@ export const WebSocketProvider: React.FC<{
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useWebSocketContext = () => {
   const context = useContext(WebSocketContext);
   if (!context) {

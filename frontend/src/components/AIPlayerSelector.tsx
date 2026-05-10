@@ -1,4 +1,3 @@
-import React from "react";
 import {
   Box,
   Dialog,
@@ -86,9 +85,7 @@ export function AIPlayerSelector({
                   }}
                 >
                   <Chip
-                    label={
-                      isInGame ? "In Game" : getAgentTypeLabel(agent)
-                    }
+                    label={isInGame ? "In Game" : getAgentTypeLabel(agent)}
                     size="small"
                     color={isInGame ? "default" : getAgentTypeColor(agent)}
                     sx={{

@@ -52,6 +52,7 @@ const Header = () => {
 
   useEffect(() => {
     if (profileId) {
+      // eslint-disable-next-line react-hooks/immutability
       fetchPlayerRating();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

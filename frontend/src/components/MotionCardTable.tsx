@@ -8,7 +8,7 @@ import React, {
 import { AnimatePresence, motion } from "motion/react";
 import { Button, Chip, useMediaQuery, useTheme } from "@mui/material";
 import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
-import { Card as CardType, reportTimeout, leaveGame } from "../api/games";
+import { type Card as CardType, reportTimeout, leaveGame } from "../api/games";
 import "./MotionCardTable.css";
 import { useGameContext } from "../context/GameContext";
 import Card from "./Card";
@@ -163,6 +163,7 @@ export function MotionCardTable() {
       hasInitializedRef.current = true;
     } else if (game.phase === "dealing") {
       // When entering dealing phase, enable deck animation
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShouldAnimateFromDeck(true);
     }
   }, [game.phase, game.playerHand.length]);
@@ -436,8 +437,7 @@ export function MotionCardTable() {
       game.playerPosition,
       game.trick,
       game.trickStarter,
-      game.leftPlayer?.card_count,
-      game.leftPlayer?.position,
+      game.leftPlayer,
       game.topPlayer?.card_count,
     ],
   );
@@ -824,9 +824,7 @@ export function MotionCardTable() {
                     ? { y: basePosition.y + declarerOffset - 20 }
                     : undefined
                 }
-                onClick={() => {
-                  canClickCard && handlePlayCard(card);
-                }}
+                onClick={() => canClickCard && handlePlayCard(card)}
                 style={{
                   cursor:
                     !game.controls.isConnected || game.controls.isLoading

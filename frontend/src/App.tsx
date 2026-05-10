@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import {
@@ -59,6 +59,7 @@ function App() {
   // Initialize profile when username is set but no player ID exists
   useEffect(() => {
     if (username && !playerId && !isInitializing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsInitializing(true);
       createOrRetrieveProfile(username)
         .then((profile) => {
@@ -210,7 +211,11 @@ function App() {
         onClose={hideSnackbar}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert onClose={hideSnackbar} severity={severity} sx={{ width: "100%" }}>
+        <Alert
+          onClose={hideSnackbar}
+          severity={severity}
+          sx={{ width: "100%" }}
+        >
           {message}
         </Alert>
       </Snackbar>

@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
 

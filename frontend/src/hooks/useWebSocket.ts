@@ -5,15 +5,16 @@ import {
   useMemo,
   useState,
 } from "react";
+import type { Message } from "../types";
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
-  const messageHandlersRef = useRef<Map<string, (message: any) => void>>(
-    new Map(),
-  );
+  const messageHandlersRef = useRef<
+    Map<string, (message: Message<unknown>) => void>
+  >(new Map());
   const subscribersRef = useRef<Set<() => void>>(new Set());
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectCountdownRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const reconnectCountdownRef = useRef<ReturnType<typeof setTimeout>>(null);
   const reconnectAttemptsRef = useRef(0);
   const profileIdRef = useRef<string | null>(null);
   const manualDisconnectRef = useRef(false);
@@ -28,7 +29,7 @@ export function useWebSocket() {
 
   // Add a message handler - returns a cleanup function
   const addMessageHandler = useCallback(
-    (key: string, handler: (message: any) => void) => {
+    (key: string, handler: (message: Message<unknown>) => void) => {
       messageHandlersRef.current.set(key, handler);
       // Return cleanup function
       return () => {
@@ -38,7 +39,7 @@ export function useWebSocket() {
     [],
   );
 
-  const sendMessage = useCallback((type: string, data: any) => {
+  const sendMessage = useCallback((type: string, data: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type, data }));
     } else {
@@ -84,6 +85,7 @@ export function useWebSocket() {
       setReconnectCountdown(null);
       if (profileIdRef.current && !manualDisconnectRef.current) {
         reconnectAttemptsRef.current++;
+        // eslint-disable-next-line react-hooks/immutability
         connect(profileIdRef.current);
       }
     }, delay);
@@ -111,12 +113,10 @@ export function useWebSocket() {
       profileIdRef.current = profileId;
       manualDisconnectRef.current = false;
 
-      const wsUrl = process.env.REACT_APP_WS_URL
-        ? `${process.env.REACT_APP_WS_URL}/ws`
-        : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
+      const wsUrl = import.meta.env.VITE_WS_URL;
 
       // Add profile_id as query parameter
-      const urlWithProfile = `${wsUrl}?profile_id=${encodeURIComponent(profileId)}`;
+      const urlWithProfile = `${wsUrl}/ws?profile_id=${encodeURIComponent(profileId)}`;
 
       console.log("Connecting WebSocket with profile:", profileId);
       const ws = new WebSocket(urlWithProfile);
@@ -127,6 +127,7 @@ export function useWebSocket() {
         // Reset reconnection attempts on successful connection
         reconnectAttemptsRef.current = 0;
         wsRef.current = ws;
+        // eslint-disable-next-line react-hooks/immutability
         notifySubscribers();
       };
 
@@ -157,7 +158,7 @@ export function useWebSocket() {
         console.log("WebSocket closed:", event.code, event.reason);
         wsRef.current = null;
         notifySubscribers();
-        if (!manualDisconnectRef.current) {
+        if (!manualDisconnectRef.current && event.code != 1000) {
           // Attempt to reconnect unless it was a manual disconnect
           scheduleReconnect();
         }

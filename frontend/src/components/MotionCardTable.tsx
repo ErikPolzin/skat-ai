@@ -383,9 +383,16 @@ export function MotionCardTable() {
   const sortPlayerHand = useCallback(
     (hand: CardType[]) => {
       const rankOrder = ["7", "8", "9", "Q", "K", "10", "A", "J"];
+      const rankOrderNull = ["7", "8", "9", "10", "J", "Q", "K", "A"];
       const suitOrder = ["♦", "♥", "♠", "♣"];
 
       return [...hand].sort((a, b) => {
+        if (game.gameMode == "null") {
+          if (a.suit !== b.suit) {
+            return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
+          }
+          return rankOrderNull.indexOf(a.rank) - rankOrderNull.indexOf(b.rank);
+        }
         // In skat, jacks are always trumps
         const aIsJack = a.rank === "J";
         const bIsJack = b.rank === "J";
@@ -422,7 +429,7 @@ export function MotionCardTable() {
         return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
       });
     },
-    [game.trumpSuit],
+    [game.trumpSuit, game.gameMode],
   );
 
   const sortedPlayerHand = useMemo(

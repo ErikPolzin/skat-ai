@@ -6,8 +6,16 @@ import React, {
   useRef,
 } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Button, Chip, useMediaQuery, useTheme } from "@mui/material";
+import {
+  Box,
+  Button,
+  Chip,
+  Typography,
+  useMediaQuery,
+  useTheme,
+} from "@mui/material";
 import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
+import WarningIcon from "@mui/icons-material/Warning";
 import { type Card as CardType, reportTimeout, leaveGame } from "../api/games";
 import "./MotionCardTable.css";
 import { useGameContext } from "../context/GameContext";
@@ -20,6 +28,8 @@ import { GameOverScreen } from "./GameOverScreen";
 import { canPlayCard } from "../utils/skatRules";
 import { CircularTimer } from "./CircularTimer";
 import { useDeadlineTimer } from "../hooks/useDeadlineTimer";
+import ThemedLoader from "./ThemedLoader";
+import { useNavigate } from "react-router-dom";
 
 // Helper function to convert suit emoji to word
 function getSuitName(suitEmoji?: string): string {
@@ -65,6 +75,7 @@ function getGameModeSVG(gameMode: string, trumpSuit?: string): string {
 export function MotionCardTable() {
   const game = useGameContext();
   const theme = useTheme();
+  const navigate = useNavigate();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isTablet = useMediaQuery(theme.breakpoints.down("md"));
 
@@ -502,6 +513,39 @@ export function MotionCardTable() {
                 : "Attempting to reconnect..."}
             </span>
           </div>
+        ) : game.isLoading ? (
+          <Box sx={{ textAlign: "center" }}>
+            <ThemedLoader size={60} />
+            <Typography variant="h6" sx={{ mt: 2 }}>
+              Loading game...
+            </Typography>
+          </Box>
+        ) : game.error ? (
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              minHeight: "100vh",
+            }}
+          >
+            <WarningIcon color="warning" sx={{ fontSize: 60, mb: 2 }} />
+            <Typography variant="h5" gutterBottom>
+              Unable to Load Game
+            </Typography>
+            <Typography color="text.secondary" sx={{ mb: 3 }}>
+              {game.error}
+            </Typography>
+            <Box sx={{ display: "flex", gap: 2, justifyContent: "center" }}>
+              <Button variant="contained" onClick={() => game.refetch()}>
+                Try Again
+              </Button>
+              <Button variant="outlined" onClick={() => navigate("/")}>
+                Back to Lobby
+              </Button>
+            </Box>
+          </Box>
         ) : game.isInLobby ? (
           <GameLobbyWaiting />
         ) : game.isBiddingPhase ? (
@@ -519,7 +563,7 @@ export function MotionCardTable() {
           </div>
         ) : game.gameOver ? (
           <GameOverScreen />
-        ) : game.gameMode ? (
+        ) : game.phase == "playing" ? (
           <div className="game-mode-display">
             <img
               src={getGameModeSVG(game.gameMode, game.trumpSuit)}
@@ -676,60 +720,65 @@ export function MotionCardTable() {
         )}
 
         {/* Player Avatar */}
-        <div
-          className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""} ${game.controls.isLoading ? "loading" : ""} ${isMobile ? "mobile" : ""}`}
-        >
+        {game.player && (
           <div
-            className="avatar-circle"
-            style={{ position: "relative", overflow: "visible" }}
+            className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""} ${game.controls.isLoading ? "loading" : ""} ${isMobile ? "mobile" : ""}`}
           >
-            <CircularTimer
-              deadline={game.currentPlayerDeadline || ""}
-              isCurrentPlayer={game.isMyTurn}
-              isAI={false}
-              size={isMobile ? 70 : 65}
-            />
             <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                borderRadius: "50%",
-                overflow: "hidden",
-              }}
+              className="avatar-circle"
+              style={{ position: "relative", overflow: "visible" }}
             >
-              {game.player?.profile_icon ? (
-                <img src={game.player?.profile_icon} alt={game.player?.name} />
-              ) : (
-                <span>{game.player?.name.charAt(0).toUpperCase()}</span>
+              <CircularTimer
+                deadline={game.currentPlayerDeadline || ""}
+                isCurrentPlayer={game.isMyTurn}
+                isAI={false}
+                size={isMobile ? 70 : 65}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                }}
+              >
+                {game.player?.profile_icon ? (
+                  <img
+                    src={game.player?.profile_icon}
+                    alt={game.player?.name}
+                  />
+                ) : (
+                  <span>{game.player?.name.charAt(0).toUpperCase()}</span>
+                )}
+              </div>
+            </div>
+            <div className="avatar-info">
+              <Chip
+                label={`${game.player?.name} ${game.isDeclarer ? "(D)" : ""}`}
+                sx={{
+                  bgcolor: "background.paper",
+                }}
+              ></Chip>
+              {game.getRole(game.playerPosition) && (
+                <div className="player-role">
+                  {game.getRole(game.playerPosition)}
+                </div>
               )}
             </div>
+            {/* Speech bubble for player messages */}
+            {game.messages
+              .filter((msg) => msg.playerPosition === game.playerPosition)
+              .slice(-1) // Only show most recent message
+              .map((msg) => (
+                <div key={msg.id} className="speech-bubble player-bubble">
+                  {msg.text}
+                </div>
+              ))}
           </div>
-          <div className="avatar-info">
-            <Chip
-              label={`${game.player?.name} ${game.isDeclarer ? "(D)" : ""}`}
-              sx={{
-                bgcolor: "background.paper",
-              }}
-            ></Chip>
-            {game.getRole(game.playerPosition) && (
-              <div className="player-role">
-                {game.getRole(game.playerPosition)}
-              </div>
-            )}
-          </div>
-          {/* Speech bubble for player messages */}
-          {game.messages
-            .filter((msg) => msg.playerPosition === game.playerPosition)
-            .slice(-1) // Only show most recent message
-            .map((msg) => (
-              <div key={msg.id} className="speech-bubble player-bubble">
-                {msg.text}
-              </div>
-            ))}
-        </div>
+        )}
 
         <AnimatePresence>
           {/* Deck (shown before and during dealing) */}

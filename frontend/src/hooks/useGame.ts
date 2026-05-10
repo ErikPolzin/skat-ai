@@ -155,51 +155,50 @@ export function useGame(
     [state.phase],
   );
 
-  // Fetch game state from server only when gameId changes
-  useEffect(() => {
+  const loadGameState = async () => {
     if (!gameId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsLoading(false);
       setError("No game ID provided");
       return;
     }
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await fetchGameState(gameId, playerId);
+      setGameInfo(data);
 
-    // Skip if we've already fetched this game
-
-    const loadGameState = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const data = await fetchGameState(gameId, playerId);
-        setGameInfo(data);
-
-        // Fetch session results if we have a session ID
-        if (data.state.session_id) {
-          try {
-            const sessionData = await getSessionResults(data.state.session_id);
-            if (sessionData.results && sessionData.results.length > 0) {
-              setSessionResults(sessionData.results);
-              setGamesPlayed(sessionData.results.length);
-            }
-          } catch (error) {
-            console.error("Failed to fetch session results:", error);
-            // Don't fail the whole load if session results fail
+      // Fetch session results if we have a session ID
+      if (data.state.session_id) {
+        try {
+          const sessionData = await getSessionResults(data.state.session_id);
+          if (sessionData.results && sessionData.results.length > 0) {
+            setSessionResults(sessionData.results);
+            setGamesPlayed(sessionData.results.length);
           }
+        } catch (error) {
+          console.error("Failed to fetch session results:", error);
+          // Don't fail the whole load if session results fail
         }
-
-        setIsLoading(false);
-      } catch (error) {
-        console.error("Failed to fetch game state:", error);
-        setError(
-          error instanceof Error
-            ? error.message
-            : "Failed to load game. Please try again.",
-        );
-        setIsLoading(false);
       }
-    };
 
+      setIsLoading(false);
+    } catch (error) {
+      console.error("Failed to fetch game state:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load game. Please try again.",
+      );
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch game state from server only when gameId changes
+  useEffect(() => {
+    // Skip if we've already fetched this game
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadGameState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, playerId]);
 
   const removeCardFromHand = useCallback((card: Card) => {
@@ -315,6 +314,7 @@ export function useGame(
   return {
     // Loading and error states
     isLoading,
+    refetch: loadGameState,
     error,
     // State - derived from server state
     gameId: state.id,

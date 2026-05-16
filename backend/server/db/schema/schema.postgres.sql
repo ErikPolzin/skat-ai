@@ -18,10 +18,10 @@ INSERT INTO profiles (id, name, is_agent, profile_icon, is_online) VALUES
     ('550e8400-e29b-41d4-a716-446655440002', 'Dave', TRUE, '/res/profile_icons/dave.svg', TRUE),
     -- MCTS agents
     ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', TRUE, '/res/profile_icons/lisa.svg', TRUE),
-    ('550e8400-e29b-41d4-a716-446655440004', 'Max', TRUE, '/res/profile_icons/bill.svg', TRUE),
+    ('550e8400-e29b-41d4-a716-446655440004', 'Max', TRUE, '/res/profile_icons/max.svg', TRUE),
     -- Neural agents
-    ('550e8400-e29b-41d4-a716-446655440005', 'Emma', TRUE, '/res/profile_icons/dave.svg', TRUE),
-    ('550e8400-e29b-41d4-a716-446655440006', 'Sam', TRUE, '/res/profile_icons/lisa.svg', TRUE)
+    ('550e8400-e29b-41d4-a716-446655440005', 'Emma', TRUE, '/res/profile_icons/emma.svg', TRUE),
+    ('550e8400-e29b-41d4-a716-446655440006', 'Sam', TRUE, '/res/profile_icons/sam.svg', TRUE)
 ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS game_sessions (

@@ -18,10 +18,10 @@ INSERT OR IGNORE INTO profiles (id, name, is_agent, profile_icon, is_online) VAL
     ('550e8400-e29b-41d4-a716-446655440002', 'Dave', 1, '/res/profile_icons/dave.svg', 1),
     -- MCTS agents
     ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', 1, '/res/profile_icons/lisa.svg', 1),
-    ('550e8400-e29b-41d4-a716-446655440004', 'Max', 1, '/res/profile_icons/bill.svg', 1),
+    ('550e8400-e29b-41d4-a716-446655440004', 'Max', 1, '/res/profile_icons/max.svg', 1),
     -- Neural agents
-    ('550e8400-e29b-41d4-a716-446655440005', 'Emma', 1, '/res/profile_icons/dave.svg', 1),
-    ('550e8400-e29b-41d4-a716-446655440006', 'Sam', 1, '/res/profile_icons/lisa.svg', 1);
+    ('550e8400-e29b-41d4-a716-446655440005', 'Emma', 1, '/res/profile_icons/emma.svg', 1),
+    ('550e8400-e29b-41d4-a716-446655440006', 'Sam', 1, '/res/profile_icons/sam.svg', 1);
 
 CREATE TABLE IF NOT EXISTS game_sessions (
     id TEXT PRIMARY KEY,

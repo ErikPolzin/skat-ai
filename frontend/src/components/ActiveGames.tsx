@@ -180,15 +180,6 @@ export default function ActiveGames() {
                         size="small"
                         color={getPhaseColor(game.phase)}
                       />
-                      {game.game_number > 1 && (
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ ml: "auto" }}
-                        >
-                          Game #{game.game_number}
-                        </Typography>
-                      )}
                     </Box>
                   }
                   secondary={

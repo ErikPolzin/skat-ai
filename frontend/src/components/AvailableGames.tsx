@@ -1,10 +1,9 @@
 import {
   Box,
-  Button,
   IconButton,
   List,
   ListItem,
-  ListItemSecondaryAction,
+  ListItemButton,
   ListItemText,
   Typography,
   Skeleton,
@@ -93,9 +92,6 @@ const AvailableGames = () => {
                 primary={<Skeleton variant="text" width={100} height={24} />}
                 secondary={<Skeleton variant="text" width={80} height={20} />}
               />
-              <ListItemSecondaryAction>
-                <Skeleton variant="rounded" width={60} height={32} />
-              </ListItemSecondaryAction>
             </ListItem>
           ))}
         </List>
@@ -115,20 +111,16 @@ const AvailableGames = () => {
       ) : (
         <List>
           {games.map((game) => (
-            <ListItem key={game.id}>
-              <ListItemText
-                primary={game.code}
-                secondary={`${game.player_count}/3 players`}
-              />
-              <ListItemSecondaryAction>
-                <Button
-                  variant="text"
-                  onClick={() => handleQuickJoin(game.code)}
-                  disabled={isLoading}
-                >
-                  Join
-                </Button>
-              </ListItemSecondaryAction>
+            <ListItem key={game.id} disablePadding>
+              <ListItemButton
+                onClick={() => handleQuickJoin(game.code)}
+                disabled={isLoading}
+              >
+                <ListItemText
+                  primary={game.code}
+                  secondary={`${game.player_count}/3 players`}
+                />
+              </ListItemButton>
             </ListItem>
           ))}
         </List>

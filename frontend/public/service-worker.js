@@ -1,5 +1,5 @@
 // Cache name will auto-update when this file changes (detected by service worker update mechanism)
-const CACHE_NAME = 'skat-cache';
+const CACHE_NAME = 'skat-cache-v2';
 
 const urlsToCache = [
   '/',

@@ -10,7 +10,6 @@ import {
   TableRow,
   Paper,
   Avatar,
-  Chip,
   Skeleton,
 } from "@mui/material";
 import { getLeaderboard, type LeaderboardEntry } from "../api/games";
@@ -43,17 +42,14 @@ export default function Leaderboard() {
     return "#90A4AE"; // Gray
   };
 
-  const getRatingTier = (rating: number) => {
-    if (rating >= 2000) return "Master";
-    if (rating >= 1800) return "Expert";
-    if (rating >= 1600) return "Advanced";
-    if (rating >= 1400) return "Intermediate";
-    return "Beginner";
-  };
-
   if (isLoading) {
     return (
-      <TableContainer component={Paper}>
+      <TableContainer
+        component={Paper}
+        sx={{
+          borderRadius: { xs: 0, sm: 1 },
+        }}
+      >
         <Table stickyHeader size="small">
           <TableHead>
             <TableRow>
@@ -75,7 +71,6 @@ export default function Leaderboard() {
                     <Skeleton variant="circular" width={32} height={32} />
                     <Box>
                       <Skeleton variant="text" width={100} height={20} />
-                      <Skeleton variant="rounded" width={80} height={18} />
                     </Box>
                   </Box>
                 </TableCell>
@@ -107,7 +102,12 @@ export default function Leaderboard() {
   }
 
   return (
-    <TableContainer component={Paper}>
+    <TableContainer
+      component={Paper}
+      sx={{
+        borderRadius: { xs: 0, sm: 1 },
+      }}
+    >
       <Table stickyHeader size="small">
         <TableHead>
           <TableRow>
@@ -130,7 +130,6 @@ export default function Leaderboard() {
               <TableCell>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                   <Typography
-                    variant="h6"
                     sx={{
                       color:
                         entry.rank === 1
@@ -156,19 +155,7 @@ export default function Leaderboard() {
                   >
                     {entry.name.charAt(0).toUpperCase()}
                   </Avatar>
-                  <Box>
-                    <Typography variant="body2">{entry.name}</Typography>
-                    <Chip
-                      label={getRatingTier(entry.rating)}
-                      size="small"
-                      sx={{
-                        height: 18,
-                        fontSize: "0.7rem",
-                        bgcolor: getRatingColor(entry.rating),
-                        color: "white",
-                      }}
-                    />
-                  </Box>
+                  <Typography variant="body2">{entry.name}</Typography>
                 </Box>
               </TableCell>
               <TableCell align="right">

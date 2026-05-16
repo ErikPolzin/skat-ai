@@ -172,9 +172,9 @@
    inkscape:current-layer="svg2" />
 	<g
    id="Layer_x0020_1"
-   style="fill-rule:nonzero;clip-rule:nonzero;stroke:#000000;stroke-miterlimit:4;">
+   style="fill-rule:nonzero;clip-rule:nonzero;stroke:none;stroke-miterlimit:4;">
 		<path
-   style="fill:#FFFFFF;stroke-width:0.5;"
+   style="fill:#FFFFFF;stroke:none;"
    d="M166.8369141,235.5478516c0,3.7773438-3.0869141,6.8691406-6.8710938,6.8691406H7.1108398c-3.7749023,0-6.8608398-3.0917969-6.8608398-6.8691406V7.1201172C0.25,3.3427734,3.3359375,0.25,7.1108398,0.25h152.8549805    c3.7841797,0,6.8710938,3.0927734,6.8710938,6.8701172v228.4277344z"
    id="path5" />
 		<g
@@ -275,10 +275,10 @@
      inkscape:connector-curvature="0"
      sodipodi:nodetypes="csssssscccssssscssscssscscsssssscscscssscsssscccsccsssccssscscscccccsscscssccsccccsscccsssssscssccscscsccccsscsccsscccsssssssccscscsssccssssssssssscscccsssccssssccssssssssscscsccccsccsssscssssssccccssccssssssssssssssssssssscssssssssssscssscccsssssssssssscssssssssssscssssssssssssssssssssssssssssscsscsssssssscssssssscssssscsssssssssssssssssscsssssscssssssssssssssssssscccsscsssssssssssscssssssssscsssssssssssssssssssscssssssssssssssssssssssssssssssssssssssscssscssscsssssscsssssssssssssscccssssssssssssssssscsssssscssssssssscsscsssscssssssssssssssscssscsssssssssssssscscsssssssscsssssscsssssssssscsscsssssssssssssssssscsssssssssscscsssscssssssssssssssssssssssssscsssssssssssssssscssssssssssccssssssssssssscssssssssscscsssssssssscsssssssssssssssscssssssssssssscsscsscsssscsscsccsssssssssscsssssssscssscssssssssssssscssssssssssssscsssssssscsssssssssssssssssssscssscsssssscsssssssssssssssscsssssccssssssssssssssssssssssssssssssssscsscsscscssscssscscsscssccssssssssssssssscssssscssscsssssssssssssscssscsscsssssscsssssscssssccsssssssssssssssssssssssssssscssssssssssssssssssssssssssssssssssssssscssscssssssssssssssscssssssssssssssscssssssscsssssssssssssccsssssssssssssscsssssssssscsssssssssscssssssssscssssssssssssscccsssssssscsssscsscsscssssssssssssssssscssssscsssssssssssssssssssssssssssssssssssssscsssscssccsssssscssssssssssscssssssssssssssccccccccccscsscccccsssscsssssccccscssssscccsssssssssscccsssscsscssssssscsssssssssssssssssssssssssssssssssssssssssssssssssssscsssssssssssscsssssssssccscssssssssssscssssssssssssscscsssssssssssssssscsssscssssssssssssssssssssssssssssssscssssscssscssssssssssssssscssssssssssssssscssssscsscsssssssscssssssssssssscsssssssssscsssssssssssssssssscscssssssssssssssscssssssscsssssssssssssssssssssssscssssssssssssssssssscsssssssscssscsscscsssscsssssscssssssssssssssssssscssssssssscssssssssssssssssssssssssssssssssssssscsccsccssssssssssssssssscsssssssssssssssssssssssssscsscccccssssccsccsssssssscccccssscsssssssssssssscsssscsssssssssssssssssssssssssssssssscsssssssssssssssssscsscssssssssssscssssscsssssssssscssssssssssssscsssssscsssssssssssssssssssssssssssscscssssssssssssssssssssssssssssssssssssssss" /></g><g
    id="Layer_x0020_1-8"
-   style="fill:none;stroke:#000000;stroke-width:1.82777798;stroke-miterlimit:4;stroke-dasharray:none"
+   style="fill:none;stroke:none;stroke-width:1.82777798;stroke-miterlimit:4;stroke-dasharray:none"
    transform="matrix(0.73316112,0,0,0.81584336,22.32511,22.465901)"><path
      inkscape:connector-curvature="0"
-     style="fill:none;stroke-width:1.82777798;stroke-miterlimit:4;stroke-dasharray:none"
+     style="fill:none;stroke:none;stroke-width:1.82777798;stroke-miterlimit:4;stroke-dasharray:none"
      d="m 166.83691,235.54785 c 0,3.77735 -3.08691,6.86914 -6.87109,6.86914 H 7.1108398 C 3.3359375,242.41699 0.25,239.3252 0.25,235.54785 V 7.1201172 C 0.25,3.3427734 3.3359375,0.25 7.1108398,0.25 H 159.96582 c 3.78418,0 6.87109,3.0927734 6.87109,6.8701172 V 235.54785 z"
      id="path5-8" /><g
      style="fill:none;stroke:none"

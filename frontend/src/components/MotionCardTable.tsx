@@ -14,6 +14,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
+import CheckIcon from "@mui/icons-material/Check";
 import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
 import WarningIcon from "@mui/icons-material/Warning";
 import { type Card as CardType, reportTimeout, leaveGame } from "../api/games";
@@ -95,6 +96,11 @@ export function MotionCardTable() {
   const { secondsRemaining, formattedTime, isExpired } = useDeadlineTimer(
     game.currentPlayerDeadline || "",
   );
+  const showDeadlineCountdown =
+    !!game.currentPlayerDeadline &&
+    secondsRemaining !== null &&
+    secondsRemaining > 0 &&
+    secondsRemaining <= 30;
 
   // Handle timeout when deadline expires
   useEffect(() => {
@@ -133,6 +139,7 @@ export function MotionCardTable() {
   // Card dimensions - single source of truth
   const CARD_HEIGHT = isMobile ? 120 : isTablet ? 100 : 110;
   const CARD_WIDTH = CARD_HEIGHT * (5 / 7);
+  const avatarTimerSize = isMobile ? 66 : isTablet ? 70 : 65;
 
   // Responsive card dimensions and spacing
   const getCardSpacing = () => {
@@ -354,6 +361,27 @@ export function MotionCardTable() {
 
   // Determine who is partnered with whom
   const playerIsDeclarer = game.isDeclarer;
+  const playerPileScore = playerIsDeclarer
+    ? game.declarerScore
+    : game.opponentScore;
+  const opponentPileScore = playerIsDeclarer
+    ? game.opponentScore
+    : game.declarerScore;
+  const totalCardPoints = 120;
+  const clampedPlayerScore = Math.max(
+    0,
+    Math.min(totalCardPoints, playerPileScore),
+  );
+  const clampedOpponentScore = Math.max(
+    0,
+    Math.min(totalCardPoints - clampedPlayerScore, opponentPileScore),
+  );
+  const playerScorePercent = (clampedPlayerScore / totalCardPoints) * 100;
+  const opponentScorePercent = (clampedOpponentScore / totalCardPoints) * 100;
+  const unclaimedScorePercent = Math.max(
+    0,
+    100 - playerScorePercent - opponentScorePercent,
+  );
 
   // Get position for player's score pile - always bottom right
   const getPlayerPilePosition = () => {
@@ -581,24 +609,6 @@ export function MotionCardTable() {
             <span className="mode-title">
               {getGameModeDisplay(game.gameMode, game.trumpSuit)}
             </span>
-            {game.currentPlayerDeadline &&
-              secondsRemaining !== null &&
-              secondsRemaining > 0 &&
-              secondsRemaining <= 30 && (
-                <div
-                  style={{
-                    color: "#f44336",
-                    fontSize: "24px",
-                    fontWeight: "bold",
-                    marginTop: "12px",
-                    textShadow: "0 2px 4px rgba(0,0,0,0.5)",
-                    animation:
-                      secondsRemaining <= 10 ? "pulse 1s infinite" : undefined,
-                  }}
-                >
-                  {formattedTime}
-                </div>
-              )}
           </div>
         ) : null}
 
@@ -615,9 +625,10 @@ export function MotionCardTable() {
                 deadline={game.currentPlayerDeadline || ""}
                 isCurrentPlayer={game.topPlayer.position === game.currentPlayer}
                 isAI={game.topPlayer.is_agent}
-                size={isMobile ? 70 : 65}
+                size={avatarTimerSize}
               />
               <div
+                className="avatar-content"
                 style={{
                   position: "absolute",
                   top: 0,
@@ -626,6 +637,7 @@ export function MotionCardTable() {
                   height: "100%",
                   borderRadius: "50%",
                   overflow: "hidden",
+                  zIndex: 1,
                 }}
               >
                 {game.topPlayer.profile_icon ? (
@@ -637,6 +649,20 @@ export function MotionCardTable() {
                   <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
                 )}
               </div>
+              {showDeadlineCountdown &&
+                game.topPlayer.position === game.currentPlayer && (
+                  <div
+                    className={`avatar-deadline-countdown ${secondsRemaining <= 10 ? "urgent" : ""}`}
+                  >
+                    {formattedTime}
+                  </div>
+                )}
+              {(game.topPlayer.ready_for_next ||
+                (game.gameOver && game.topPlayer.is_agent)) && (
+                <div className="avatar-ready-check" aria-label="Ready">
+                  <CheckIcon fontSize="inherit" />
+                </div>
+              )}
             </div>
             <div className="avatar-info">
               <Chip
@@ -678,9 +704,10 @@ export function MotionCardTable() {
                   game.leftPlayer.position === game.currentPlayer
                 }
                 isAI={game.leftPlayer.is_agent}
-                size={isMobile ? 70 : 65}
+                size={avatarTimerSize}
               />
               <div
+                className="avatar-content"
                 style={{
                   position: "absolute",
                   top: 0,
@@ -689,6 +716,7 @@ export function MotionCardTable() {
                   height: "100%",
                   borderRadius: "50%",
                   overflow: "hidden",
+                  zIndex: 1,
                 }}
               >
                 {game.leftPlayer.profile_icon ? (
@@ -700,6 +728,20 @@ export function MotionCardTable() {
                   <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
                 )}
               </div>
+              {showDeadlineCountdown &&
+                game.leftPlayer.position === game.currentPlayer && (
+                  <div
+                    className={`avatar-deadline-countdown ${secondsRemaining <= 10 ? "urgent" : ""}`}
+                  >
+                    {formattedTime}
+                  </div>
+                )}
+              {(game.leftPlayer.ready_for_next ||
+                (game.gameOver && game.leftPlayer.is_agent)) && (
+                <div className="avatar-ready-check" aria-label="Ready">
+                  <CheckIcon fontSize="inherit" />
+                </div>
+              )}
             </div>
             <div className="avatar-info">
               <Chip
@@ -739,9 +781,10 @@ export function MotionCardTable() {
                 deadline={game.currentPlayerDeadline || ""}
                 isCurrentPlayer={game.isMyTurn}
                 isAI={false}
-                size={isMobile ? 70 : 65}
+                size={avatarTimerSize}
               />
               <div
+                className="avatar-content"
                 style={{
                   position: "absolute",
                   top: 0,
@@ -750,6 +793,7 @@ export function MotionCardTable() {
                   height: "100%",
                   borderRadius: "50%",
                   overflow: "hidden",
+                  zIndex: 1,
                 }}
               >
                 {game.player?.profile_icon ? (
@@ -761,6 +805,18 @@ export function MotionCardTable() {
                   <span>{game.player?.name.charAt(0).toUpperCase()}</span>
                 )}
               </div>
+              {showDeadlineCountdown && game.isMyTurn && (
+                <div
+                  className={`avatar-deadline-countdown ${secondsRemaining <= 10 ? "urgent" : ""}`}
+                >
+                  {formattedTime}
+                </div>
+              )}
+              {game.player.ready_for_next && (
+                <div className="avatar-ready-check" aria-label="Ready">
+                  <CheckIcon fontSize="inherit" />
+                </div>
+              )}
             </div>
             <div className="avatar-info">
               <Chip
@@ -1019,6 +1075,48 @@ export function MotionCardTable() {
         </AnimatePresence>
 
         {/* Score Pile Labels - only show during playing phase when declarer is set and there are cards */}
+        <div
+          className="pile-points-bar"
+          title={`Player ${playerPileScore} - Opponent ${opponentPileScore} of ${totalCardPoints}`}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            height: `${Math.max(
+              80,
+              Math.abs(
+                getPileAbsolutePosition(true).y -
+                  getPileAbsolutePosition(false).y,
+              ) -
+                CARD_HEIGHT -
+                72,
+            )}px`,
+            transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), -50%)`,
+          }}
+        >
+          <div
+            className="pile-points-marker schneider"
+            style={{ top: "25%" }}
+          />
+          <div className="pile-points-marker" style={{ top: "50%" }} />
+          <div
+            className="pile-points-marker schneider"
+            style={{ top: "75%" }}
+          />
+          <div
+            className="pile-points-segment opponent"
+            style={{ height: `${opponentScorePercent}%` }}
+          />
+          <div
+            className="pile-points-segment unclaimed"
+            style={{ height: `${unclaimedScorePercent}%` }}
+          />
+          <div
+            className="pile-points-segment player"
+            style={{ height: `${playerScorePercent}%` }}
+          />
+        </div>
+
         {/* Player's team Score Label - always bottom right */}
         <div
           className={`score-pile-label player-pile`}
@@ -1033,9 +1131,7 @@ export function MotionCardTable() {
           <span className="pile-subtitle">
             {playerIsDeclarer ? "DECLARER" : "DEFENDER"}
           </span>
-          <span className="pile-score">
-            {playerIsDeclarer ? game.declarerScore : game.opponentScore}
-          </span>
+          <span className="pile-score">{playerPileScore}</span>
         </div>
 
         {/* Opponent's team Score Label - always top right */}
@@ -1054,9 +1150,7 @@ export function MotionCardTable() {
           <span className="pile-subtitle">
             {playerIsDeclarer ? "DEFENDERS" : "DECLARER"}
           </span>
-          <span className="pile-score">
-            {playerIsDeclarer ? game.opponentScore : game.declarerScore}
-          </span>
+          <span className="pile-score">{opponentPileScore}</span>
         </div>
       </div>
     </div>

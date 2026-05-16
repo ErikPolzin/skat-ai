@@ -613,8 +613,8 @@ func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.Pla
 		JOIN profiles prof ON prof.id = p.profile_id
 		WHERE pr.player_id = ?
 		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-		         g.overbid, g.forfeited_player, pr.rating_before, pr.rating_after, pr.rating_change
-		ORDER BY pr.id DESC
+		         g.overbid, g.forfeited_player, g.updated_at, g.created_at, pr.rating_before, pr.rating_after, pr.rating_change
+		ORDER BY g.updated_at DESC, g.created_at DESC
 	`
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)

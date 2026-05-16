@@ -34,6 +34,7 @@ import { WebSocketProvider } from "./context/WebSocketContext";
 import LoginScreen from "./screens/LoginScreen";
 import LobbyScreen from "./screens/LobbyScreen";
 import GameScreen from "./screens/GameScreen";
+import HistoryScreen from "./screens/HistoryScreen";
 import { useSnackbarStore } from "./stores/snackbarStore";
 
 // Create MUI theme with dark mode
@@ -167,6 +168,7 @@ function AppRoutes() {
           }
         >
           <Route path="/" element={<LobbyScreen />} />
+          <Route path="/history" element={<HistoryScreen />} />
           <Route path="/game/:gameId" element={<GameScreen />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

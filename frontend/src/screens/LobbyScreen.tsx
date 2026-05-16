@@ -14,12 +14,12 @@ import {
   Tab,
   useMediaQuery,
   useTheme,
-  Grid,
   Container,
 } from "@mui/material";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 import { lineClasses } from "@mui/x-charts/LineChart";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import HistoryIcon from "@mui/icons-material/History";
 import { createGame, joinGame, uploadAvatar } from "../api/games";
 import {
   selectPlayerId,
@@ -32,12 +32,12 @@ import {
 } from "../stores/profileStore";
 import { useSnackbarStore } from "../stores/snackbarStore";
 import ActiveGames from "../components/ActiveGames";
-import PlayerHistory from "../components/PlayerHistory";
 import Leaderboard from "../components/Leaderboard";
 import { getPlayerRating } from "../api/games";
 import AvailableGames from "../components/AvailableGames";
 
 const Header = () => {
+  const navigate = useNavigate();
   const theme = useTheme();
   const profileId = useProfileStore(selectPlayerId);
   const profileIcon = useProfileStore(selectProfileIcon);
@@ -108,7 +108,8 @@ const Header = () => {
         gap: 2,
         flexGrow: 1,
         py: isMobile ? 1 : 0,
-        px: isMobile ? 2 : 0,
+        pl: isMobile ? 2 : 0,
+        pr: isMobile ? 1 : 2,
         mb: isMobile ? 0 : 2,
       }}
     >
@@ -149,11 +150,16 @@ const Header = () => {
           {(username || "-").charAt(0).toUpperCase()}
         </Avatar>
       </Badge>
-      <Box>
+      <Box sx={{ flex: "1 1 auto", minWidth: 0 }}>
         <Typography
           variant="h4"
           component="h1"
-          sx={{ fontSize: { xs: "1.5rem", sm: "2.125rem" } }}
+          noWrap
+          sx={{
+            fontSize: { xs: "1.5rem", sm: "2.125rem" },
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
           Welcome, {username}!
         </Typography>
@@ -163,6 +169,14 @@ const Header = () => {
           </Typography>
         )}
       </Box>
+      <IconButton
+        color="primary"
+        onClick={() => navigate("/history")}
+        aria-label="Game history"
+        sx={{ ml: "auto", alignSelf: "center" }}
+      >
+        <HistoryIcon />
+      </IconButton>
       <input
         ref={fileInputRef}
         type="file"
@@ -208,7 +222,7 @@ const GamesTab = () => {
   };
 
   return (
-    <Box>
+    <Box sx={{ mx: 1 }}>
       <Typography variant="subtitle1" gutterBottom>
         Join or Create Game
       </Typography>
@@ -303,15 +317,13 @@ export default function LobbyScreen() {
             sx={{ mb: 2 }}
           >
             <Tab label="Games" />
-            <Tab label="History" />
             <Tab label="Leaderboard" />
           </Tabs>
         </Box>
 
-        <Box sx={{ px: 1 }}>
+        <Box>
           {currentTab === 0 && <GamesTab />}
-          {currentTab === 1 && <PlayerHistory />}
-          {currentTab === 2 && <LeaderboardTab />}
+          {currentTab === 1 && <LeaderboardTab />}
         </Box>
       </Box>
     );
@@ -333,19 +345,16 @@ export default function LobbyScreen() {
         }}
       >
         <Header />
-        <Grid container spacing={2}>
-          <Grid size={{ sm: 12, md: 6, xl: 8 }} container>
-            <Grid size={{ sm: 12, xl: 6 }}>
-              <GamesTab />
-            </Grid>
-            <Grid size={{ sm: 12, xl: 6 }}>
-              <PlayerHistory />
-            </Grid>
-          </Grid>
-          <Grid size={{ sm: 12, md: 6, xl: 4 }}>
-            <LeaderboardTab />
-          </Grid>
-        </Grid>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { sm: "1fr", md: "2fr 1fr" },
+            gap: 2,
+          }}
+        >
+          <GamesTab />
+          <LeaderboardTab />
+        </Box>
       </Paper>
     </Container>
   );

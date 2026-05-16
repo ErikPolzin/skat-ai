@@ -6,7 +6,7 @@ import { SessionResults } from "../components/SessionResults";
 function GameScreenContent() {
   const game = useGameContext();
   const theme = useTheme();
-  const isWideScreen = useMediaQuery(theme.breakpoints.up("md")); // 900px+
+  const isWideScreen = useMediaQuery(theme.breakpoints.up("lg"));
 
   // Main game screen - always use MotionCardTable for consistency
   return (

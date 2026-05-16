@@ -184,6 +184,48 @@
   object-fit: cover;
 }
 
+.avatar-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-deadline-countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(20, 8, 8, 0.62);
+  color: #ff4d4f;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.75);
+  pointer-events: none;
+}
+
+.avatar-deadline-countdown.urgent {
+  animation: pulse 1s infinite;
+}
+
+.avatar-ready-check {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(46, 204, 113, 0.68);
+  color: #ffffff;
+  font-size: 42px;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
 .avatar-circle.offline {
   opacity: 0.8;
 }
@@ -335,6 +377,53 @@
   font-weight: bold;
   margin-top: 8px;
   text-align: center;
+}
+
+.pile-points-bar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: stretch;
+  width: 12px;
+  min-height: 80px;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.26);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.pile-points-marker {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  transform: translateY(-50%);
+  z-index: 2;
+}
+
+.pile-points-marker.schneider {
+  background: #ff4d4f;
+}
+
+.pile-points-segment {
+  min-height: 0;
+  transition: height 0.35s ease;
+}
+
+.pile-points-segment.opponent {
+  background: linear-gradient(180deg, #ffd54f 0%, #ffb300 100%);
+}
+
+.pile-points-segment.player {
+  background: linear-gradient(180deg, #64b5f6 0%, #4f6bed 100%);
+}
+
+.pile-points-segment.unclaimed {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* Skat Exchange UI */
@@ -526,6 +615,11 @@
     margin-top: 5px;
   }
 
+  .pile-points-bar {
+    width: 10px;
+    border-width: 1px;
+  }
+
   .pile-label {
     font-size: 11px;
   }
@@ -564,6 +658,10 @@
     width: 66px;
     height: 66px;
     font-size: 26px;
+  }
+
+  .mobile .avatar-deadline-countdown {
+    font-size: 17px;
   }
 
   .mobile .player-role {

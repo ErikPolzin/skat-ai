@@ -1042,10 +1042,21 @@ export function MotionCardTable() {
                   playerIsDeclarer,
                 }}
                 exit={(() => {
+                  // Only completed tricks should collect into a score pile.
+                  // Partial trick cards can briefly disappear during optimistic/server
+                  // reconciliation and should not look like they were scored.
+                  if (game.trick.length < 3) {
+                    return { opacity: 0, transition: { duration: 0.12 } };
+                  }
+
                   // Use the trick winner stored when the WebSocket message arrived
                   // This is the most reliable way to get the correct winner for exit animations
                   const trickWinner = game.trickWinnerRef.current.winner;
                   const declarerPosition = game.trickWinnerRef.current.declarer;
+
+                  if (trickWinner == null || declarerPosition == null) {
+                    return { opacity: 0, transition: { duration: 0.12 } };
+                  }
 
                   // Check if the trick winner is the declarer
                   const declarerWonTrick = trickWinner === declarerPosition;

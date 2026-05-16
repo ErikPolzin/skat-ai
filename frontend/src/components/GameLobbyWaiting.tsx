@@ -1,11 +1,5 @@
 import { useState, useEffect } from "react";
-import {
-  Box,
-  Typography,
-  Button,
-  Paper,
-  CircularProgress,
-} from "@mui/material";
+import { Box, Typography, Button, Paper, Stack } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
 import { leaveGame, getAvailableAgents, type AgentInfo } from "../api/games";
@@ -67,32 +61,17 @@ export function GameLobbyWaiting() {
         transform: "translate(-50%, -50%)",
         textAlign: "center",
         zIndex: 50,
-        width: { xs: "90%", sm: "auto" },
+        width: { xs: "90%", md: "60", lg: "auto" },
         maxWidth: { xs: "350px", sm: "500px" },
         px: { xs: 2, sm: 0 },
       }}
     >
-      <Typography
-        variant="h4"
-        sx={{
-          mb: 2,
-          color: "#b1c4d7",
-          fontWeight: 600,
-          fontSize: { xs: "20px", sm: "24px" },
-        }}
-      >
-        Waiting for Players
-      </Typography>
-
       {game.gameCode && (
         <Paper
           elevation={3}
           sx={{
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
             p: { xs: "12px 15px", sm: "15px 20px" },
-            borderRadius: "12px",
             my: { xs: 2, sm: 3 },
-            boxShadow: "0 4px 15px rgba(102, 126, 234, 0.3)",
           }}
         >
           <Typography
@@ -113,7 +92,6 @@ export function GameLobbyWaiting() {
               fontWeight: "bold",
               letterSpacing: { xs: "4px", sm: "6px" },
               mb: 0.5,
-              fontFamily: "'Courier New', monospace",
             }}
           >
             {game.gameCode}
@@ -133,10 +111,10 @@ export function GameLobbyWaiting() {
       <Typography
         sx={{
           fontSize: { xs: "16px", sm: "18px" },
-          color: "#667eea",
           fontWeight: 600,
           mb: 2,
         }}
+        color="primary"
       >
         {game.playerCount} / 3 players joined
       </Typography>
@@ -154,7 +132,11 @@ export function GameLobbyWaiting() {
             Waiting for {playersNeeded} more player
             {playersNeeded > 1 ? "s" : ""}...
           </Typography>
-          <Box sx={{ display: "flex", gap: 2, justifyContent: "center" }}>
+          <Stack
+            direction={{ xs: "column", lg: "row" }}
+            spacing={2}
+            sx={{ justifyContent: "center" }}
+          >
             <Button variant="contained" onClick={handleOpenDialog}>
               Add AI Player
             </Button>
@@ -162,12 +144,11 @@ export function GameLobbyWaiting() {
               variant="outlined"
               color="error"
               onClick={handleLeaveGame}
-              disabled={isLeaving}
-              startIcon={isLeaving ? <CircularProgress size={16} /> : null}
+              loading={isLeaving}
             >
               {isLeaving ? "Leaving..." : "Leave Game"}
             </Button>
-          </Box>
+          </Stack>
 
           <AIPlayerSelector
             open={dialogOpen}

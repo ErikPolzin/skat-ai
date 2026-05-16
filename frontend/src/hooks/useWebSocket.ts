@@ -16,7 +16,7 @@ export function useWebSocket() {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
   const reconnectCountdownRef = useRef<ReturnType<typeof setTimeout>>(null);
   const reconnectAttemptsRef = useRef(0);
-  const profileIdRef = useRef<string | null>(null);
+  const authRef = useRef<{ username: string; password: string } | null>(null);
   const manualDisconnectRef = useRef(false);
   const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(
     null,
@@ -83,17 +83,17 @@ export function useWebSocket() {
         reconnectCountdownRef.current = null;
       }
       setReconnectCountdown(null);
-      if (profileIdRef.current && !manualDisconnectRef.current) {
+      if (authRef.current && !manualDisconnectRef.current) {
         reconnectAttemptsRef.current++;
         // eslint-disable-next-line react-hooks/immutability
-        connect(profileIdRef.current);
+        connect(authRef.current.username, authRef.current.password);
       }
     }, delay);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const connect = useCallback(
-    (profileId: string) => {
+    (username: string, password: string) => {
       if (
         wsRef.current &&
         (wsRef.current.readyState === WebSocket.CONNECTING ||
@@ -109,21 +109,26 @@ export function useWebSocket() {
         reconnectTimeoutRef.current = null;
       }
 
-      // Store profile ID for reconnection attempts
-      profileIdRef.current = profileId;
+      // Store credentials for reconnection attempts
+      authRef.current = { username, password };
       manualDisconnectRef.current = false;
 
       const wsUrl = import.meta.env.VITE_WS_URL;
 
-      // Add profile_id as query parameter
-      const urlWithProfile = `${wsUrl}/ws?profile_id=${encodeURIComponent(profileId)}`;
+      const credentials = btoa(`${username}:${password}`)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
 
-      console.log("Connecting WebSocket with profile:", profileId);
-      const ws = new WebSocket(urlWithProfile);
+      console.log("Connecting WebSocket with profile:", username);
+      const ws = new WebSocket(`${wsUrl}/ws`, [
+        "skat-auth",
+        `auth.${credentials}`,
+      ]);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("WebSocket connected for profile:", profileId);
+        console.log("WebSocket connected for profile:", username);
         // Reset reconnection attempts on successful connection
         reconnectAttemptsRef.current = 0;
         wsRef.current = ws;

@@ -51,6 +51,9 @@ func (d *TursoDatabase) InitSchema() error {
 		if stmt != "" {
 			_, err := d.DB.Exec(stmt)
 			if err != nil {
+				if strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+					continue
+				}
 				return fmt.Errorf("failed to execute statement: %s: %w", stmt[:50], err)
 			}
 		}
@@ -65,11 +68,11 @@ func (d *TursoDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	err := d.DB.QueryRow(`
 		SELECT p.id, p.name,
 		       CASE WHEN ac.profile_id IS NOT NULL THEN 1 ELSE 0 END as is_agent,
-		       p.profile_icon, p.is_online
+		       p.profile_icon, p.is_online, p.password_hash
 		FROM profiles p
 		LEFT JOIN agent_configs ac ON p.id = ac.profile_id
 		WHERE p.id = ?
-	`, profileID).Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline)
+	`, profileID).Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline, &profile.PasswordHash)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
 	}
@@ -84,11 +87,11 @@ func (d *TursoDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
 	err := d.DB.QueryRow(`
 		SELECT p.id, p.name,
 		       CASE WHEN ac.profile_id IS NOT NULL THEN 1 ELSE 0 END as is_agent,
-		       p.profile_icon, p.is_online
+		       p.profile_icon, p.is_online, p.password_hash
 		FROM profiles p
 		LEFT JOIN agent_configs ac ON p.id = ac.profile_id
 		WHERE p.name = ?
-	`, name).Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline)
+	`, name).Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline, &profile.PasswordHash)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
 	}
@@ -107,12 +110,12 @@ func (d *TursoDatabase) SaveProfile(profile ProfileEntry) error {
 		isOnline = 1
 	}
 	_, err := d.DB.Exec(
-		`INSERT INTO profiles (id, name, is_agent, profile_icon, is_online)
-		 	VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO profiles (id, name, is_agent, profile_icon, is_online, password_hash)
+		 	VALUES (?, ?, ?, ?, ?, ?)
 		 	ON CONFLICT (id) DO UPDATE SET
 		 	id = excluded.id, name = excluded.name, is_agent = excluded.is_agent,
-			profile_icon = excluded.profile_icon, is_online = excluded.is_online`,
-		profile.ID, profile.Name, isAgent, profile.ProfileIcon, isOnline,
+			profile_icon = excluded.profile_icon, is_online = excluded.is_online, password_hash = excluded.password_hash`,
+		profile.ID, profile.Name, isAgent, profile.ProfileIcon, isOnline, profile.PasswordHash,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save profile: %w", err)
@@ -653,7 +656,7 @@ func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.Pla
 
 func (d *TursoDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	rows, err := d.DB.Query(`
-		SELECT p.id, p.name, 1 as is_agent, p.profile_icon, p.is_online
+		SELECT p.id, p.name, 1 as is_agent, p.profile_icon, p.is_online, p.password_hash
 		FROM profiles p
 		INNER JOIN agent_configs ac ON p.id = ac.profile_id
 	`)
@@ -666,7 +669,7 @@ func (d *TursoDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	for rows.Next() {
 		var profile ProfileEntry
 		var isAgent, isOnline int
-		if err := rows.Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline); err != nil {
+		if err := rows.Scan(&profile.ID, &profile.Name, &isAgent, &profile.ProfileIcon, &isOnline, &profile.PasswordHash); err != nil {
 			return nil, fmt.Errorf("failed to scan agent profile: %w", err)
 		}
 		profile.IsAgent = isAgent != 0

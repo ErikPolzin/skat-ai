@@ -7,11 +7,12 @@ import (
 )
 
 type ProfileEntry struct {
-	ID          string
-	Name        string
-	IsAgent     bool
-	ProfileIcon string
-	IsOnline    bool
+	ID           string
+	Name         string
+	IsAgent      bool
+	ProfileIcon  string
+	IsOnline     bool
+	PasswordHash string
 }
 
 type PlayerEntry struct {

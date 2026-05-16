@@ -4,9 +4,12 @@ CREATE TABLE IF NOT EXISTS profiles (
     is_agent INTEGER NOT NULL DEFAULT 0,
     profile_icon TEXT DEFAULT '',
     is_online INTEGER NOT NULL DEFAULT 0,
+    password_hash TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE profiles ADD COLUMN password_hash TEXT NOT NULL DEFAULT '';
 
 -- Insert initial agent profiles
 INSERT OR IGNORE INTO profiles (id, name, is_agent, profile_icon, is_online) VALUES

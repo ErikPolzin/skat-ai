@@ -1,4 +1,5 @@
 import type { Card } from "../types";
+import { useProfileStore } from "../stores/profileStore";
 
 // Server player representation (without position)
 export interface ServerPlayer {
@@ -25,6 +26,31 @@ export interface Player {
 export type { Card } from "../types";
 
 const getApiUrl = () => import.meta.env.VITE_API_URL;
+
+function authHeaders(
+  username?: string | null,
+  password?: string | null,
+): HeadersInit {
+  const state = useProfileStore.getState();
+  const authUsername = username ?? state.username;
+  const authPassword = password ?? state.password;
+  if (!authUsername || !authPassword) {
+    return {};
+  }
+  return {
+    Authorization: `Basic ${btoa(`${authUsername}:${authPassword}`)}`,
+  };
+}
+
+function jsonHeaders(
+  username?: string | null,
+  password?: string | null,
+): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...authHeaders(username, password),
+  };
+}
 
 export type GameMode = "grand" | "suit" | "null";
 export type TrumpSuit = "♣" | "♠" | "♥" | "♦";
@@ -100,15 +126,10 @@ export interface ActiveGame {
   player_names: string[];
 }
 
-export async function fetchGameState(
-  gameId: string,
-  playerId?: string,
-): Promise<GameInfo> {
-  const url = playerId
-    ? `${getApiUrl()}/api/games/${gameId}?player_id=${playerId}`
-    : `${getApiUrl()}/api/games/${gameId}`;
+export async function fetchGameState(gameId: string): Promise<GameInfo> {
+  const url = `${getApiUrl()}/api/games/${gameId}`;
 
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: authHeaders() });
 
   if (!response.ok) {
     throw new Error("Failed to fetch game state");
@@ -117,16 +138,12 @@ export async function fetchGameState(
   return response.json();
 }
 
-export async function createGame(
-  playerId?: string,
-): Promise<{ game_id: string; code: string }> {
-  const url = playerId
-    ? `${getApiUrl()}/api/games?player_id=${playerId}`
-    : `${getApiUrl()}/api/games`;
+export async function createGame(): Promise<{ game_id: string; code: string }> {
+  const url = `${getApiUrl()}/api/games`;
 
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
   });
 
   if (!response.ok) {
@@ -139,14 +156,13 @@ export async function createGame(
 
 export async function createOrRetrieveProfile(
   playerName: string,
-  playerId?: string,
+  password: string,
 ): Promise<{ player_id: string; player_name: string; profile_icon: string }> {
   const response = await fetch(`${getApiUrl()}/api/profiles`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(playerName, password),
     body: JSON.stringify({
       player_name: playerName,
-      ...(playerId && { player_id: playerId }),
     }),
   });
 
@@ -157,18 +173,10 @@ export async function createOrRetrieveProfile(
   return response.json();
 }
 
-export async function joinGame(
-  gameId: string,
-  playerName: string,
-  playerId?: string,
-): Promise<{ game_id: string }> {
+export async function joinGame(gameId: string): Promise<{ game_id: string }> {
   const response = await fetch(`${getApiUrl()}/api/games/${gameId}/join`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      player_name: playerName,
-      ...(playerId && { player_id: playerId }),
-    }),
+    headers: authHeaders(),
   });
 
   if (!response.ok) {
@@ -184,7 +192,7 @@ export async function addAIAgent(
 ): Promise<void> {
   const response = await fetch(`${getApiUrl()}/api/games/${gameId}/agents`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: agentId ? JSON.stringify({ agent_id: agentId }) : undefined,
   });
 
@@ -199,7 +207,7 @@ export async function getGames(
   const url = excludePlayerId
     ? `${getApiUrl()}/api/games?exclude_player_id=${excludePlayerId}`
     : `${getApiUrl()}/api/games`;
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: authHeaders() });
   const data = await response.json();
   return data || [];
 }
@@ -207,6 +215,7 @@ export async function getGames(
 export async function getActiveGames(playerId: string): Promise<ActiveGame[]> {
   const response = await fetch(
     `${getApiUrl()}/api/players/${playerId}/active_games`,
+    { headers: authHeaders() },
   );
 
   if (!response.ok) {
@@ -259,6 +268,7 @@ export async function getPlayerHistory(
 ): Promise<PlayerResult[]> {
   const response = await fetch(
     `${getApiUrl()}/api/players/${playerId}/history?limit=${limit}`,
+    { headers: authHeaders() },
   );
 
   if (!response.ok) {
@@ -290,6 +300,7 @@ export async function getPlayerGameHistory(
 ): Promise<GameHistoryEntry[]> {
   const response = await fetch(
     `${getApiUrl()}/api/players/${playerId}/history/${sessionId}`,
+    { headers: authHeaders() },
   );
 
   if (!response.ok) {
@@ -319,7 +330,12 @@ export interface SessionResults {
 export async function getSessionResults(
   sessionId: string,
 ): Promise<SessionResults> {
-  const response = await fetch(`${getApiUrl()}/api/games/${sessionId}/results`);
+  const response = await fetch(
+    `${getApiUrl()}/api/games/${sessionId}/results`,
+    {
+      headers: authHeaders(),
+    },
+  );
 
   if (!response.ok) {
     throw new Error("Failed to fetch session results");
@@ -339,6 +355,7 @@ export async function uploadAvatar(
     `${getApiUrl()}/api/profiles/${playerId}/avatar`,
     {
       method: "POST",
+      headers: authHeaders(),
       body: formData,
     },
   );
@@ -354,15 +371,13 @@ export async function uploadAvatar(
 async function gameAction(
   gameId: string,
   action: string,
-  playerId: string,
+  _playerId: string,
   body?: object,
 ): Promise<void> {
-  const url = `${getApiUrl()}/api/games/${gameId}/${action}?player_id=${encodeURIComponent(playerId)}`;
+  const url = `${getApiUrl()}/api/games/${gameId}/${action}`;
   const response = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: jsonHeaders(),
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -441,17 +456,11 @@ export async function reportTimeout(
   return gameAction(gameId, "timeout", playerId);
 }
 
-export async function leaveGame(
-  gameId: string,
-  playerId: string,
-): Promise<void> {
+export async function leaveGame(gameId: string): Promise<void> {
   const url = `${getApiUrl()}/api/games/${gameId}/leave`;
   const response = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ player_id: playerId }),
+    headers: jsonHeaders(),
   });
 
   if (!response.ok) {
@@ -463,7 +472,12 @@ export async function leaveGame(
 // Rating and Leaderboard API calls
 
 export async function getPlayerRating(playerId: string): Promise<PlayerRating> {
-  const response = await fetch(`${getApiUrl()}/api/players/${playerId}/rating`);
+  const response = await fetch(
+    `${getApiUrl()}/api/players/${playerId}/rating`,
+    {
+      headers: authHeaders(),
+    },
+  );
 
   if (!response.ok) {
     throw new Error("Failed to fetch player rating");
@@ -475,7 +489,12 @@ export async function getPlayerRating(playerId: string): Promise<PlayerRating> {
 export async function getLeaderboard(
   limit: number = 100,
 ): Promise<LeaderboardEntry[]> {
-  const response = await fetch(`${getApiUrl()}/api/leaderboard?limit=${limit}`);
+  const response = await fetch(
+    `${getApiUrl()}/api/leaderboard?limit=${limit}`,
+    {
+      headers: authHeaders(),
+    },
+  );
 
   if (!response.ok) {
     console.error("Failed to fetch leaderboard");
@@ -498,7 +517,9 @@ export interface AgentInfo {
 }
 
 export async function getAvailableAgents(): Promise<AgentInfo[]> {
-  const response = await fetch(`${getApiUrl()}/api/agents`);
+  const response = await fetch(`${getApiUrl()}/api/agents`, {
+    headers: authHeaders(),
+  });
 
   if (!response.ok) {
     console.error("Failed to fetch agents");

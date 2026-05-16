@@ -44,11 +44,11 @@ export function SessionResults({
   const [isLeaving, setIsLeaving] = useState(false);
 
   const handleLeaveSession = async () => {
-    if (!playerId || !gameId) return;
+    if (!gameId) return;
 
     try {
       setIsLeaving(true);
-      await leaveGame(gameId, playerId);
+      await leaveGame(gameId);
       navigate("/");
     } catch (error) {
       console.error("Failed to leave session:", error);

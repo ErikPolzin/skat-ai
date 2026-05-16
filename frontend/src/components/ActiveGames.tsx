@@ -58,7 +58,7 @@ export default function ActiveGames() {
 
     try {
       setLeavingGameId(gameId);
-      await leaveGame(gameId, profileId);
+      await leaveGame(gameId);
       // Refresh the list after leaving
       await fetchActiveGames();
       showSnackbar("Successfully left game", "success");

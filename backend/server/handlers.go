@@ -45,28 +45,32 @@ func (s *Server) SetupRoutes() http.Handler {
 	// REST API endpoints
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(s.cloudRunDelayMiddleware)
-	api.HandleFunc("/games", s.handleListOpenSessions).Methods("GET")
-	api.HandleFunc("/games", s.handleCreateGame).Methods("POST")
-	api.HandleFunc("/games/{id}", s.handleGetGame).Methods("GET")
-	api.HandleFunc("/games/{code}/join", s.handleJoinGame).Methods("POST")
-	api.HandleFunc("/games/{id}/leave", s.handleLeaveGame).Methods("POST")
-	api.HandleFunc("/games/{id}/agents", s.handleAddAgent).Methods("POST")
-	api.HandleFunc("/games/{id}/results", s.handleGetSessionResults).Methods("GET")
-	api.HandleFunc("/games/{id}/deal", s.handleDeal).Methods("POST")
-	api.HandleFunc("/games/{id}/play_card", s.handlePlayCard).Methods("POST")
-	api.HandleFunc("/games/{id}/bid", s.handleBid).Methods("POST")
-	api.HandleFunc("/games/{id}/choose_game", s.handleChooseGame).Methods("POST")
-	api.HandleFunc("/games/{id}/skat_decision", s.handleSkatDecision).Methods("POST")
-	api.HandleFunc("/games/{id}/discard_cards", s.handleDiscardCards).Methods("POST")
-	api.HandleFunc("/games/{id}/ready_for_next", s.handleReadyForNext).Methods("POST")
-	api.HandleFunc("/games/{id}/timeout", s.handleTimeout).Methods("POST")
 	api.HandleFunc("/profiles", s.handleCreateProfile).Methods("POST")
-	api.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
-	api.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
-	api.HandleFunc("/players/{id}/active_games", s.handleGetActiveGames).Methods("GET")
-	api.HandleFunc("/players/{id}/rating", s.handleGetPlayerRating).Methods("GET")
-	api.HandleFunc("/leaderboard", s.handleGetLeaderboard).Methods("GET")
-	api.HandleFunc("/agents", s.handleListAgents).Methods("GET")
+
+	authAPI := api.PathPrefix("").Subrouter()
+	authAPI.Use(s.basicAuthMiddleware)
+	authAPI.HandleFunc("/profile", s.handleCurrentProfile).Methods("GET")
+	authAPI.HandleFunc("/games", s.handleListOpenSessions).Methods("GET")
+	authAPI.HandleFunc("/games", s.handleCreateGame).Methods("POST")
+	authAPI.HandleFunc("/games/{id}", s.handleGetGame).Methods("GET")
+	authAPI.HandleFunc("/games/{code}/join", s.handleJoinGame).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/leave", s.handleLeaveGame).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/agents", s.handleAddAgent).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/results", s.handleGetSessionResults).Methods("GET")
+	authAPI.HandleFunc("/games/{id}/deal", s.handleDeal).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/play_card", s.handlePlayCard).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/bid", s.handleBid).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/choose_game", s.handleChooseGame).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/skat_decision", s.handleSkatDecision).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/discard_cards", s.handleDiscardCards).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/ready_for_next", s.handleReadyForNext).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/timeout", s.handleTimeout).Methods("POST")
+	authAPI.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
+	authAPI.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
+	authAPI.HandleFunc("/players/{id}/active_games", s.handleGetActiveGames).Methods("GET")
+	authAPI.HandleFunc("/players/{id}/rating", s.handleGetPlayerRating).Methods("GET")
+	authAPI.HandleFunc("/leaderboard", s.handleGetLeaderboard).Methods("GET")
+	authAPI.HandleFunc("/agents", s.handleListAgents).Methods("GET")
 
 	// Wrap with CORS middleware
 	allowedOrigins := []string{"http://localhost:5173", "https://skat.erikpolzin.com"}
@@ -100,8 +104,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // handleListOpenSessions returns all open games (accepting players)
 // Optionally filters out games where the specified player is already playing
 func (s *Server) handleListOpenSessions(w http.ResponseWriter, r *http.Request) {
-	// Get optional player_id from query params to filter out games they're already in
-	playerID := r.URL.Query().Get("exclude_player_id")
+	profile, err := currentProfile(r)
+	if err != nil {
+		writeAuthRequired(w)
+		return
+	}
+	playerID := profile.ID
 
 	games, err := s.db.ListOpenSessions()
 	if err != nil {
@@ -136,20 +144,22 @@ func (s *Server) handleListOpenSessions(w http.ResponseWriter, r *http.Request) 
 
 // handleCreateGame creates a new game session
 func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
-	// Get optional player_id from query params to check if they can create a game
-	playerID := r.URL.Query().Get("player_id")
+	profile, err := currentProfile(r)
+	if err != nil {
+		writeAuthRequired(w)
+		return
+	}
+	playerID := profile.ID
 
 	// Check if player is already in an active game before creating
-	if playerID != "" {
-		activeGames, err := s.db.GetActiveGamesByPlayer(playerID)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to check active games: %v", err), http.StatusInternalServerError)
-			return
-		}
-		if len(activeGames) > 0 {
-			http.Error(w, "player is already in an active game", http.StatusConflict)
-			return
-		}
+	activeGames, err := s.db.GetActiveGamesByPlayer(playerID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to check active games: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if len(activeGames) > 0 {
+		http.Error(w, "player is already in an active game", http.StatusConflict)
+		return
 	}
 
 	// Create empty session
@@ -179,7 +189,12 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	gameID := vars["id"]
-	playerID := r.URL.Query().Get("player_id")
+	profile, err := currentProfile(r)
+	if err != nil {
+		writeAuthRequired(w)
+		return
+	}
+	playerID := profile.ID
 
 	gs, err := s.cache.GetGameByID(gameID)
 	if err != nil {
@@ -195,7 +210,6 @@ func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PlayerName string `json:"player_name"`
-		PlayerID   string `json:"player_id,omitempty"` // Optional, for existing profiles
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -203,83 +217,75 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	playerID := req.PlayerID
-	playerName := req.PlayerName
+	playerName := strings.TrimSpace(req.PlayerName)
+	if playerName == "" {
+		playerName = "Player"
+	}
 
-	// If no player ID provided, check if username already exists
-	if playerID == "" {
-		// Check if a profile with this name already exists
-		if existingProfile, err := s.db.GetProfileByName(playerName); err == nil {
-			// Profile with this name exists
-			if existingProfile.IsAgent {
-				// Username belongs to an agent, reject it
-				http.Error(w, "Username is reserved for an agent", http.StatusConflict)
-				return
-			}
-			// Return the existing profile
-			logger.Info("Returning existing profile %s for %s", existingProfile.ID, existingProfile.Name)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
-				"player_id":    existingProfile.ID,
-				"player_name":  existingProfile.Name,
-				"profile_icon": existingProfile.ProfileIcon,
-			})
-			return
-		}
-
-		// No existing profile, create a new one
-		playerID = uuid.New().String()
-		logger.Info("Creating new profile %s for %s", playerID, playerName)
-
-		// Store the new profile
-		profile := db.ProfileEntry{
-			ID:   playerID,
-			Name: playerName,
-		}
-		if err := s.db.SaveProfile(profile); err != nil {
-			logger.Warning("Failed to store player profile: %e", err)
-		}
-	} else {
-		// Existing player ID - retrieve or update name
-		var profileIcon string
-		if profile, err := s.db.GetProfile(playerID); err == nil {
-			// Profile exists, optionally update name if different
-			profileIcon = profile.ProfileIcon
-			if profile.Name != playerName && playerName != "" {
-				profile.Name = playerName
-				if err := s.db.SaveProfile(*profile); err != nil {
-					logger.Warning("Failed to update player profile: %e", err)
-				}
-			} else if profile.Name != "" {
-				// Use the stored name if no new name provided
-				playerName = profile.Name
-			}
-		} else {
-			// Profile doesn't exist, create it
-			profile := db.ProfileEntry{
-				ID:   playerID,
-				Name: playerName,
-			}
-			if err := s.db.SaveProfile(profile); err != nil {
-				logger.Warning("Failed to store player profile: %e", err)
-			}
-			logger.Info("Updated existing profile %s for %s", playerID, playerName)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
-			"player_id":    playerID,
-			"player_name":  playerName,
-			"profile_icon": profileIcon,
-		})
+	basicUsername, password, ok := r.BasicAuth()
+	if !ok || strings.TrimSpace(basicUsername) == "" || password == "" {
+		writeAuthRequired(w)
+		return
+	}
+	if basicUsername != playerName {
+		http.Error(w, "basic auth username must match player_name", http.StatusBadRequest)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"player_id":   playerID,
-		"player_name": playerName,
-	})
+	if existingProfile, err := s.db.GetProfileByName(playerName); err == nil {
+		if existingProfile.IsAgent {
+			http.Error(w, "Username is reserved for an agent", http.StatusConflict)
+			return
+		}
+		if existingProfile.PasswordHash == "" {
+			passwordHash, err := hashPassword(password)
+			if err != nil {
+				http.Error(w, "failed to hash password", http.StatusInternalServerError)
+				return
+			}
+			existingProfile.PasswordHash = passwordHash
+			if err := s.db.SaveProfile(*existingProfile); err != nil {
+				logger.Warning("Failed to set password for existing profile: %e", err)
+				http.Error(w, "failed to update player profile", http.StatusInternalServerError)
+				return
+			}
+		} else if !passwordHashMatches(existingProfile.PasswordHash, password) {
+			writeAuthRequired(w)
+			return
+		}
+		logger.Info("Returning existing profile %s for %s", existingProfile.ID, existingProfile.Name)
+		writeJSON(w, profileToResponse(existingProfile))
+		return
+	}
+
+	passwordHash, err := hashPassword(password)
+	if err != nil {
+		http.Error(w, "failed to hash password", http.StatusInternalServerError)
+		return
+	}
+
+	profile := db.ProfileEntry{
+		ID:           uuid.New().String(),
+		Name:         playerName,
+		PasswordHash: passwordHash,
+	}
+	logger.Info("Creating new profile %s for %s", profile.ID, profile.Name)
+	if err := s.db.SaveProfile(profile); err != nil {
+		logger.Warning("Failed to store player profile: %e", err)
+		http.Error(w, "failed to store player profile", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, profileToResponse(&profile))
+}
+
+func (s *Server) handleCurrentProfile(w http.ResponseWriter, r *http.Request) {
+	profile, err := currentProfile(r)
+	if err != nil {
+		writeAuthRequired(w)
+		return
+	}
+	writeJSON(w, profileToResponse(profile))
 }
 
 // handleJoinGame adds a human player to a game
@@ -287,25 +293,12 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	code := vars["code"]
 
-	var req struct {
-		PlayerID string `json:"player_id,omitempty"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	profile, err := currentProfile(r)
+	if err != nil {
+		writeAuthRequired(w)
 		return
 	}
-	playerID := req.PlayerID
-	if playerID == "" {
-		http.Error(w, "player ID is empty", http.StatusBadRequest)
-		return
-	}
-	// Fetch profile
-	profile, profile_err := s.db.GetProfile(playerID)
-	if profile_err != nil {
-		http.Error(w, profile_err.Error(), http.StatusNotFound)
-		return
-	}
+	playerID := profile.ID
 
 	// Check if player is already in an active game
 	activeGames, err := s.db.GetActiveGamesByPlayer(playerID)
@@ -351,17 +344,9 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	gameID := vars["id"]
 
-	var req struct {
-		PlayerID string `json:"player_id,omitempty"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	playerID := req.PlayerID
-	if playerID == "" {
-		http.Error(w, "player ID is empty", http.StatusBadRequest)
+	playerID, err := currentProfileID(r)
+	if err != nil {
+		writeAuthRequired(w)
 		return
 	}
 
@@ -537,6 +522,13 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetPlayerHistory(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	playerID := vars["id"]
+	if authPlayerID, err := currentProfileID(r); err != nil {
+		writeAuthRequired(w)
+		return
+	} else if playerID != authPlayerID {
+		http.Error(w, "cannot access another player's history", http.StatusForbidden)
+		return
+	}
 
 	// Get limit from query params, default to 10
 	limitStr := r.URL.Query().Get("limit")
@@ -565,6 +557,13 @@ func (s *Server) handleGetPlayerHistory(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleGetActiveGames(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	playerID := vars["id"]
+	if authPlayerID, err := currentProfileID(r); err != nil {
+		writeAuthRequired(w)
+		return
+	} else if playerID != authPlayerID {
+		http.Error(w, "cannot access another player's active games", http.StatusForbidden)
+		return
+	}
 
 	games, err := s.db.GetActiveGamesByPlayer(playerID)
 	if err != nil {
@@ -632,6 +631,13 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	playerID := vars["id"]
+	if authPlayerID, err := currentProfileID(r); err != nil {
+		writeAuthRequired(w)
+		return
+	} else if playerID != authPlayerID {
+		http.Error(w, "cannot update another player's avatar", http.StatusForbidden)
+		return
+	}
 
 	// Verify the profile exists
 	profile, err := s.db.GetProfile(playerID)
@@ -758,11 +764,7 @@ func fileExists(path string) bool {
 
 // Helper to get authenticated player ID from request
 func getAuthenticatedPlayerID(r *http.Request) (string, error) {
-	playerID := r.URL.Query().Get("player_id")
-	if playerID == "" {
-		return "", fmt.Errorf("player_id required")
-	}
-	return playerID, nil
+	return currentProfileID(r)
 }
 
 // GameActionFunc is a function that performs a game action
@@ -1074,6 +1076,13 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetPlayerRating(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	playerID := vars["id"]
+	if authPlayerID, err := currentProfileID(r); err != nil {
+		writeAuthRequired(w)
+		return
+	} else if playerID != authPlayerID {
+		http.Error(w, "cannot access another player's rating", http.StatusForbidden)
+		return
+	}
 
 	rating, err := s.db.GetPlayerRating(playerID)
 	if err != nil {

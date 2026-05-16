@@ -101,7 +101,7 @@ export function MotionCardTable() {
     if (isExpired && game.currentPlayerDeadline && game.player?.id) {
       if (game.phase === "complete") {
         // Game is complete, just leave the game
-        leaveGame(game.gameId, game.player?.id).catch((err) => {
+        leaveGame(game.gameId).catch((err) => {
           console.error("Failed to leave game after timeout:", err);
         });
       } else {

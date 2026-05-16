@@ -1,10 +1,12 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"skat/agent"
@@ -82,25 +84,63 @@ func (s *Server) IsCloudRun() bool {
 
 // HandleWebSocket upgrades HTTP connections to WebSocket
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	username, password, ok := r.BasicAuth()
+	if !ok {
+		username, password, ok = webSocketBasicAuth(r)
+	}
+	if !ok {
+		writeAuthRequired(w)
+		return
+	}
+
+	profile, authErr := s.authenticateProfile(username, password)
+	if authErr != nil {
+		logger.Warning("WebSocket authentication failed for %s", username)
+		writeAuthRequired(w)
+		return
+	}
+	profileID := profile.ID
+
+	// Register or update client in ClientManager
+	responseHeader := http.Header{}
+	if webSocketRequestedProtocol(r, "skat-auth") {
+		responseHeader.Set("Sec-WebSocket-Protocol", "skat-auth")
+	}
+	conn, err := upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		logger.Error("WebSocket upgrade failed: %e", err)
 		return
 	}
 
-	// Profile ID should be provided as query parameter
-	profileID := r.URL.Query().Get("profile_id")
-	if profileID == "" {
-		logger.Warning("WebSocket connection without profile_id")
-		conn.Close()
-		return
-	}
-
-	// Register or update client in ClientManager
 	client := s.clients.RegisterClient(profileID, conn)
 
 	go client.readPump(s)
 	go client.writePump()
+}
+
+func webSocketBasicAuth(r *http.Request) (string, string, bool) {
+	for _, protocol := range websocket.Subprotocols(r) {
+		token, ok := strings.CutPrefix(protocol, "auth.")
+		if !ok {
+			continue
+		}
+		decoded, err := base64.RawURLEncoding.DecodeString(token)
+		if err != nil {
+			return "", "", false
+		}
+		username, password, ok := strings.Cut(string(decoded), ":")
+		return username, password, ok
+	}
+	return "", "", false
+}
+
+func webSocketRequestedProtocol(r *http.Request, expected string) bool {
+	for _, protocol := range websocket.Subprotocols(r) {
+		if protocol == expected {
+			return true
+		}
+	}
+	return false
 }
 
 // Client represents a connected player

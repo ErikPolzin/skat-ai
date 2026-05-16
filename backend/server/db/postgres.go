@@ -58,11 +58,11 @@ func (d *PgDatabase) GetProfile(profileID string) (*ProfileEntry, error) {
 	err := d.DB.QueryRow(`
 		SELECT p.id, p.name,
 		       CASE WHEN ac.profile_id IS NOT NULL THEN TRUE ELSE FALSE END as is_agent,
-		       p.profile_icon, p.is_online
+		       p.profile_icon, p.is_online, p.password_hash
 		FROM profiles p
 		LEFT JOIN agent_configs ac ON p.id = ac.profile_id
 		WHERE p.id = $1
-	`, profileID).Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline)
+	`, profileID).Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline, &profile.PasswordHash)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
 	}
@@ -74,11 +74,11 @@ func (d *PgDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
 	err := d.DB.QueryRow(`
 		SELECT p.id, p.name,
 		       CASE WHEN ac.profile_id IS NOT NULL THEN TRUE ELSE FALSE END as is_agent,
-		       p.profile_icon, p.is_online
+		       p.profile_icon, p.is_online, p.password_hash
 		FROM profiles p
 		LEFT JOIN agent_configs ac ON p.id = ac.profile_id
 		WHERE p.name = $1
-	`, name).Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline)
+	`, name).Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline, &profile.PasswordHash)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("player profile not found")
 	}
@@ -87,11 +87,11 @@ func (d *PgDatabase) GetProfileByName(name string) (*ProfileEntry, error) {
 
 func (d *PgDatabase) SaveProfile(profile ProfileEntry) error {
 	_, err := d.DB.Exec(
-		`INSERT INTO profiles (id, name, is_agent, profile_icon, is_online)
-		VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO profiles (id, name, is_agent, profile_icon, is_online, password_hash)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (id) DO UPDATE SET
-		name = $2, is_agent = $3, profile_icon = $4, is_online = $5`,
-		profile.ID, profile.Name, profile.IsAgent, profile.ProfileIcon, profile.IsOnline,
+		name = $2, is_agent = $3, profile_icon = $4, is_online = $5, password_hash = $6`,
+		profile.ID, profile.Name, profile.IsAgent, profile.ProfileIcon, profile.IsOnline, profile.PasswordHash,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save profile: %w", err)
@@ -645,7 +645,7 @@ func (d *PgDatabase) GetFormattedSessionResults(sessionID string) ([]game.Sessio
 
 func (d *PgDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	rows, err := d.DB.Query(`
-		SELECT p.id, p.name, TRUE as is_agent, p.profile_icon, p.is_online
+		SELECT p.id, p.name, TRUE as is_agent, p.profile_icon, p.is_online, p.password_hash
 		FROM profiles p
 		INNER JOIN agent_configs ac ON p.id = ac.profile_id
 	`)
@@ -657,7 +657,7 @@ func (d *PgDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	var profiles []ProfileEntry
 	for rows.Next() {
 		var profile ProfileEntry
-		if err := rows.Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline); err != nil {
+		if err := rows.Scan(&profile.ID, &profile.Name, &profile.IsAgent, &profile.ProfileIcon, &profile.IsOnline, &profile.PasswordHash); err != nil {
 			return nil, fmt.Errorf("failed to scan agent profile: %w", err)
 		}
 		profiles = append(profiles, profile)

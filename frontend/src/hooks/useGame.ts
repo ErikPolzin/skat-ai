@@ -164,7 +164,7 @@ export function useGame(
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchGameState(gameId, playerId);
+      const data = await fetchGameState(gameId);
       setGameInfo(data);
 
       // Fetch session results if we have a session ID

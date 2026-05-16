@@ -177,8 +177,6 @@ const Header = () => {
 const GamesTab = () => {
   const [gameCode, setGameCode] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const username = useProfileStore(selectUsername);
-  const profileId = useProfileStore(selectPlayerId);
   const navigate = useNavigate();
   const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
 
@@ -189,16 +187,12 @@ const GamesTab = () => {
 
       if (!currentGameCode) {
         // Create a new game and get the code
-        const createData = await createGame(profileId || undefined);
+        const createData = await createGame();
         currentGameCode = createData.code;
       }
 
       // Join the game (either the newly created one or an existing one)
-      const data = await joinGame(
-        currentGameCode,
-        username ?? "",
-        profileId || undefined,
-      );
+      const data = await joinGame(currentGameCode);
 
       // Navigate to the game
       navigate(`/game/${data.game_id}`);

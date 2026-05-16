@@ -2,9 +2,10 @@ import { useMemo } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
 
-// Valid bid values in Skat (matching game/game.go)
+// Legal named bid values in Skat. The backend uses 0 as the "no bid yet"
+// sentinel, but players never accept a bid value of 0.
 const VALID_BID_VALUES = [
-  0, 18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50, 54, 55, 59,
+  18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50, 54, 55, 59,
   60, 63, 66, 70, 72, 77, 80, 81, 84, 88, 90, 96, 99, 100, 108, 110, 117, 120,
   121, 126, 130, 132, 135, 140, 143, 144, 150, 153, 154, 156, 160, 162, 165,
   168, 170, 176, 180, 187, 192, 198, 204, 216, 240, 264,
@@ -22,6 +23,7 @@ function getNextBidValue(currentBid: number): number {
 export function BiddingControls() {
   const game = useGameContext();
   const isDisabled = !game.controls.isConnected || game.controls.isLoading;
+  const currentBidText = game.bidValue > 0 ? game.bidValue : "No bid";
 
   // Calculate next bid value
   const nextBidValue = useMemo(
@@ -29,35 +31,23 @@ export function BiddingControls() {
     [game.bidValue],
   );
 
-  // Determine if current player is the one who raises (not accepts)
-  // In Skat bidding:
-  // - Speaker (2) raises vs Listener (1)
-  // - Listener (1) raises vs Dealer (0) after Speaker passes
-  // - Dealer (0) raises vs Speaker (2) after Listener passes
-  const isRaiser = useMemo(() => {
-    const pos = game.playerPosition;
-    if (pos === 2 && !game.listenerPassed) {
-      // Speaker raises against Listener
-      return true;
-    } else if (pos === 1 && game.speakerPassed && !game.dealerPassed) {
-      // Listener raises against Dealer after Speaker passed
-      return true;
-    } else if (pos === 0 && game.listenerPassed && !game.speakerPassed) {
-      // Dealer raises against Speaker after Listener passed
-      return true;
-    }
-    return false;
-  }, [
-    game.playerPosition,
-    game.listenerPassed,
-    game.speakerPassed,
-    game.dealerPassed,
-  ]);
+  // Match backend bidding semantics:
+  // - Speaker names the next bid while bidding against Listener.
+  // - Dealer names the next bid in phase 2.
+  // - Listener and phase-2 Speaker hold the current named bid.
+  const namesNextBid =
+    game.currentPlayer === 2 && !game.listenerPassed
+      ? true
+      : game.currentPlayer === 0;
 
   // Determine button text based on role
-  const acceptButtonText = isRaiser
+  const positiveBidButtonText = namesNextBid
     ? `Raise (${nextBidValue})`
-    : `Accept (${game.bidValue})`;
+    : game.bidValue > 0
+      ? `Accept (${game.bidValue})`
+      : "Play";
+  const isPositiveBidDisabled =
+    isDisabled || (namesNextBid && nextBidValue === 0);
 
   if (!game.isMyTurn) {
     return (
@@ -79,7 +69,7 @@ export function BiddingControls() {
       }}
     >
       <Typography variant="h6" sx={{ mb: 2 }}>
-        Current Bid: {game.bidValue}
+        Current Bid: {currentBidText}
       </Typography>
 
       <Box
@@ -93,10 +83,10 @@ export function BiddingControls() {
           variant="contained"
           color="success"
           onClick={() => game.controls.bid(true)}
-          disabled={isDisabled}
+          disabled={isPositiveBidDisabled}
           loading={game.controls.isLoading}
         >
-          {acceptButtonText}
+          {positiveBidButtonText}
         </Button>
         <Button
           variant="outlined"

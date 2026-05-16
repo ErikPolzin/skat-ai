@@ -4,9 +4,12 @@ CREATE TABLE IF NOT EXISTS profiles (
     is_agent BOOLEAN NOT NULL DEFAULT FALSE,
     profile_icon VARCHAR(255) DEFAULT '',
     is_online BOOLEAN NOT NULL DEFAULT FALSE,
+    password_hash TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     last_seen TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';
 
 -- Insert initial agent profiles
 INSERT INTO profiles (id, name, is_agent, profile_icon, is_online) VALUES

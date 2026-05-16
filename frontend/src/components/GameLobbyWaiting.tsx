@@ -32,7 +32,7 @@ export function GameLobbyWaiting() {
 
     try {
       setIsLeaving(true);
-      await leaveGame(game.gameId, game.player?.id);
+      await leaveGame(game.gameId);
       navigate("/");
     } catch (error) {
       console.error("Failed to leave game:", error);

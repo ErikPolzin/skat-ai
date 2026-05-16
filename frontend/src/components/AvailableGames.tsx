@@ -12,7 +12,6 @@ import {
 import { useEffect, useState } from "react";
 import {
   selectPlayerId,
-  selectUsername,
   useProfileStore,
 } from "../stores/profileStore";
 import { type GameSession, getGames, joinGame } from "../api/games";
@@ -22,7 +21,6 @@ import { useSnackbarStore } from "../stores/snackbarStore";
 
 const AvailableGames = () => {
   const profileId = useProfileStore(selectPlayerId);
-  const username = useProfileStore(selectUsername);
   const [isFetching, setIsFetching] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [games, setGames] = useState<GameSession[]>([]);
@@ -54,7 +52,7 @@ const AvailableGames = () => {
     try {
       setIsLoading(true);
       // Join the game (either the newly created one or an existing one)
-      const data = await joinGame(code, username || "", profileId || undefined);
+      const data = await joinGame(code);
       // Navigate to the game
       navigate(`/game/${data.game_id}`);
     } catch (error) {

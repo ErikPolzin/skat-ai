@@ -68,8 +68,8 @@ jobs:
 
       - name: Build and Push Container
         run: |
-          docker build -f ./backend -t gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA .
-          docker build -f ./backend -t gcr.io/$PROJECT_ID/$SERVICE_NAME:latest .
+          docker build -f ./backend/Dockerfile -t gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA ./backend
+          docker build -f ./backend/Dockerfile -t gcr.io/$PROJECT_ID/$SERVICE_NAME:latest ./backend
           docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA
           docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:latest
 

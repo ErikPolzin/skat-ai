@@ -171,7 +171,8 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 				d := Speaker
 				declarer = &d
 			} else if !gs.ListenerPassed {
-				gs.CurrentPlayer = Listener
+				d := Listener
+				declarer = &d
 			} else {
 				// We have Zwangsspiel
 			}
@@ -329,15 +330,56 @@ func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit, announceSchneide
 	return fmt.Sprintf("%s %s%s", mode, trumpSuit, announcement), nil
 }
 
-// calculatePotentialGameValue calculates the game value assuming the declarer wins normally
-// (without schneider or schwarz). Used for validating the game declaration against the bid.
+// calculatePotentialGameValue calculates the declared game value before play.
+// It includes fixed declaration multipliers, but not schneider/schwarz outcomes
+// that are only known after the game.
 func (gs *GameState) calculatePotentialGameValue() int {
-	// Use the Cards.GameValue method for consistency
 	if gs.Declarer == nil {
 		return 0
 	}
-	hand := Cards(gs.Players[*gs.Declarer].Hand)
-	return hand.GameValue(gs.Mode, gs.TrumpSuit)
+
+	if gs.Mode == ModeNull {
+		return 23
+	}
+
+	baseValue := 0
+	switch gs.Mode {
+	case ModeGrand:
+		baseValue = 24
+	case ModeSuit:
+		switch gs.TrumpSuit {
+		case Diamonds:
+			baseValue = 9
+		case Hearts:
+			baseValue = 10
+		case Spades:
+			baseValue = 11
+		case Clubs:
+			baseValue = 12
+		}
+	}
+
+	if baseValue == 0 {
+		return 0
+	}
+
+	matadorCount := gs.Matadors
+	if matadorCount < 0 {
+		matadorCount = -matadorCount
+	}
+
+	multiplier := 1 + matadorCount
+	if gs.PlayedHand {
+		multiplier++
+	}
+	if gs.AnnouncedSchneider {
+		multiplier++
+	}
+	if gs.AnnouncedSchwarz {
+		multiplier++
+	}
+
+	return baseValue * multiplier
 }
 
 // HandleSkatDecision processes the declarer's decision to pick up skat or play hand

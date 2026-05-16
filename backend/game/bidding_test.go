@@ -37,6 +37,12 @@ func TestBiddingPhases(t *testing.T) {
 			expectedBid:    18,
 		},
 		{
+			name:           "Speaker bids, Listener holds, Speaker passes, Dealer passes",
+			bids:           []bool{true, true, false, false}, // Listener held 18 and is the last player left
+			expectedWinner: Listener,
+			expectedBid:    18,
+		},
+		{
 			name:           "Speaker bids, Listener passes, Dealer bids, Speaker passes",
 			bids:           []bool{true, false, true, false}, // Speaker bid 18, Listener pass, Dealer bid 20, Speaker pass
 			expectedWinner: Dealer,

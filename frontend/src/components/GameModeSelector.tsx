@@ -96,8 +96,8 @@ export function GameModeSelector() {
       game.hand,
       game.skatCards,
       game.playedHand,
-      game.schneiderAnnounced,
-      game.schwarzAnnounced,
+      announceSchneider,
+      announceSchwarz,
     );
   }, [
     selectedMode,
@@ -105,11 +105,12 @@ export function GameModeSelector() {
     game.hand,
     game.skatCards,
     game.playedHand,
-    game.schneiderAnnounced,
-    game.schwarzAnnounced,
+    announceSchneider,
+    announceSchwarz,
   ]);
 
   const isDisabled = !game.controls.isConnected || game.controls.isLoading;
+  const isOverbidDeclaration = gameValue < game.bidValue;
 
   const handleDeclare = () => {
     if (!isDisabled) {
@@ -133,8 +134,8 @@ export function GameModeSelector() {
 
       <div className="game-value-info">
         <span>Game Value: {gameValue}</span>
-        {gameValue < game.bidValue && (
-          <span className="invalid">✗ Below bid ({game.bidValue})</span>
+        {isOverbidDeclaration && (
+          <span className="invalid">Below bid ({game.bidValue}) - overbid loss</span>
         )}
       </div>
 
@@ -218,7 +219,7 @@ export function GameModeSelector() {
       <button
         className="declare-button"
         onClick={handleDeclare}
-        disabled={gameValue < game.bidValue || isDisabled}
+        disabled={isDisabled}
         style={{
           opacity: isDisabled ? 0.5 : 1,
           cursor: isDisabled ? "not-allowed" : "pointer",
@@ -239,6 +240,7 @@ export function GameModeSelector() {
               : announceSchneider
                 ? " (Schneider)"
                 : ""}
+            {isOverbidDeclaration ? " and lose" : ""}
           </>
         )}
       </button>

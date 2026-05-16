@@ -823,7 +823,6 @@ func (d *PgDatabase) GetLeaderboard(limit int) ([]PlayerRating, error) {
 	query := `
 		SELECT pr.profile_id, pr.rating, pr.games_played, pr.wins, pr.losses, pr.peak_rating, pr.last_updated
 		FROM player_ratings pr
-		JOIN profiles p ON p.id = pr.profile_id
 		ORDER BY pr.rating DESC
 	`
 	if limit > 0 {
@@ -846,6 +845,9 @@ func (d *PgDatabase) GetLeaderboard(limit int) ([]PlayerRating, error) {
 			return nil, fmt.Errorf("failed to scan rating: %w", err)
 		}
 		ratings = append(ratings, rating)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate leaderboard: %w", err)
 	}
 	return ratings, nil
 }

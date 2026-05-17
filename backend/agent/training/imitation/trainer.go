@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"skat/agent/strategies"
+	"skat/agent/strategies/encoding"
 
 	"gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
@@ -15,10 +16,12 @@ import (
 
 // ImitationExample represents a training example
 type ImitationExample struct {
-	State      [114]float32
+	State      [encoding.StateFeatureSize]float32
 	ValidMask  [32]float32
 	Action     int
 	IsDeclarer bool
+	Policy     [32]float32
+	Weight     float32
 }
 
 // BehavioralCloningTrainer trains a network to imitate expert play using supervised learning
@@ -44,9 +47,10 @@ type BehavioralCloningModel struct {
 	solver gorgonia.Solver
 
 	// Input nodes
-	x          *gorgonia.Node // State features (114)
+	x          *gorgonia.Node // State features
 	validMask  *gorgonia.Node // Valid moves mask (32)
 	targetMask *gorgonia.Node // One-hot target action (32)
+	weight     *gorgonia.Node // Sample weights
 
 	// Output nodes
 	logits *gorgonia.Node // Action logits (32)
@@ -89,9 +93,9 @@ func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error
 	// Create weights with random initialization
 	weights := strategies.NewCardPlayNetworkNodes(g)
 
-	// Input: batch_size x 114 (state)
+	// Input: batch_size x state features
 	xState := gorgonia.NewMatrix(g, tensor.Float32,
-		gorgonia.WithShape(t.batchSize, 114),
+		gorgonia.WithShape(t.batchSize, encoding.StateFeatureSize),
 		gorgonia.WithName("bc_state"))
 
 	// Valid moves mask: batch_size x 32
@@ -103,6 +107,11 @@ func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error
 	targetMask := gorgonia.NewMatrix(g, tensor.Float32,
 		gorgonia.WithShape(t.batchSize, 32),
 		gorgonia.WithName("bc_target"))
+
+	// Per-sample weight: batch_size
+	sampleWeight := gorgonia.NewVector(g, tensor.Float32,
+		gorgonia.WithShape(t.batchSize),
+		gorgonia.WithName("bc_weight"))
 
 	// Concatenate state and valid mask
 	x := gorgonia.Must(gorgonia.Concat(1, xState, validMask))
@@ -130,6 +139,7 @@ func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error
 	crossEntropy := gorgonia.Must(gorgonia.HadamardProd(targetMask, logProbs))
 	crossEntropy = gorgonia.Must(gorgonia.Sum(crossEntropy, 1))
 	crossEntropy = gorgonia.Must(gorgonia.Neg(crossEntropy))
+	crossEntropy = gorgonia.Must(gorgonia.HadamardProd(crossEntropy, sampleWeight))
 	loss := gorgonia.Must(gorgonia.Mean(crossEntropy))
 
 	// Only compute gradients for policy weights (value head not used)
@@ -179,6 +189,7 @@ func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error
 		x:          xState,
 		validMask:  validMask,
 		targetMask: targetMask,
+		weight:     sampleWeight,
 		logits:     logitsMasked,
 		probs:      probs,
 		loss:       loss,
@@ -211,24 +222,49 @@ func (t *BehavioralCloningTrainer) LoadDataset(filename string) error {
 
 		var ex ImitationExample
 
-		// Parse state (114 features)
-		for i := 0; i < 114; i++ {
+		maskStart := encoding.StateFeatureSize
+		actionIdx := maskStart + 32
+		roleIdx := actionIdx + 1
+		policyStart := roleIdx + 1
+
+		if len(record) < policyStart {
+			continue
+		}
+
+		// Parse state features
+		for i := 0; i < encoding.StateFeatureSize; i++ {
 			val, _ := strconv.ParseFloat(record[i], 32)
 			ex.State[i] = float32(val)
 		}
 
 		// Parse valid mask (32 features)
 		for i := 0; i < 32; i++ {
-			val, _ := strconv.ParseFloat(record[114+i], 32)
+			val, _ := strconv.ParseFloat(record[maskStart+i], 32)
 			ex.ValidMask[i] = float32(val)
 		}
 
 		// Parse action
-		ex.Action, _ = strconv.Atoi(record[146])
+		ex.Action, _ = strconv.Atoi(record[actionIdx])
 
 		// Parse role
-		isDeclarer, _ := strconv.Atoi(record[147])
+		isDeclarer, _ := strconv.Atoi(record[roleIdx])
 		ex.IsDeclarer = (isDeclarer == 1)
+
+		if len(record) >= policyStart+32 {
+			for i := 0; i < 32; i++ {
+				val, _ := strconv.ParseFloat(record[policyStart+i], 32)
+				ex.Policy[i] = float32(val)
+			}
+		} else {
+			ex.Policy[ex.Action] = 1.0
+		}
+		ex.Weight = 1.0
+		if len(record) > policyStart+32 {
+			val, err := strconv.ParseFloat(record[policyStart+32], 32)
+			if err == nil && val > 0 {
+				ex.Weight = float32(val)
+			}
+		}
 
 		// Add to appropriate dataset
 		if ex.IsDeclarer {
@@ -290,26 +326,32 @@ func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, declarer
 
 func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, batch []ImitationExample) (loss, accuracy float64, err error) {
 	// Prepare batch data
-	stateData := make([]float32, len(batch)*114)
+	stateData := make([]float32, len(batch)*encoding.StateFeatureSize)
 	maskData := make([]float32, len(batch)*32)
 	targetData := make([]float32, len(batch)*32)
+	weightData := make([]float32, len(batch))
 
 	for i, ex := range batch {
-		copy(stateData[i*114:(i+1)*114], ex.State[:])
+		copy(stateData[i*encoding.StateFeatureSize:(i+1)*encoding.StateFeatureSize], ex.State[:])
 		copy(maskData[i*32:(i+1)*32], ex.ValidMask[:])
-		// One-hot encode the action
-		targetData[i*32+ex.Action] = 1.0
+		copy(targetData[i*32:(i+1)*32], ex.Policy[:])
+		weightData[i] = ex.Weight
+		if weightData[i] <= 0 {
+			weightData[i] = 1.0
+		}
 	}
 
 	// Create tensors
-	stateTensor := tensor.New(tensor.WithBacking(stateData), tensor.WithShape(len(batch), 114))
+	stateTensor := tensor.New(tensor.WithBacking(stateData), tensor.WithShape(len(batch), encoding.StateFeatureSize))
 	maskTensor := tensor.New(tensor.WithBacking(maskData), tensor.WithShape(len(batch), 32))
 	targetTensor := tensor.New(tensor.WithBacking(targetData), tensor.WithShape(len(batch), 32))
+	weightTensor := tensor.New(tensor.WithBacking(weightData), tensor.WithShape(len(batch)))
 
 	// Set inputs
 	gorgonia.Let(model.x, stateTensor)
 	gorgonia.Let(model.validMask, maskTensor)
 	gorgonia.Let(model.targetMask, targetTensor)
+	gorgonia.Let(model.weight, weightTensor)
 
 	// Forward + backward
 	if err := model.vm.RunAll(); err != nil {
@@ -369,6 +411,17 @@ func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, bat
 // GetWeights returns trained network weights
 func (t *BehavioralCloningTrainer) GetWeights() (declarerWeights, defenderWeights strategies.CardPlayNetworkWeights) {
 	return t.declarerNet.weightsMap, t.defenderNet.weightsMap
+}
+
+// SetWeights initializes the trainer networks from existing weights.
+func (t *BehavioralCloningTrainer) SetWeights(declarerWeights, defenderWeights strategies.CardPlayNetworkWeights) error {
+	if err := t.declarerNet.weightsMap.CopyFrom(declarerWeights); err != nil {
+		return fmt.Errorf("copy declarer weights: %w", err)
+	}
+	if err := t.defenderNet.weightsMap.CopyFrom(defenderWeights); err != nil {
+		return fmt.Errorf("copy defender weights: %w", err)
+	}
+	return nil
 }
 
 // GetDatasetSizes returns number of examples for each role

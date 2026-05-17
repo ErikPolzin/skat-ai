@@ -20,12 +20,12 @@ type CardPlayNetworkWeights map[string]*gorgonia.Node
 
 // NetworkInstance represents a single neural network for card play
 type NetworkInstance struct {
-	graph  *gorgonia.ExprGraph
-	vm     gorgonia.VM
-	input  *gorgonia.Node
-	policy *gorgonia.Node
-	value  *gorgonia.Node
-	weights CardPlayNetworkWeights
+	graph       *gorgonia.ExprGraph
+	vm          gorgonia.VM
+	input       *gorgonia.Node
+	policy      *gorgonia.Node
+	value       *gorgonia.Node
+	weights     CardPlayNetworkWeights
 	inferenceMu sync.Mutex
 }
 
@@ -35,7 +35,7 @@ type NetworkInstance struct {
 type NeuralCardPlayStrategy struct {
 	declarerNet *NetworkInstance
 	defenderNet *NetworkInstance
-	epsilon float32
+	epsilon     float32
 }
 
 // GetName returns strategy name
@@ -81,9 +81,9 @@ func NewNeuralCardPlayStrategyFromWeightMaps(declarerWeights, defenderWeights Ca
 func createNetworkInstance(weights CardPlayNetworkWeights) *NetworkInstance {
 	g := gorgonia.NewGraph()
 
-	// Input node (1 x 146 for single inference)
+	// Input node for single inference
 	input := gorgonia.NewMatrix(g, tensor.Float32,
-		gorgonia.WithShape(1, 146),
+		gorgonia.WithShape(1, encoding.NetworkInputSize),
 		gorgonia.WithName("input"))
 
 	// Create or use provided weights
@@ -134,7 +134,7 @@ func (s *NeuralCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []gam
 	// Get current player position
 	myPosition := gs.CurrentPlayer
 
-	// Encode game state (114 state + 32 mask = 146)
+	// Encode game state plus valid-move mask.
 	enc := encoding.EncodeNeuralCardPlay(gs, myPosition, validMoves)
 	inputData := enc.ToNetworkInput()
 
@@ -143,7 +143,7 @@ func (s *NeuralCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []gam
 	defer net.inferenceMu.Unlock()
 
 	// Set input tensor
-	inputTensor := tensor.New(tensor.WithBacking(inputData[:]), tensor.WithShape(1, 146))
+	inputTensor := tensor.New(tensor.WithBacking(inputData[:]), tensor.WithShape(1, encoding.NetworkInputSize))
 	gorgonia.Let(net.input, inputTensor)
 
 	// Run forward pass
@@ -242,16 +242,17 @@ func initWeight(g *gorgonia.ExprGraph, shape tensor.Shape, name string) *gorgoni
 // and initializes them with Xavier initialization.
 //
 // Architecture (Dueling DQN style):
-//   Input (146) -> Shared trunk (384 -> 384 -> 256) -> Two heads:
-//     - Advantage head (256 -> 128 -> 32): Outputs advantage A(s,a) for each action
-//     - Value head (256 -> 1): Outputs state value V(s)
+//
+//	Input -> Shared trunk (384 -> 384 -> 256) -> Two heads:
+//	  - Advantage head (256 -> 128 -> 32): Outputs advantage A(s,a) for each action
+//	  - Value head (256 -> 1): Outputs state value V(s)
 //
 // Medium capacity (~270k params) - sweet spot between old 256 (157k) and large 512 (490k).
 func NewCardPlayNetworkNodes(g *gorgonia.ExprGraph) CardPlayNetworkWeights {
 	weights := make(CardPlayNetworkWeights)
 
-	// Shared layers (146 -> 384 -> 384 -> 256)
-	weights["shared.0.weight"] = initWeight(g, tensor.Shape{384, 146}, "shared.0.weight")
+	// Shared layers (input -> 384 -> 384 -> 256)
+	weights["shared.0.weight"] = initWeight(g, tensor.Shape{384, encoding.NetworkInputSize}, "shared.0.weight")
 	weights["shared.0.bias"] = initWeight(g, tensor.Shape{384}, "shared.0.bias")
 	weights["shared.2.weight"] = initWeight(g, tensor.Shape{384, 384}, "shared.2.weight")
 	weights["shared.2.bias"] = initWeight(g, tensor.Shape{384}, "shared.2.bias")
@@ -293,7 +294,7 @@ func softmaxActivation(x *gorgonia.Node) *gorgonia.Node {
 
 // buildCardPlayLogits builds card play network returning logits (for training)
 func buildCardPlayLogits(x *gorgonia.Node, w CardPlayNetworkWeights, dropout float64) (*gorgonia.Node, *gorgonia.Node) {
-	// Shared trunk (146 -> 384 -> 384 -> 256)
+	// Shared trunk (input -> 384 -> 384 -> 256)
 	h1 := linearLayer(x, w["shared.0.weight"], w["shared.0.bias"])
 	h1 = reluActivation(h1)
 	if dropout > 0 {
@@ -336,7 +337,6 @@ func buildCardPlayNetwork(x *gorgonia.Node, w CardPlayNetworkWeights) (*gorgonia
 	// NOTE: valueLogits are used in Dueling DQN combination in trainer
 	return policyLogits, valueLogits
 }
-
 
 // ============================================================================
 // CardPlayNetworkWeights methods

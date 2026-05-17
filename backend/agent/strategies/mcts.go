@@ -161,11 +161,9 @@ func (m *MCTSCardPlayStrategy) simulate(node *MCTSNode) float64 {
 }
 
 func (m *MCTSCardPlayStrategy) backpropagate(node *MCTSNode, reward float64) {
-	currentReward := reward
 	for node != nil {
 		node.Visits++
-		node.TotalReward += currentReward
-		currentReward = -currentReward // Flip perspective for alternating players
+		node.TotalReward += reward
 		node = node.Parent
 	}
 }

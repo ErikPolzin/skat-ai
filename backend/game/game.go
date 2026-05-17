@@ -387,6 +387,12 @@ func (gs *GameState) Clone() *GameState {
 	// Deep copy trick
 	clone.Trick = append([]Card{}, gs.Trick...)
 
+	// Deep copy completed trick history
+	clone.CardsPlayed = make([][]Card, len(gs.CardsPlayed))
+	for i, trick := range gs.CardsPlayed {
+		clone.CardsPlayed[i] = append([]Card{}, trick...)
+	}
+
 	return clone
 }
 

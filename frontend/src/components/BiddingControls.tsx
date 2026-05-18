@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Box, Button, Typography } from "@mui/material";
+import { Box, Button, Stack, Typography } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
 
 // Legal named bid values in Skat. The backend uses 0 as the "no bid yet"
@@ -72,10 +72,10 @@ export function BiddingControls() {
         Current Bid: {currentBidText}
       </Typography>
 
-      <Box
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={2}
         sx={{
-          display: "flex",
-          gap: "12px",
           justifyContent: "center",
         }}
       >
@@ -97,7 +97,7 @@ export function BiddingControls() {
         >
           Pass
         </Button>
-      </Box>
+      </Stack>
     </Box>
   );
 }

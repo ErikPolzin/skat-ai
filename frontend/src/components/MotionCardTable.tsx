@@ -113,6 +113,10 @@ function compareCardsForHand(
   return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
 }
 
+function isSameCard(a: CardType, b: CardType) {
+  return a.rank === b.rank && a.suit === b.suit;
+}
+
 export function MotionCardTable() {
   const game = useGameContext();
   const theme = useTheme();
@@ -239,11 +243,23 @@ export function MotionCardTable() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  const canKeepCardSelection =
+    (game.phase === "playing" && game.isMyTurn) ||
+    (game.isSkatExchange && game.isDeclarer && game.hasPickedUpSkat);
+
+  const activeSelectedCards = useMemo(() => {
+    if (!canKeepCardSelection) {
+      return [];
+    }
+
+    return selectedCards.filter((selectedCard) =>
+      game.playerHand.some((handCard) => isSameCard(handCard, selectedCard)),
+    );
+  }, [canKeepCardSelection, game.playerHand, selectedCards]);
+
   // Helper to check if a card is selected
   const isCardSelected = (card: CardType) => {
-    return selectedCards.some(
-      (c) => c.rank === card.rank && c.suit === card.suit,
-    );
+    return activeSelectedCards.some((c) => isSameCard(c, card));
   };
 
   const handlePlayCard = (card: CardType) => {
@@ -254,33 +270,34 @@ export function MotionCardTable() {
 
     if (game.isSkatExchange && game.isDeclarer && game.hasPickedUpSkat) {
       // In skat exchange phase, clicking cards selects them for discard
-      const isSelected = selectedCards.some(
-        (c) => c.rank === card.rank && c.suit === card.suit,
-      );
+      const isSelected = activeSelectedCards.some((c) => isSameCard(c, card));
 
       if (isSelected) {
         // Deselect card
         setSelectedCards(
-          selectedCards.filter(
-            (c) => !(c.rank === card.rank && c.suit === card.suit),
-          ),
+          activeSelectedCards.filter((c) => !isSameCard(c, card)),
         );
-      } else if (selectedCards.length < 2) {
+      } else if (activeSelectedCards.length < 2) {
         // Select card (max 2)
-        setSelectedCards([...selectedCards, card]);
+        setSelectedCards([...activeSelectedCards, card]);
       }
     } else {
-      // Play card
+      if (!activeSelectedCards.some((c) => isSameCard(c, card))) {
+        setSelectedCards([card]);
+        return;
+      }
+
+      setSelectedCards([]);
       game.controls.playCard(card);
     }
   };
 
   const handleDiscardCards = useCallback(() => {
-    if (selectedCards.length === 2) {
-      game.controls.discardCards(selectedCards);
+    if (activeSelectedCards.length === 2) {
+      game.controls.discardCards(activeSelectedCards);
       setSelectedCards([]);
     }
-  }, [game.controls, selectedCards]);
+  }, [activeSelectedCards, game.controls]);
 
   // Calculate card positions for player hand
   const getPlayerCardPosition = (index: number, total: number) => {
@@ -617,7 +634,7 @@ export function MotionCardTable() {
       <BiddingControls />
     ) : game.isSkatExchange && game.isDeclarer ? (
       <SkatExchange
-        selectedCards={selectedCards}
+        selectedCards={activeSelectedCards}
         onDiscardCards={handleDiscardCards}
       />
     ) : game.isDeclarerChoice && game.isDeclarer ? (
@@ -629,7 +646,7 @@ export function MotionCardTable() {
     ) : game.gameOver ? (
       <GameOverScreen />
     ) : null;
-  }, [game, handleDiscardCards, navigate, selectedCards]);
+  }, [activeSelectedCards, game, handleDiscardCards, navigate]);
 
   return (
     <div className="motion-card-table" style={cardTableStyle}>

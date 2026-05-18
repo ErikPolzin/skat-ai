@@ -95,7 +95,7 @@ func (cm *ClientManager) BroadcastToClients(profileIDs []string, msg *Message) {
 	for _, profileID := range profileIDs {
 		if client, exists := cm.clients[profileID]; exists {
 			if err := client.SendMessage(msg); err != nil {
-				logger.Warning("Failed to send message to profile", "profile_id", profileID, "error", err)
+				logger.Warning("Failed to send message to profile %s: %v", profileID, err)
 			}
 		}
 	}

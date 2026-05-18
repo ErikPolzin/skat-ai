@@ -87,7 +87,6 @@ CREATE TABLE IF NOT EXISTS player_results (
     rating_before INTEGER DEFAULT 1500,
     rating_after INTEGER DEFAULT 1500,
     rating_change INTEGER DEFAULT 0,
-    FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
     FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE
 );

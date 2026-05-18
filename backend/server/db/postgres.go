@@ -459,18 +459,18 @@ func (d *PgDatabase) SavePlayerResults(results []game.PlayerResultState) error {
 func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
 	query := `
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-			   (pr.is_declarer AND g.overbid) AS is_overbid,
+			   COALESCE(pr.is_declarer AND g.overbid, false) AS is_overbid,
 			   COALESCE(g.forfeited_player = pr.player_position, false) AS is_forfeit,
 			   pr.rating_before, pr.rating_after, pr.rating_change,
-			   array_agg(DISTINCT prof.name) FILTER (WHERE p.profile_id != pr.player_id) AS other_players
+			   COALESCE(array_agg(DISTINCT prof.name) FILTER (WHERE p.profile_id != pr.player_id), ARRAY[]::text[]) AS other_players
 		FROM player_results pr
-		JOIN games g ON g.id = pr.game_id
-		JOIN players p ON p.game_id = g.id
-		JOIN profiles prof ON prof.id = p.profile_id
+		LEFT JOIN games g ON g.id = pr.game_id
+		LEFT JOIN players p ON p.game_id = pr.game_id
+		LEFT JOIN profiles prof ON prof.id = p.profile_id
 		WHERE pr.player_id = $1
 		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
 		         g.overbid, g.forfeited_player, g.updated_at, g.created_at, pr.rating_before, pr.rating_after, pr.rating_change
-		ORDER BY g.updated_at DESC, g.created_at DESC
+		ORDER BY COALESCE(g.updated_at, g.created_at) DESC, pr.id DESC
 	`
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
@@ -520,10 +520,10 @@ func (d *PgDatabase) CountGamesInSession(sessionID string) (int, error) {
 func (d *PgDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultState, error) {
 	rows, err := d.DB.Query(`
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-			   (pr.is_declarer AND g.overbid) AS is_overbid,
+			   COALESCE(pr.is_declarer AND g.overbid, false) AS is_overbid,
 			   COALESCE(g.forfeited_player = pr.player_position, false) AS is_forfeit
 		FROM player_results pr
-		JOIN games g ON g.id = pr.game_id
+		LEFT JOIN games g ON g.id = pr.game_id
 		WHERE pr.session_id = $1
 		ORDER BY pr.game_id ASC, pr.player_position ASC
 	`, sessionID)
@@ -665,7 +665,7 @@ func (d *PgDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	return profiles, nil
 }
 
-// CleanupStaleGames deletes games where no moves have been made in the specified minutes
+// CleanupStaleGames deletes incomplete games where no moves have been made in the specified minutes
 // and no human players are currently online
 func (d *PgDatabase) CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []string) (int, error) {
 	// Build a query to find stale games
@@ -681,6 +681,7 @@ func (d *PgDatabase) CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []st
 		query := `
 			DELETE FROM games
 			WHERE updated_at < NOW() - INTERVAL '1 minute' * $1
+			AND phase != $3
 			AND id NOT IN (
 				SELECT DISTINCT p.game_id
 				FROM players p
@@ -689,14 +690,15 @@ func (d *PgDatabase) CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []st
 				AND p.profile_id = ANY($2::text[])
 			)
 		`
-		result, err = d.DB.Exec(query, inactiveMinutes, onlinePlayerIDs)
+		result, err = d.DB.Exec(query, inactiveMinutes, onlinePlayerIDs, game.PhaseComplete)
 	} else {
 		// No online players, so we just check the timestamp
 		query := `
 			DELETE FROM games
 			WHERE updated_at < NOW() - INTERVAL '1 minute' * $1
+			AND phase != $2
 		`
-		result, err = d.DB.Exec(query, inactiveMinutes)
+		result, err = d.DB.Exec(query, inactiveMinutes, game.PhaseComplete)
 	}
 
 	if err != nil {

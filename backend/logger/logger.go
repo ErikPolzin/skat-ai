@@ -123,7 +123,7 @@ func (l *Logger) Fatal(msg string, fields ...interface{}) {
 // Printf provides compatibility with log.Printf
 func (l *Logger) Printf(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	l.Info(msg)
+	l.log(logging.Info, "%s", msg)
 }
 
 // log is the internal logging function
@@ -133,14 +133,16 @@ func (l *Logger) log(severity logging.Severity, msg string, fields ...interface{
 		return
 	}
 
+	formattedMessage := fmt.Sprintf(msg, fields...)
+
 	if l.local {
 		// Local logging with standard log package
 		prefix := severityPrefix(severity)
-		log.Printf("%s %s", prefix, fmt.Sprintf(msg, fields...))
+		log.Printf("%s %s", prefix, formattedMessage)
 	} else {
 		// GCP Cloud Logging with structured fields
 		payload := map[string]interface{}{
-			"message": msg,
+			"message": formattedMessage,
 		}
 
 		// Add fields as key-value pairs

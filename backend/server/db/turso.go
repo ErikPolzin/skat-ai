@@ -473,10 +473,10 @@ func (d *TursoDatabase) CountGamesInSession(sessionID string) (int, error) {
 func (d *TursoDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultState, error) {
 	rows, err := d.DB.Query(`
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-			   (pr.is_declarer AND g.overbid) AS is_overbid,
+			   COALESCE(pr.is_declarer AND g.overbid, 0) AS is_overbid,
 			   CASE WHEN g.forfeited_player = pr.player_position THEN 1 ELSE 0 END AS is_forfeit
 		FROM player_results pr
-		JOIN games g ON g.id = pr.game_id
+		LEFT JOIN games g ON g.id = pr.game_id
 		WHERE pr.session_id = ?
 		ORDER BY pr.game_id ASC, pr.player_position ASC
 	`, sessionID)
@@ -603,18 +603,18 @@ func (d *TursoDatabase) GetFormattedSessionResults(sessionID string) ([]game.Ses
 func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
 	query := `
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-			   (pr.is_declarer AND g.overbid) AS is_overbid,
+			   COALESCE(pr.is_declarer AND g.overbid, 0) AS is_overbid,
 			   CASE WHEN g.forfeited_player = pr.player_position THEN 1 ELSE 0 END AS is_forfeit,
 			   pr.rating_before, pr.rating_after, pr.rating_change,
 			   GROUP_CONCAT(DISTINCT CASE WHEN p.profile_id != pr.player_id THEN prof.name END) AS other_players
 		FROM player_results pr
-		JOIN games g ON g.id = pr.game_id
-		JOIN players p ON p.game_id = g.id
-		JOIN profiles prof ON prof.id = p.profile_id
+		LEFT JOIN games g ON g.id = pr.game_id
+		LEFT JOIN players p ON p.game_id = pr.game_id
+		LEFT JOIN profiles prof ON prof.id = p.profile_id
 		WHERE pr.player_id = ?
 		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
 		         g.overbid, g.forfeited_player, g.updated_at, g.created_at, pr.rating_before, pr.rating_after, pr.rating_change
-		ORDER BY g.updated_at DESC, g.created_at DESC
+		ORDER BY COALESCE(g.updated_at, g.created_at) DESC, pr.id DESC
 	`
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
@@ -679,7 +679,7 @@ func (d *TursoDatabase) ListAgentProfiles() ([]ProfileEntry, error) {
 	return profiles, nil
 }
 
-// CleanupStaleGames deletes games where no moves have been made in the specified minutes
+// CleanupStaleGames deletes incomplete games where no moves have been made in the specified minutes
 // and no human players are currently online
 func (d *TursoDatabase) CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []string) (int, error) {
 	// Build a query to find stale games
@@ -712,14 +712,16 @@ func (d *TursoDatabase) CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs [
 			LEFT JOIN players p ON g.id = p.game_id
 			LEFT JOIN profiles pr ON p.profile_id = pr.id
 			WHERE datetime(g.updated_at) < datetime('now', '-%d minutes')
+			AND g.phase != ?
 			%s
 		)
 	`, inactiveMinutes, onlineClause)
 
 	// Execute the delete query
-	args := make([]interface{}, len(onlinePlayerIDs))
-	for i, id := range onlinePlayerIDs {
-		args[i] = id
+	args := make([]interface{}, 0, len(onlinePlayerIDs)+1)
+	args = append(args, game.PhaseComplete)
+	for _, id := range onlinePlayerIDs {
+		args = append(args, id)
 	}
 
 	result, err := d.DB.Exec(query, args...)

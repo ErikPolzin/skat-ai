@@ -98,7 +98,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
             data.action_type !== "session_updated"
           ) {
             const fromPlayer = data.from_player;
+            const fromPlayerId = fromPlayer
+              ? game.players[fromPlayer]?.id
+              : undefined;
             addMessage(data.description, false, fromPlayer);
+            if (fromPlayerId) {
+              updatePlayerOnlineStatus(fromPlayerId, true);
+            }
           }
         }
 
@@ -115,9 +121,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
           // Update player's online status in state
           if (data.player_id) {
             updatePlayerOnlineStatus(data.player_id, false);
-            if (data.player_name) {
-              addMessage(`${data.player_name} went offline`, false);
-            }
           }
         }
         break;

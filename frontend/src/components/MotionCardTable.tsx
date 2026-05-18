@@ -2,8 +2,8 @@ import React, {
   useState,
   useEffect,
   useMemo,
-  useCallback,
   useRef,
+  useCallback,
 } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -31,6 +31,10 @@ import { CircularTimer } from "./CircularTimer";
 import { useDeadlineTimer } from "../hooks/useDeadlineTimer";
 import ThemedLoader from "./ThemedLoader";
 import { useNavigate } from "react-router-dom";
+
+const rankOrder = ["7", "8", "9", "Q", "K", "10", "A", "J"];
+const rankOrderNull = ["7", "8", "9", "10", "J", "Q", "K", "A"];
+const suitOrder = ["♦", "♥", "♠", "♣"];
 
 // Helper function to convert suit emoji to word
 function getSuitName(suitEmoji?: string): string {
@@ -235,12 +239,12 @@ export function MotionCardTable() {
     }
   };
 
-  const handleDiscardCards = () => {
+  const handleDiscardCards = useCallback(() => {
     if (selectedCards.length === 2) {
       game.controls.discardCards(selectedCards);
       setSelectedCards([]);
     }
-  };
+  }, [game.controls, selectedCards]);
 
   // Calculate card positions for player hand
   const getPlayerCardPosition = (index: number, total: number) => {
@@ -407,14 +411,9 @@ export function MotionCardTable() {
       fn(index, `card-${game.leftPlayer?.position}-${index}`),
     );
 
-  // Sort player's hand with trumps on the right
-  const sortPlayerHand = useCallback(
-    (hand: CardType[]) => {
-      const rankOrder = ["7", "8", "9", "Q", "K", "10", "A", "J"];
-      const rankOrderNull = ["7", "8", "9", "10", "J", "Q", "K", "A"];
-      const suitOrder = ["♦", "♥", "♠", "♣"];
-
-      return [...hand].sort((a, b) => {
+  const sortedPlayerHand = useMemo(
+    () =>
+      game.playerHand.toSorted((a, b) => {
         if (game.gameMode == "null") {
           if (a.suit !== b.suit) {
             return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
@@ -455,14 +454,8 @@ export function MotionCardTable() {
           return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
         }
         return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
-      });
-    },
-    [game.trumpSuit, game.gameMode],
-  );
-
-  const sortedPlayerHand = useMemo(
-    () => sortPlayerHand(game.playerHand),
-    [game.playerHand, sortPlayerHand],
+      }),
+    [game.gameMode, game.playerHand, game.trumpSuit],
   );
 
   const trickKeys = useMemo(
@@ -500,118 +493,111 @@ export function MotionCardTable() {
     "--card-height": `${CARD_HEIGHT}px`,
   } as React.CSSProperties;
 
+  const makeExtraCenterSpace = useMemo(() => {
+    return game.isDeclarer && (game.isDeclarerChoice || game.isSkatExchange);
+  }, [game.isDeclarer, game.isDeclarerChoice, game.isSkatExchange]);
+
+  const centerOverrideUI = useMemo(() => {
+    return !game.controls.isConnected ? (
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 2000,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "16px",
+        }}
+      >
+        <SignalWifiOffIcon
+          sx={{
+            fontSize: 60,
+            color: "warning.main",
+            filter: "drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))",
+          }}
+        />
+        <span
+          style={{
+            fontSize: "20px",
+            fontWeight: "bold",
+            color: "#ed6c02",
+            textShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+          }}
+        >
+          Disconnected from server
+        </span>
+        <span
+          style={{
+            fontSize: "14px",
+            color: "#d4d4d4",
+          }}
+        >
+          {game.controls.reconnectCountdown !== null
+            ? `Reconnecting in ${Math.ceil(game.controls.reconnectCountdown)}s...`
+            : "Attempting to reconnect..."}
+        </span>
+      </div>
+    ) : game.isLoading ? (
+      <Box sx={{ textAlign: "center" }}>
+        <ThemedLoader size={60} />
+        <Typography variant="h6" sx={{ mt: 2 }}>
+          Loading game...
+        </Typography>
+      </Box>
+    ) : game.error ? (
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100vh",
+        }}
+      >
+        <WarningIcon color="warning" sx={{ fontSize: 60, mb: 2 }} />
+        <Typography variant="h5" gutterBottom>
+          Unable to Load Game
+        </Typography>
+        <Typography color="text.secondary" sx={{ mb: 3 }}>
+          {game.error}
+        </Typography>
+        <Box sx={{ display: "flex", gap: 2, justifyContent: "center" }}>
+          <Button variant="contained" onClick={() => game.refetch()}>
+            Try Again
+          </Button>
+          <Button variant="outlined" onClick={() => navigate("/")}>
+            Back to Lobby
+          </Button>
+        </Box>
+      </Box>
+    ) : game.isInLobby ? (
+      <GameLobbyWaiting />
+    ) : game.isBiddingPhase ? (
+      <BiddingControls />
+    ) : game.isSkatExchange && game.isDeclarer ? (
+      <SkatExchange
+        selectedCards={selectedCards}
+        onDiscardCards={handleDiscardCards}
+      />
+    ) : game.isDeclarerChoice && game.isDeclarer ? (
+      <GameModeSelector />
+    ) : game.isDeclarerChoice && !game.isDeclarer ? (
+      <div className="waiting-for-declarer">
+        <span>Waiting for declarer to choose game mode...</span>
+      </div>
+    ) : game.gameOver ? (
+      <GameOverScreen />
+    ) : null;
+  }, [game, handleDiscardCards, navigate, selectedCards]);
+
   return (
     <div className="motion-card-table" style={cardTableStyle}>
       <div
         className={`table-surface ${showSessionResults ? "with-session-bar" : ""}`}
       >
-        {/* Center UI: Disconnected indicator takes priority over everything */}
-        {!game.controls.isConnected ? (
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              zIndex: 2000,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "16px",
-            }}
-          >
-            <SignalWifiOffIcon
-              sx={{
-                fontSize: 60,
-                color: "warning.main",
-                filter: "drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))",
-              }}
-            />
-            <span
-              style={{
-                fontSize: "20px",
-                fontWeight: "bold",
-                color: "#ed6c02",
-                textShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
-              }}
-            >
-              Disconnected from server
-            </span>
-            <span
-              style={{
-                fontSize: "14px",
-                color: "#d4d4d4",
-              }}
-            >
-              {game.controls.reconnectCountdown !== null
-                ? `Reconnecting in ${Math.ceil(game.controls.reconnectCountdown)}s...`
-                : "Attempting to reconnect..."}
-            </span>
-          </div>
-        ) : game.isLoading ? (
-          <Box sx={{ textAlign: "center" }}>
-            <ThemedLoader size={60} />
-            <Typography variant="h6" sx={{ mt: 2 }}>
-              Loading game...
-            </Typography>
-          </Box>
-        ) : game.error ? (
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              minHeight: "100vh",
-            }}
-          >
-            <WarningIcon color="warning" sx={{ fontSize: 60, mb: 2 }} />
-            <Typography variant="h5" gutterBottom>
-              Unable to Load Game
-            </Typography>
-            <Typography color="text.secondary" sx={{ mb: 3 }}>
-              {game.error}
-            </Typography>
-            <Box sx={{ display: "flex", gap: 2, justifyContent: "center" }}>
-              <Button variant="contained" onClick={() => game.refetch()}>
-                Try Again
-              </Button>
-              <Button variant="outlined" onClick={() => navigate("/")}>
-                Back to Lobby
-              </Button>
-            </Box>
-          </Box>
-        ) : game.isInLobby ? (
-          <GameLobbyWaiting />
-        ) : game.isBiddingPhase ? (
-          <BiddingControls />
-        ) : game.isSkatExchange && game.isDeclarer ? (
-          <SkatExchange
-            selectedCards={selectedCards}
-            onDiscardCards={handleDiscardCards}
-          />
-        ) : game.isDeclarerChoice && game.isDeclarer ? (
-          <GameModeSelector />
-        ) : game.isDeclarerChoice && !game.isDeclarer ? (
-          <div className="waiting-for-declarer">
-            <span>Waiting for declarer to choose game mode...</span>
-          </div>
-        ) : game.gameOver ? (
-          <GameOverScreen />
-        ) : game.phase == "playing" ? (
-          <div className="game-mode-display">
-            <img
-              src={getGameModeSVG(game.gameMode, game.trumpSuit)}
-              width="200"
-              height="200"
-              alt={game.trumpSuit}
-            />
-            <span className="mode-title">
-              {getGameModeDisplay(game.gameMode, game.trumpSuit)}
-            </span>
-          </div>
-        ) : null}
-
         {/* Top Opponent Avatar */}
         {game.topPlayer && (
           <div
@@ -844,43 +830,6 @@ export function MotionCardTable() {
         )}
 
         <AnimatePresence>
-          {/* Deck (shown before and during dealing) */}
-          {showDeck && (
-            <motion.div
-              key="deck"
-              className="deck"
-              style={{
-                position: "absolute",
-              }}
-              exit={{ opacity: 0 }}
-            >
-              <img src="/res/cards/back.svg" alt="deck" className="card-back" />
-            </motion.div>
-          )}
-
-          {/* Deal Button */}
-          {showDealButton && (
-            <Button
-              variant="contained"
-              key="deal-button"
-              className="deal-button"
-              onClick={game.controls.deal}
-              disabled={!game.controls.isConnected || game.controls.isLoading}
-              style={{
-                opacity:
-                  !game.controls.isConnected || game.controls.isLoading
-                    ? 0.5
-                    : 1,
-                cursor:
-                  !game.controls.isConnected || game.controls.isLoading
-                    ? "not-allowed"
-                    : "pointer",
-              }}
-            >
-              {game.controls.isLoading ? "Dealing..." : "Deal Cards"}
-            </Button>
-          )}
-
           {/* Player Hand - only show after deal started */}
           {sortedPlayerHand.map((card, index) => {
             const selected = isCardSelected(card);
@@ -907,7 +856,7 @@ export function MotionCardTable() {
               ((game.phase === "playing" && game.isMyTurn && isValidMove) ||
                 (game.isSkatExchange && game.hasPickedUpSkat));
 
-            const declarerOffset = game.isDeclarerChoice ? 40 : 0;
+            const declarerOffset = makeExtraCenterSpace ? 50 : 0;
             // Raise card if selected
             const animatePosition = selected
               ? { ...basePosition, y: basePosition.y + declarerOffset - 20 }
@@ -959,7 +908,7 @@ export function MotionCardTable() {
               index,
               game.topPlayer?.card_count ?? 0,
             );
-            const declarerOffset = game.isDeclarerChoice ? -40 : 0;
+            const declarerOffset = makeExtraCenterSpace ? -50 : 0;
             const animatePosition = {
               ...basePosition,
               y: basePosition.y + declarerOffset,
@@ -994,7 +943,7 @@ export function MotionCardTable() {
               index,
               game.leftPlayer?.card_count ?? 0,
             );
-            const declarerOffset = game.isDeclarerChoice ? -30 : 0;
+            const declarerOffset = makeExtraCenterSpace ? -50 : 0;
             const animatePosition = {
               ...basePosition,
               x: basePosition.x + declarerOffset,
@@ -1022,67 +971,131 @@ export function MotionCardTable() {
             );
           })}
 
-          {/* Trick Cards */}
-          {!game.gameOver &&
-            game.trick.map((card, index) => (
-              <Card
-                key={trickKeys[index]}
-                index={index}
-                rank={card.rank}
-                suit={card.suit}
-                className="motion-card"
-                skipInitialAnimation={true}
-                animate={{
-                  ...getTrickPosition(index, game.trick.length),
-                }}
-                // Pass custom exit prop that will be used when card is removed
-                custom={{
-                  trickWinner: game.trickWinner,
-                  declarerPosition: game.declarerPosition,
-                  playerIsDeclarer,
-                }}
-                exit={(() => {
-                  // Only completed tricks should collect into a score pile.
-                  // Partial trick cards can briefly disappear during optimistic/server
-                  // reconciliation and should not look like they were scored.
-                  if (game.trick.length < 3) {
-                    return { opacity: 0, transition: { duration: 0.12 } };
+          {/*Center UI */}
+          {centerOverrideUI ? (
+            centerOverrideUI
+          ) : (
+            <>
+              {game.phase == "playing" && (
+                <div className="game-mode-display">
+                  <img
+                    src={getGameModeSVG(game.gameMode, game.trumpSuit)}
+                    width="200"
+                    height="200"
+                    alt={game.trumpSuit}
+                  />
+                  <span className="mode-title">
+                    {getGameModeDisplay(game.gameMode, game.trumpSuit)}
+                  </span>
+                </div>
+              )}
+              {/* Deck (shown before and during dealing) */}
+              {showDeck && (
+                <motion.div
+                  key="deck"
+                  className="deck"
+                  style={{
+                    position: "absolute",
+                  }}
+                  exit={{ opacity: 0 }}
+                >
+                  <img
+                    src="/res/cards/back.svg"
+                    alt="deck"
+                    className="card-back"
+                  />
+                </motion.div>
+              )}
+
+              {/* Deal Button */}
+              {showDealButton && (
+                <Button
+                  variant="contained"
+                  key="deal-button"
+                  className="deal-button"
+                  onClick={game.controls.deal}
+                  disabled={
+                    !game.controls.isConnected || game.controls.isLoading
                   }
+                  style={{
+                    opacity:
+                      !game.controls.isConnected || game.controls.isLoading
+                        ? 0.5
+                        : 1,
+                    cursor:
+                      !game.controls.isConnected || game.controls.isLoading
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {game.controls.isLoading ? "Dealing..." : "Deal Cards"}
+                </Button>
+              )}
 
-                  // Use the trick winner stored when the WebSocket message arrived
-                  // This is the most reliable way to get the correct winner for exit animations
-                  const trickWinner = game.trickWinnerRef.current.winner;
-                  const declarerPosition = game.trickWinnerRef.current.declarer;
+              {/* Trick Cards */}
+              {!game.gameOver &&
+                game.trick.map((card, index) => (
+                  <Card
+                    key={trickKeys[index]}
+                    index={index}
+                    rank={card.rank}
+                    suit={card.suit}
+                    className="motion-card"
+                    skipInitialAnimation={true}
+                    animate={{
+                      ...getTrickPosition(index, game.trick.length),
+                    }}
+                    // Pass custom exit prop that will be used when card is removed
+                    custom={{
+                      trickWinner: game.trickWinner,
+                      declarerPosition: game.declarerPosition,
+                      playerIsDeclarer,
+                    }}
+                    exit={(() => {
+                      // Only completed tricks should collect into a score pile.
+                      // Partial trick cards can briefly disappear during optimistic/server
+                      // reconciliation and should not look like they were scored.
+                      if (game.trick.length < 3) {
+                        return { opacity: 0, transition: { duration: 0.12 } };
+                      }
 
-                  if (trickWinner == null || declarerPosition == null) {
-                    return { opacity: 0, transition: { duration: 0.12 } };
-                  }
+                      // Use the trick winner stored when the WebSocket message arrived
+                      // This is the most reliable way to get the correct winner for exit animations
+                      const trickWinner = game.trickWinnerRef.current.winner;
+                      const declarerPosition =
+                        game.trickWinnerRef.current.declarer;
 
-                  // Check if the trick winner is the declarer
-                  const declarerWonTrick = trickWinner === declarerPosition;
+                      if (trickWinner == null || declarerPosition == null) {
+                        return { opacity: 0, transition: { duration: 0.12 } };
+                      }
 
-                  if (declarerWonTrick) {
-                    // Declarer won - cards go to declarer's pile
-                    if (playerIsDeclarer) {
-                      // Player is declarer - go to player pile (bottom)
-                      return { ...getPlayerPilePosition() };
-                    } else {
-                      // Opponent is declarer - go to opponent pile (top)
-                      return { ...getOpponentPilePosition() };
-                    }
-                  } else {
-                    // Defenders won - cards go to defenders' pile
-                    if (playerIsDeclarer) {
-                      // Player is declarer - defenders' pile is opponent pile (top)
-                      return { ...getOpponentPilePosition() };
-                    } else {
-                      // Player is defender - defenders' pile is player pile (bottom)
-                      return { ...getPlayerPilePosition() };
-                    }
-                  }
-                })()}
-              />
-            ))}
+                      // Check if the trick winner is the declarer
+                      const declarerWonTrick = trickWinner === declarerPosition;
+
+                      if (declarerWonTrick) {
+                        // Declarer won - cards go to declarer's pile
+                        if (playerIsDeclarer) {
+                          // Player is declarer - go to player pile (bottom)
+                          return { ...getPlayerPilePosition() };
+                        } else {
+                          // Opponent is declarer - go to opponent pile (top)
+                          return { ...getOpponentPilePosition() };
+                        }
+                      } else {
+                        // Defenders won - cards go to defenders' pile
+                        if (playerIsDeclarer) {
+                          // Player is declarer - defenders' pile is opponent pile (top)
+                          return { ...getOpponentPilePosition() };
+                        } else {
+                          // Player is defender - defenders' pile is player pile (bottom)
+                          return { ...getPlayerPilePosition() };
+                        }
+                      }
+                    })()}
+                  />
+                ))}
+            </>
+          )}
         </AnimatePresence>
 
         {/* Score Pile Labels - only show during playing phase when declarer is set and there are cards */}

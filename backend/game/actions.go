@@ -462,6 +462,8 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.ID = uuid.New().String()
 	gs.GameNumber++
 	gs.Phase = PhaseDealing
+	gs.Mode = ModeSuit
+	gs.TrumpSuit = NoSuit
 	gs.Declarer = nil
 	gs.BidValue = 0
 	gs.CurrentPlayer = 0

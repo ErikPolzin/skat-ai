@@ -39,7 +39,7 @@ export function SessionResults({
 }: SessionResultsProps) {
   const theme = useTheme();
   const navigate = useNavigate();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isMobile = useMediaQuery(theme.breakpoints.down("lg"));
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
 

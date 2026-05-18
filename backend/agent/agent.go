@@ -12,10 +12,8 @@ import (
 type (
 	RandomBiddingStrategy                 = strategies.RandomBiddingStrategy
 	HeuristicBiddingStrategy              = strategies.HeuristicBiddingStrategy
-	WeightedHeuristicBiddingStrategy      = strategies.WeightedHeuristicBiddingStrategy
 	RandomGameChoiceStrategy              = strategies.RandomGameChoiceStrategy
 	HeuristicGameChoiceStrategy           = strategies.HeuristicGameChoiceStrategy
-	WeightedHeuristicGameChoiceStrategy   = strategies.WeightedHeuristicGameChoiceStrategy
 	RandomCardPlayStrategy                = strategies.RandomCardPlayStrategy
 	HeuristicCardPlayStrategy             = strategies.HeuristicCardPlayStrategy
 	MCTSCardPlayStrategy                  = strategies.MCTSCardPlayStrategy
@@ -27,8 +25,6 @@ type (
 var (
 	NewMCTSCardPlayStrategyWithParams                 = strategies.NewMCTSCardPlayStrategyWithParams
 	NewHeuristicCardPlayStrategy                      = strategies.NewHeuristicCardPlayStrategy
-	NewWeightedHeuristicBiddingStrategy               = strategies.NewWeightedHeuristicBiddingStrategy
-	NewWeightedHeuristicGameChoiceStrategy            = strategies.NewWeightedHeuristicGameChoiceStrategy
 	NewPerfectInfoMinimaxStrategyWithDepth            = strategies.NewPerfectInfoMinimaxStrategyWithDepth
 	NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth = strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth
 )
@@ -133,14 +129,6 @@ func (sa *SkatAgent) ChooseGame(state *game.GameState) (game.GameMode, game.Suit
 	bidValue := int(state.BidValue)
 	mode, suit := sa.gameChoiceStrategy.ChooseGame(hand, bidValue)
 
-	// Calculate predicted win probability for the chosen game type
-	if weightedStrat, ok := sa.biddingStrategy.(*WeightedHeuristicBiddingStrategy); ok {
-		winProb := weightedStrat.EvaluateGameProbability(game.Cards(hand), mode, suit)
-		sa.mu.Lock()
-		sa.lastPredictedWinProb = winProb
-		sa.mu.Unlock()
-	}
-
 	return mode, suit
 }
 
@@ -207,12 +195,12 @@ func NewAgentWithStrategies(name string, bidding BiddingStrategy, gameChoice Gam
 	}
 }
 
-// NewHeuristicAgent creates an agent using all heuristic strategies
+// NewHeuristicAgent creates an agent using the default heuristic stack.
 func NewHeuristicAgent(name string) *SkatAgent {
 	return &SkatAgent{
 		name:               name,
 		biddingStrategy:    strategies.NewHeuristicBiddingStrategy(),
-		gameChoiceStrategy: &HeuristicGameChoiceStrategy{},
+		gameChoiceStrategy: strategies.NewHeuristicGameChoiceStrategy(),
 		cardPlayStrategy:   NewHeuristicCardPlayStrategy(),
 	}
 }
@@ -236,17 +224,15 @@ func NewPerfectInfoMinimaxVsHeuristicAgent(name string, depth int) *SkatAgent {
 	return &SkatAgent{
 		name:               name,
 		biddingStrategy:    strategies.NewHeuristicBiddingStrategy(),
-		gameChoiceStrategy: &HeuristicGameChoiceStrategy{},
+		gameChoiceStrategy: strategies.NewHeuristicGameChoiceStrategy(),
 		cardPlayStrategy:   strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth(depth),
 	}
 }
 
 // HybridAgentConfig holds configuration for creating hybrid agents
 type HybridAgentConfig struct {
-	BiddingType        string
-	BiddingThreshold   float64                 // For weighted heuristic bidding
-	BiddingWeightsPath string                  // Path to trained weights JSON file (shared by bidding and game choice)
-	BiddingQTable      map[int]map[int]float64 // For Q-learning bidding
+	BiddingType      string
+	BiddingThreshold float64
 
 	GameChoiceType   string
 	GameChoiceQTable map[int]map[int]float64 // For Q-learning game choice
@@ -264,56 +250,29 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	// Configure bidding strategy
 	switch config.BiddingType {
 	case "heuristic":
-		if config.BiddingThreshold == 0 {
-			agent.biddingStrategy = strategies.NewHeuristicBiddingStrategy()
-		} else {
-			agent.biddingStrategy = strategies.NewHeuristicBiddingStrategyWithThreshold(config.BiddingThreshold)
-		}
-	case "weighted":
-		var weighted *strategies.WeightedHeuristicBiddingStrategy
-		var err error
-
-		// Load weights from file if provided
-		if config.BiddingWeightsPath != "" {
-			weighted, err = strategies.NewWeightedHeuristicBiddingStrategyFromFile(config.BiddingWeightsPath)
-			if err != nil {
-				return nil, fmt.Errorf("load bidding weights: %w", err)
-			}
-		} else {
-			weighted = strategies.NewWeightedHeuristicBiddingStrategy()
-		}
-		// Override threshold if specified
+		contractConfig := strategies.DefaultContractEvaluatorConfig()
 		if config.BiddingThreshold != 0 {
-			weighted.SetBiddingThreshold(config.BiddingThreshold)
+			contractConfig.MinWinProbability = config.BiddingThreshold
 		}
-		agent.biddingStrategy = weighted
+		agent.biddingStrategy = strategies.NewHeuristicBiddingStrategyWithConfig(contractConfig)
 	case "random":
 		agent.biddingStrategy = &RandomBiddingStrategy{}
 	default:
-		// Default to weighted heuristic
-		weighted := strategies.NewWeightedHeuristicBiddingStrategy()
-		agent.biddingStrategy = weighted
+		agent.biddingStrategy = strategies.NewHeuristicBiddingStrategy()
 	}
 
 	// Configure game choice strategy
 	switch config.GameChoiceType {
 	case "heuristic":
-		agent.gameChoiceStrategy = &HeuristicGameChoiceStrategy{}
-	case "weighted":
-		// Use the same weights file as bidding if provided
-		if config.BiddingWeightsPath != "" {
-			weights, err := strategies.LoadBidWeights(config.BiddingWeightsPath)
-			if err != nil {
-				return nil, fmt.Errorf("load weights for game choice: %w", err)
-			}
-			agent.gameChoiceStrategy = strategies.NewWeightedHeuristicGameChoiceStrategyWithWeights(weights)
-		} else {
-			agent.gameChoiceStrategy = strategies.NewWeightedHeuristicGameChoiceStrategy()
+		contractConfig := strategies.DefaultContractEvaluatorConfig()
+		if config.BiddingThreshold != 0 {
+			contractConfig.MinWinProbability = config.BiddingThreshold
 		}
+		agent.gameChoiceStrategy = strategies.NewHeuristicGameChoiceStrategyWithConfig(contractConfig)
 	case "random":
 		agent.gameChoiceStrategy = &RandomGameChoiceStrategy{}
 	default:
-		agent.gameChoiceStrategy = &HeuristicGameChoiceStrategy{}
+		agent.gameChoiceStrategy = strategies.NewHeuristicGameChoiceStrategy()
 	}
 
 	// Configure card play strategy

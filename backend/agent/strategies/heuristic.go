@@ -7,21 +7,15 @@ import (
 
 // HeuristicBiddingStrategy uses hand strength heuristics to make bidding decisions
 type HeuristicBiddingStrategy struct {
-	threshold float64 // Probability threshold for bidding (0-1), default 0.5
+	evaluator *ContractEvaluator
 }
 
-// NewHeuristicBiddingStrategy creates a new heuristic bidding strategy with default threshold
 func NewHeuristicBiddingStrategy() *HeuristicBiddingStrategy {
-	return &HeuristicBiddingStrategy{
-		threshold: 0.5, // Default 50% confidence threshold - balanced bidding
-	}
+	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluator()}
 }
 
-// NewHeuristicBiddingStrategyWithThreshold creates a strategy with custom threshold
-func NewHeuristicBiddingStrategyWithThreshold(threshold float64) *HeuristicBiddingStrategy {
-	return &HeuristicBiddingStrategy{
-		threshold: threshold,
-	}
+func NewHeuristicBiddingStrategyWithConfig(config ContractEvaluatorConfig) *HeuristicBiddingStrategy {
+	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluatorWithConfig(config)}
 }
 
 func (h *HeuristicBiddingStrategy) GetName() string {
@@ -29,125 +23,38 @@ func (h *HeuristicBiddingStrategy) GetName() string {
 }
 
 func (h *HeuristicBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Card, currentBid int) bool {
-	cards := game.Cards(hand)
-
-	// Use the game choice strategy to determine which game we'd actually play
-	gameChoiceStrategy := &HeuristicGameChoiceStrategy{}
-
-	// Get the next bid value to estimate what we'd need to declare
 	nextBid := gs.GetNextBidValue()
 	if nextBid == 0 {
 		return false
 	}
-
-	// Determine which game we would choose (passing 0 to evaluate all options)
-	mode, suit := gameChoiceStrategy.ChooseGame(hand, 0)
-
-	// Get the game value for our chosen game
-	gameValue := cards.GameValue(mode, suit)
-
-	// Evaluate the hand strength using normalized heuristics (0-1 probability)
-	var handProbability float64
-	if mode == game.ModeGrand {
-		handProbability = gameChoiceStrategy.evaluateGrandStrength(cards)
-	} else if mode == game.ModeSuit {
-		handProbability = gameChoiceStrategy.evaluateSuitStrength(cards, suit)
-	} else if mode == game.ModeNull {
-		handProbability = gameChoiceStrategy.evaluateNullStrength(cards)
-	}
-
-	// Bid only if:
-	// 1. Game value meets requirement (no safety margin needed with probability threshold), AND
-	// 2. Hand probability exceeds configured threshold (default 0.5 = 50% confidence)
-	meetsValue := float64(gameValue) >= float64(nextBid)
-	meetsThreshold := handProbability >= h.threshold
-
-	return meetsValue && meetsThreshold
+	_, ok := h.evaluator.Best(hand, nextBid)
+	return ok
 }
 
 // HeuristicGameChoiceStrategy chooses game based on hand strength heuristics
-type HeuristicGameChoiceStrategy struct{}
+type HeuristicGameChoiceStrategy struct {
+	evaluator *ContractEvaluator
+}
+
+func NewHeuristicGameChoiceStrategy() *HeuristicGameChoiceStrategy {
+	return &HeuristicGameChoiceStrategy{
+		evaluator: NewContractEvaluator(),
+	}
+}
+
+func NewHeuristicGameChoiceStrategyWithConfig(config ContractEvaluatorConfig) *HeuristicGameChoiceStrategy {
+	return &HeuristicGameChoiceStrategy{
+		evaluator: NewContractEvaluatorWithConfig(config),
+	}
+}
 
 func (h *HeuristicGameChoiceStrategy) GetName() string {
 	return "HeuristicGameChoice"
 }
 
 func (h *HeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int) (game.GameMode, game.Suit) {
-	cards := game.Cards(hand)
-
-	// Evaluate each possible game with normalized probability scoring
-	type gameOption struct {
-		mode  game.GameMode
-		suit  game.Suit
-		value int
-		score float64 // normalized probability (0-1) of winning this game
-	}
-
-	var options []gameOption
-
-	// Check Grand - always evaluate, let score decide viability
-	// Don't filter by gameValue since matadors can be misleading
-	grandValue := cards.GameValue(game.ModeGrand, game.NoSuit)
-	score := h.evaluateGrandStrength(cards)
-	// Always add Grand to options, scoring will determine if it's chosen
-	options = append(options, gameOption{game.ModeGrand, game.NoSuit, grandValue, score})
-
-	// Check all suit games
-	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
-		suitValue := cards.GameValue(game.ModeSuit, suit)
-		if suitValue >= bidValue {
-			score := h.evaluateSuitStrength(cards, suit)
-			options = append(options, gameOption{game.ModeSuit, suit, suitValue, score})
-		}
-	}
-
-	// Check Null (fixed value of 23)
-	if 23 >= bidValue {
-		score := h.evaluateNullStrength(cards)
-		options = append(options, gameOption{game.ModeNull, game.NoSuit, 23, score})
-	}
-
-	// No viable options - return highest value game regardless
-	if len(options) == 0 {
-		bestValue := 0
-		bestMode := game.ModeGrand
-		bestSuit := game.NoSuit
-
-		grandValue := cards.GameValue(game.ModeGrand, game.NoSuit)
-		if grandValue > bestValue {
-			bestValue = grandValue
-			bestMode = game.ModeGrand
-			bestSuit = game.NoSuit
-		}
-
-		for suit := game.Clubs; suit <= game.Diamonds; suit++ {
-			suitValue := cards.GameValue(game.ModeSuit, suit)
-			if suitValue > bestValue {
-				bestValue = suitValue
-				bestMode = game.ModeSuit
-				bestSuit = suit
-			}
-		}
-
-		// Null has fixed value of 23
-		if 23 > bestValue {
-			bestValue = 23
-			bestMode = game.ModeNull
-			bestSuit = game.NoSuit
-		}
-
-		return bestMode, bestSuit
-	}
-
-	// Select game with highest win probability
-	best := options[0]
-	for _, opt := range options[1:] {
-		if opt.score > best.score {
-			best = opt
-		}
-	}
-
-	return best.mode, best.suit
+	best, _ := h.evaluator.Best(hand, bidValue)
+	return best.Mode, best.TrumpSuit
 }
 
 func (h *HeuristicGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode game.GameMode, trumpSuit game.Suit) (game.Card, game.Card) {

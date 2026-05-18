@@ -440,10 +440,13 @@ func (gs *GameState) IsSchwarz() bool {
 	return gs.DeclarerScore == 120 || gs.OpponentScore == 120
 }
 
-// IsZwangsspiel returns true if all three players passed during bidding,
-// forcing the listener to play a game (typically with a weak hand)
+// IsZwangsspiel returns true if bidding ended at 0 and forehand/listener was
+// forced to play after the other two players passed.
 func (gs *GameState) IsZwangsspiel() bool {
-	return gs.ListenerPassed && gs.SpeakerPassed && gs.DealerPassed && gs.BidValue == 0
+	if gs.BidValue != 0 || gs.Declarer == nil || *gs.Declarer != Listener {
+		return false
+	}
+	return gs.SpeakerPassed && gs.DealerPassed
 }
 
 // GetGameResult returns the result of the game including schneider/schwarz

@@ -48,10 +48,13 @@ func newSearchTeacherAgent(name, teacher string, depth int, biddingThreshold flo
 		cardPlay = strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth)
 	}
 
+	config := strategies.DefaultContractEvaluatorConfig()
+	config.MinWinProbability = biddingThreshold
+
 	return agent.NewAgentWithStrategies(
 		name,
-		strategies.NewHeuristicBiddingStrategyWithThreshold(biddingThreshold),
-		&agent.HeuristicGameChoiceStrategy{},
+		strategies.NewHeuristicBiddingStrategyWithConfig(config),
+		strategies.NewHeuristicGameChoiceStrategyWithConfig(config),
 		cardPlay,
 	)
 }
@@ -62,7 +65,7 @@ func main() {
 	searchDepth := flag.Int("depth", 7, "Minimax search depth for expert card-play labels (default: 7)")
 	teacher := flag.String("teacher", "minimax", "Declarer label teacher: minimax or minimax-heuristic")
 	defenderTeacher := flag.String("defender-teacher", "heuristic", "Defender label teacher: heuristic, minimax, or minimax-heuristic")
-	biddingThreshold := flag.Float64("bidding-threshold", 0.5, "Heuristic bidding threshold for contract generation; higher means stronger declarer hands")
+	biddingThreshold := flag.Float64("bidding-threshold", 0.55, "Heuristic bidding threshold for contract generation; higher means stronger declarer hands")
 	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel workers")
 	flag.Parse()
 
@@ -128,11 +131,14 @@ func main() {
 			defenderSearchAgent = newSearchTeacherAgent("DefenderSearchExpert", *defenderTeacher, *searchDepth, *biddingThreshold)
 		}
 
+		config := strategies.DefaultContractEvaluatorConfig()
+		config.MinWinProbability = *biddingThreshold
+
 		// Create heuristic agent for defender examples and opponent simulation
 		heuristicAgent := agent.NewAgentWithStrategies(
 			"HeuristicDefender",
-			strategies.NewHeuristicBiddingStrategyWithThreshold(*biddingThreshold),
-			&agent.HeuristicGameChoiceStrategy{},
+			strategies.NewHeuristicBiddingStrategyWithConfig(config),
+			strategies.NewHeuristicGameChoiceStrategyWithConfig(config),
 			agent.NewHeuristicCardPlayStrategy(),
 		)
 

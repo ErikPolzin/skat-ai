@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS player_ratings (
 
 CREATE TABLE IF NOT EXISTS agent_configs (
     profile_id VARCHAR(255) PRIMARY KEY,
-    bidding_type VARCHAR(50) NOT NULL DEFAULT 'weighted',
+    bidding_type VARCHAR(50) NOT NULL DEFAULT 'heuristic',
     bidding_threshold DOUBLE PRECISION DEFAULT 0.65,
     game_choice_type VARCHAR(50) NOT NULL DEFAULT 'heuristic',
     card_play_type VARCHAR(50) NOT NULL DEFAULT 'heuristic',
@@ -126,12 +126,12 @@ CREATE TABLE IF NOT EXISTS agent_configs (
 INSERT INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, mcts_simulations, cardplay_weights_path)
 VALUES
     -- Heuristic agents (Bill, Dave)
-    ('550e8400-e29b-41d4-a716-446655440001', 'weighted', 0.65, 'heuristic', 'heuristic', NULL, NULL),
-    ('550e8400-e29b-41d4-a716-446655440002', 'weighted', 0.70, 'heuristic', 'heuristic', NULL, NULL),
+    ('550e8400-e29b-41d4-a716-446655440001', 'heuristic', 0.65, 'heuristic', 'heuristic', NULL, NULL),
+    ('550e8400-e29b-41d4-a716-446655440002', 'heuristic', 0.70, 'heuristic', 'heuristic', NULL, NULL),
     -- MCTS agents (Lisa, Max)
-    ('550e8400-e29b-41d4-a716-446655440003', 'weighted', 0.65, 'heuristic', 'mcts', 500, NULL),
-    ('550e8400-e29b-41d4-a716-446655440004', 'weighted', 0.65, 'heuristic', 'mcts', 1000, NULL),
+    ('550e8400-e29b-41d4-a716-446655440003', 'heuristic', 0.65, 'heuristic', 'mcts', 500, NULL),
+    ('550e8400-e29b-41d4-a716-446655440004', 'heuristic', 0.65, 'heuristic', 'mcts', 1000, NULL),
     -- Neural agents (Emma, Sam) - using combined weights file
-    ('550e8400-e29b-41d4-a716-446655440005', 'weighted', 0.65, 'heuristic', 'neural', NULL, '.data/models/cardplay.weights'),
-    ('550e8400-e29b-41d4-a716-446655440006', 'weighted', 0.70, 'heuristic', 'neural', NULL, '.data/models/cardplay.weights')
+    ('550e8400-e29b-41d4-a716-446655440005', 'heuristic', 0.65, 'heuristic', 'neural', NULL, '.data/models/cardplay.weights'),
+    ('550e8400-e29b-41d4-a716-446655440006', 'heuristic', 0.70, 'heuristic', 'neural', NULL, '.data/models/cardplay.weights')
 ON CONFLICT (profile_id) DO NOTHING;

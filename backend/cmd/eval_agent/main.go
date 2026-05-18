@@ -14,23 +14,22 @@ import (
 
 func main() {
 	agentType := flag.String("agent-type", "", "Agent type: heuristic, mcts, minimax, minimax-heuristic, neural, or random (if not set, uses component flags)")
-	biddingType := flag.String("bidding-type", "heuristic", "Bidding & game choice strategy: heuristic or weighted")
+	biddingType := flag.String("bidding-type", "heuristic", "Bidding & game choice strategy: heuristic or contract")
 	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, mcts, minimax, minimax-heuristic, or neural")
 	biddingMode := flag.String("bidding-mode", "5050", "Bidding mode: 5050 (all test agents bid, alternate declarer) or 2v1 (test vs 2 baseline)")
 	games := flag.Int("games", 500, "Number of evaluation games")
 	cardplayWeights := flag.String("cardplay-weights", ".data/models/cardplay.weights", "Path to card play neural network weights")
-	biddingWeights := flag.String("bidding-weights", "", "Path to weighted bidding weights JSON file (optional)")
-	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, weighted default=0.70, heuristic default=0.50)")
+	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, heuristic default=0.55)")
 	minimaxDepth := flag.Int("minimax-depth", 10, "Minimax search depth for perfect-info minimax")
 	mctsSimulations := flag.Int("mcts-simulations", 500, "MCTS simulation count")
 	ignoreZwangsspiel := flag.Bool("ignore-zwangsspiel", false, "Exclude Zwangsspiel (passed) games from evaluation")
 	skipGameplayExamples := flag.Bool("skip-gameplay-examples", false, "Skip slow example game-play section after evaluation")
 	flag.Parse()
 
-	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *biddingWeights, *threshold, *minimaxDepth, *mctsSimulations, *ignoreZwangsspiel, *skipGameplayExamples)
+	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *threshold, *minimaxDepth, *mctsSimulations, *ignoreZwangsspiel, *skipGameplayExamples)
 }
 
-func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights, biddingWeightsFile string, threshold float64, minimaxDepth, mctsSimulations int, ignoreZwangsspiel, skipGameplayExamples bool) {
+func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int, ignoreZwangsspiel, skipGameplayExamples bool) {
 	var testAgent *agent.SkatAgent
 	var err error
 
@@ -46,14 +45,13 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 		// Build hybrid agent from component flags
 		// Game choice type always matches bidding type
 		config := agent.HybridAgentConfig{
-			BiddingType:        biddingType,
-			BiddingThreshold:   threshold,
-			BiddingWeightsPath: biddingWeightsFile,
-			GameChoiceType:     biddingType, // Always same as bidding type
-			CardPlayType:       cardPlayType,
-			NeuralWeightsPath:  cardplayWeights,
-			MinimaxDepth:       minimaxDepth,
-			MCTSSimulations:    mctsSimulations,
+			BiddingType:       biddingType,
+			BiddingThreshold:  threshold,
+			GameChoiceType:    biddingType, // Always same as bidding type
+			CardPlayType:      cardPlayType,
+			NeuralWeightsPath: cardplayWeights,
+			MinimaxDepth:      minimaxDepth,
+			MCTSSimulations:   mctsSimulations,
 		}
 		testAgent, err = agent.NewHybridAgent("Test", config)
 		if err != nil {
@@ -298,7 +296,6 @@ func testExampleBiddingHands(testAgent *agent.SkatAgent) {
 	}
 
 	biddingStrat := testAgent.GetBiddingStrategy()
-	heuristic := &agent.HeuristicBiddingStrategy{}
 
 	// Create a mock game state for testing
 	g := game.NewGame()
@@ -328,15 +325,10 @@ func testExampleBiddingHands(testAgent *agent.SkatAgent) {
 		// Test various bid levels
 		bidLevels := []int{18, 20, 23, 24, 27, 30, 33, 36, 40, 44, 48, 50, 55, 59, 60}
 		qAccepts := []int{}
-		hAccepts := []int{}
 
 		for _, bid := range bidLevels {
-			// Test neural or Q-learning strategy
 			if biddingStrat.ShouldBid(g, hand, bid) {
 				qAccepts = append(qAccepts, bid)
-			}
-			if heuristic.ShouldBid(g, hand, bid) {
-				hAccepts = append(hAccepts, bid)
 			}
 		}
 
@@ -344,18 +336,8 @@ func testExampleBiddingHands(testAgent *agent.SkatAgent) {
 		if len(qAccepts) > 0 {
 			qMax = qAccepts[len(qAccepts)-1]
 		}
-		hMax := 0
-		if len(hAccepts) > 0 {
-			hMax = hAccepts[len(hAccepts)-1]
-		}
 
 		fmt.Printf("  Test bids up to:     %d\n", qMax)
-		fmt.Printf("  Heuristic bids up to:  %d", hMax)
-		if qMax == hMax {
-			fmt.Printf(" ✓\n")
-		} else {
-			fmt.Printf(" (diff: %+d)\n", qMax-hMax)
-		}
 	}
 	fmt.Println()
 }
@@ -394,7 +376,6 @@ func testExampleGameChoiceHands(testAgent *agent.SkatAgent) {
 	}
 
 	gameChoice := testAgent.GetGameChoiceStrategy()
-	heuristic := &agent.HeuristicGameChoiceStrategy{}
 
 	for _, tc := range testCases {
 		hand, err := game.ParseCards(tc.handStr)
@@ -403,20 +384,11 @@ func testExampleGameChoiceHands(testAgent *agent.SkatAgent) {
 		}
 
 		testMode, testSuit := gameChoice.ChooseGame(hand, tc.bidValue)
-		hMode, hSuit := heuristic.ChooseGame(hand, tc.bidValue)
-
 		testChoice := formatGameChoice(testMode, testSuit)
-		hChoice := formatGameChoice(hMode, hSuit)
 
 		fmt.Printf("\n%s:\n", tc.name)
 		fmt.Printf("  %s\n", tc.reason)
 		fmt.Printf("  Test agent: %s\n", testChoice)
-		fmt.Printf("  Heuristic:  %s", hChoice)
-		if testChoice != hChoice {
-			fmt.Printf(" ✗\n")
-		} else {
-			fmt.Printf(" ✓\n")
-		}
 	}
 	fmt.Println()
 }

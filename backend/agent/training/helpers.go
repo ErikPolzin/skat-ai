@@ -32,7 +32,7 @@ func EvaluateAgents(config agent.AgentConfig, games int) {
 			localConfig := config.CloneAll()
 			localConfig.EnableMetrics()
 			g := game.NewGame()
-			g = agent.WithAgentPlayers(g, config)
+			g = agent.WithAgentPlayers(g, localConfig)
 
 			for range gameChan {
 				// Play game with the specified configuration

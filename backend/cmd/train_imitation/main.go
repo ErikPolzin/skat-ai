@@ -26,7 +26,7 @@ func main() {
 	l2Reg := flag.Float64("l2", 0.0001, "L2 regularization")
 	evalEvery := flag.Int("eval-every", 1, "Evaluate every N epochs")
 	evalGames := flag.Int("eval-games", 500, "Number of games per evaluation")
-	evalBiddingThreshold := flag.Float64("eval-bidding-threshold", 0.5, "Heuristic bidding threshold used during training-time evaluation")
+	evalBiddingThreshold := flag.Float64("eval-bidding-threshold", 0.55, "Heuristic bidding threshold used during training-time evaluation")
 	initialWeights := flag.String("initial", "", "Optional initial combined card-play weights to continue training from")
 	outputWeights := flag.String("output", ".data/models/imitation_cardplay.weights", "Output weights file")
 
@@ -112,9 +112,12 @@ func main() {
 			testStrategy := strategies.NewNeuralCardPlayStrategyFromWeightMaps(declWeights, defWeights)
 			testStrategy.SetExploration(0.0)
 
+			cfg := strategies.DefaultContractEvaluatorConfig()
+			cfg.MinWinProbability = *evalBiddingThreshold
+
 			testAgent := agent.NewAgentWithStrategies(
 				"Imitation",
-				strategies.NewHeuristicBiddingStrategyWithThreshold(*evalBiddingThreshold),
+				strategies.NewHeuristicBiddingStrategyWithConfig(cfg),
 				&agent.HeuristicGameChoiceStrategy{},
 				testStrategy,
 			)

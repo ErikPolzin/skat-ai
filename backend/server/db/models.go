@@ -87,7 +87,7 @@ type AgentConfig struct {
 	ProfileID string
 	// Bidding strategy configuration
 	BiddingType      string
-	BiddingThreshold float64 // For weighted heuristic bidding
+	BiddingThreshold float64
 	// Game choice strategy configuration
 	GameChoiceType string
 	// Card play strategy configuration

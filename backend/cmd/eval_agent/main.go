@@ -13,23 +13,24 @@ import (
 )
 
 func main() {
-	agentType := flag.String("agent-type", "", "Agent type: heuristic, mcts, minimax, neural, or random (if not set, uses component flags)")
+	agentType := flag.String("agent-type", "", "Agent type: heuristic, mcts, minimax, minimax-heuristic, neural, or random (if not set, uses component flags)")
 	biddingType := flag.String("bidding-type", "heuristic", "Bidding & game choice strategy: heuristic or weighted")
-	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, mcts, minimax, or neural")
+	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, mcts, minimax, minimax-heuristic, or neural")
 	biddingMode := flag.String("bidding-mode", "5050", "Bidding mode: 5050 (all test agents bid, alternate declarer) or 2v1 (test vs 2 baseline)")
 	games := flag.Int("games", 500, "Number of evaluation games")
 	cardplayWeights := flag.String("cardplay-weights", ".data/models/cardplay.weights", "Path to card play neural network weights")
 	biddingWeights := flag.String("bidding-weights", "", "Path to weighted bidding weights JSON file (optional)")
-	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, weighted default=0.70, heuristic default=0.45)")
+	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, weighted default=0.70, heuristic default=0.50)")
 	minimaxDepth := flag.Int("minimax-depth", 10, "Minimax search depth for perfect-info minimax")
 	mctsSimulations := flag.Int("mcts-simulations", 500, "MCTS simulation count")
 	ignoreZwangsspiel := flag.Bool("ignore-zwangsspiel", false, "Exclude Zwangsspiel (passed) games from evaluation")
+	skipGameplayExamples := flag.Bool("skip-gameplay-examples", false, "Skip slow example game-play section after evaluation")
 	flag.Parse()
 
-	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *biddingWeights, *threshold, *minimaxDepth, *mctsSimulations, *ignoreZwangsspiel)
+	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *biddingWeights, *threshold, *minimaxDepth, *mctsSimulations, *ignoreZwangsspiel, *skipGameplayExamples)
 }
 
-func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights, biddingWeightsFile string, threshold float64, minimaxDepth, mctsSimulations int, ignoreZwangsspiel bool) {
+func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights, biddingWeightsFile string, threshold float64, minimaxDepth, mctsSimulations int, ignoreZwangsspiel, skipGameplayExamples bool) {
 	var testAgent *agent.SkatAgent
 	var err error
 
@@ -236,13 +237,25 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 	fmt.Println(strings.Repeat("=", 50))
 	testExampleGameChoiceHands(testAgent)
 
-	// Run game-play test with known winning games (skip for minimax - too slow)
-	if agentType != "minimax" {
+	// Run game-play test with known winning games unless this is a slow search agent.
+	if !skipGameplayExamples && !skipsGameplayExamplesByDefault(agentType, cardPlayType) {
 		fmt.Println("\n" + strings.Repeat("=", 50))
 		fmt.Println("EXAMPLE GAME PLAY RESULTS")
 		fmt.Println(strings.Repeat("=", 50))
 		runGamePlayTest(testAgent)
 	}
+}
+
+func skipsGameplayExamplesByDefault(agentType, cardPlayType string) bool {
+	switch agentType {
+	case "minimax", "minimax-heuristic":
+		return true
+	}
+	switch cardPlayType {
+	case "minimax", "minimax-heuristic", "perfect-info-heuristic":
+		return true
+	}
+	return false
 }
 
 func testExampleBiddingHands(testAgent *agent.SkatAgent) {
@@ -336,7 +349,7 @@ func testExampleBiddingHands(testAgent *agent.SkatAgent) {
 			hMax = hAccepts[len(hAccepts)-1]
 		}
 
-		fmt.Printf("  Weighted bids up to: %d\n", qMax)
+		fmt.Printf("  Test bids up to:     %d\n", qMax)
 		fmt.Printf("  Heuristic bids up to:  %d", hMax)
 		if qMax == hMax {
 			fmt.Printf(" ✓\n")
@@ -445,6 +458,15 @@ func createAgentByType(agentType, cardplayWeights string, threshold float64, min
 			BiddingThreshold: threshold,
 			GameChoiceType:   "heuristic",
 			CardPlayType:     "minimax",
+			MinimaxDepth:     minimaxDepth,
+		}
+		return agent.NewHybridAgent("Test", config)
+	case "minimax-heuristic":
+		config := agent.HybridAgentConfig{
+			BiddingType:      "heuristic",
+			BiddingThreshold: threshold,
+			GameChoiceType:   "heuristic",
+			CardPlayType:     "minimax-heuristic",
 			MinimaxDepth:     minimaxDepth,
 		}
 		return agent.NewHybridAgent("Test", config)

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -12,6 +13,8 @@ import (
 	strategiesio "skat/agent/strategies/io"
 	"skat/agent/training"
 	"skat/agent/training/imitation"
+
+	"gorgonia.org/gorgonia"
 )
 
 func main() {
@@ -23,6 +26,8 @@ func main() {
 	l2Reg := flag.Float64("l2", 0.0001, "L2 regularization")
 	evalEvery := flag.Int("eval-every", 1, "Evaluate every N epochs")
 	evalGames := flag.Int("eval-games", 500, "Number of games per evaluation")
+	evalBiddingThreshold := flag.Float64("eval-bidding-threshold", 0.5, "Heuristic bidding threshold used during training-time evaluation")
+	initialWeights := flag.String("initial", "", "Optional initial combined card-play weights to continue training from")
 	outputWeights := flag.String("output", ".data/models/imitation_cardplay.weights", "Output weights file")
 
 	flag.Parse()
@@ -37,6 +42,10 @@ func main() {
 	fmt.Printf("  Learning Rate: %.5f\n", *lr)
 	fmt.Printf("  L2 Regularization: %.5f\n", *l2Reg)
 	fmt.Printf("  Evaluation: every %d epochs\n", *evalEvery)
+	fmt.Printf("  Eval bidding threshold: %.2f\n", *evalBiddingThreshold)
+	if *initialWeights != "" {
+		fmt.Printf("  Initial weights: %s\n", *initialWeights)
+	}
 	fmt.Printf("  Output: %s\n\n", *outputWeights)
 
 	// Create trainer
@@ -52,6 +61,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to load dataset: %v\n", err)
 		os.Exit(1)
 	}
+	if *initialWeights != "" {
+		declWeights, defWeights, err := loadInitialWeights(*initialWeights)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load initial weights: %v\n", err)
+			os.Exit(1)
+		}
+		if err := trainer.SetWeights(declWeights, defWeights); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to set initial weights: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	declExamples, defExamples := trainer.GetDatasetSizes()
 	fmt.Printf("  Declarer examples: %d\n", declExamples)
@@ -61,6 +81,14 @@ func main() {
 	// Training loop
 	fmt.Println("Starting training...")
 	startTime := time.Now()
+	bestEvalScore := math.Inf(-1)
+	savedBest := false
+
+	outputDir := filepath.Dir(*outputWeights)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
+		os.Exit(1)
+	}
 
 	for epoch := 1; epoch <= *epochs; epoch++ {
 		// Train one epoch
@@ -84,12 +112,10 @@ func main() {
 			testStrategy := strategies.NewNeuralCardPlayStrategyFromWeightMaps(declWeights, defWeights)
 			testStrategy.SetExploration(0.0)
 
-			weightedBidding := strategies.NewWeightedHeuristicBiddingStrategy()
-
 			testAgent := agent.NewAgentWithStrategies(
 				"Imitation",
-				weightedBidding,
-				strategies.NewWeightedHeuristicGameChoiceStrategy(),
+				strategies.NewHeuristicBiddingStrategyWithThreshold(*evalBiddingThreshold),
+				&agent.HeuristicGameChoiceStrategy{},
 				testStrategy,
 			)
 
@@ -128,26 +154,49 @@ func main() {
 			fmt.Printf("  → Baseline:  Decl %.1f%% (%d/%d) | Def %.1f%% (%d/%d)\n\n",
 				baselineDeclWinRate, baselineStats.Wins, baselineStats.Games,
 				baselineDefWinRate, baselineStats.DefenderWins, baselineStats.DefenderGames)
+
+			evalScore := float64(testStats.Points - baselineStats.Points)
+			if evalScore > bestEvalScore {
+				bestEvalScore = evalScore
+				if err := strategiesio.SaveCombinedCardPlayWeights(*outputWeights, declWeights, defWeights); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to save best weights: %v\n", err)
+					os.Exit(1)
+				}
+				savedBest = true
+				fmt.Printf("  → New best checkpoint saved to %s (point diff %.0f)\n\n", *outputWeights, evalScore)
+			}
 		}
 	}
 
 	// Save final model
 	declWeights, defWeights := trainer.GetWeights()
 
-	// Ensure output directory exists
-	outputDir := filepath.Dir(*outputWeights)
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
-		os.Exit(1)
+	finalWeights := *outputWeights
+	if savedBest {
+		finalWeights = *outputWeights + ".final"
 	}
 
-	// Save combined weights to a single file
-	if err := strategiesio.SaveCombinedCardPlayWeights(*outputWeights, declWeights, defWeights); err != nil {
+	if err := strategiesio.SaveCombinedCardPlayWeights(finalWeights, declWeights, defWeights); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to save weights: %v\n", err)
 		os.Exit(1)
 	}
 
 	elapsed := time.Since(startTime)
 	fmt.Printf("\n✓ Training complete in %s\n", elapsed)
-	fmt.Printf("✓ Model saved to: %s\n", *outputWeights)
+	if savedBest {
+		fmt.Printf("✓ Best model saved to: %s (best point diff %.0f)\n", *outputWeights, bestEvalScore)
+		fmt.Printf("✓ Final epoch model saved to: %s\n", finalWeights)
+	} else {
+		fmt.Printf("✓ Model saved to: %s\n", finalWeights)
+	}
+}
+
+func loadInitialWeights(path string) (strategies.CardPlayNetworkWeights, strategies.CardPlayNetworkWeights, error) {
+	declGraph := gorgonia.NewGraph()
+	defGraph := gorgonia.NewGraph()
+	declWeights, defWeights, err := strategiesio.LoadCombinedCardPlayWeights(path, declGraph, defGraph)
+	if err != nil {
+		return nil, nil, err
+	}
+	return strategies.CardPlayNetworkWeights(declWeights), strategies.CardPlayNetworkWeights(defWeights), nil
 }

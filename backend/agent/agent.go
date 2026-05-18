@@ -10,23 +10,27 @@ import (
 
 // Re-export strategy types for backwards compatibility
 type (
-	RandomBiddingStrategy               = strategies.RandomBiddingStrategy
-	HeuristicBiddingStrategy            = strategies.HeuristicBiddingStrategy
-	WeightedHeuristicBiddingStrategy    = strategies.WeightedHeuristicBiddingStrategy
-	RandomGameChoiceStrategy            = strategies.RandomGameChoiceStrategy
-	HeuristicGameChoiceStrategy         = strategies.HeuristicGameChoiceStrategy
-	WeightedHeuristicGameChoiceStrategy = strategies.WeightedHeuristicGameChoiceStrategy
-	RandomCardPlayStrategy              = strategies.RandomCardPlayStrategy
-	HeuristicCardPlayStrategy           = strategies.HeuristicCardPlayStrategy
-	MCTSCardPlayStrategy                = strategies.MCTSCardPlayStrategy
+	RandomBiddingStrategy                 = strategies.RandomBiddingStrategy
+	HeuristicBiddingStrategy              = strategies.HeuristicBiddingStrategy
+	WeightedHeuristicBiddingStrategy      = strategies.WeightedHeuristicBiddingStrategy
+	RandomGameChoiceStrategy              = strategies.RandomGameChoiceStrategy
+	HeuristicGameChoiceStrategy           = strategies.HeuristicGameChoiceStrategy
+	WeightedHeuristicGameChoiceStrategy   = strategies.WeightedHeuristicGameChoiceStrategy
+	RandomCardPlayStrategy                = strategies.RandomCardPlayStrategy
+	HeuristicCardPlayStrategy             = strategies.HeuristicCardPlayStrategy
+	MCTSCardPlayStrategy                  = strategies.MCTSCardPlayStrategy
+	PerfectInfoMinimaxStrategy            = strategies.PerfectInfoMinimaxStrategy
+	PerfectInfoMinimaxVsHeuristicStrategy = strategies.PerfectInfoMinimaxVsHeuristicStrategy
 )
 
 // Re-export constructor functions
 var (
-	NewMCTSCardPlayStrategyWithParams      = strategies.NewMCTSCardPlayStrategyWithParams
-	NewHeuristicCardPlayStrategy           = strategies.NewHeuristicCardPlayStrategy
-	NewWeightedHeuristicBiddingStrategy    = strategies.NewWeightedHeuristicBiddingStrategy
-	NewWeightedHeuristicGameChoiceStrategy = strategies.NewWeightedHeuristicGameChoiceStrategy
+	NewMCTSCardPlayStrategyWithParams                 = strategies.NewMCTSCardPlayStrategyWithParams
+	NewHeuristicCardPlayStrategy                      = strategies.NewHeuristicCardPlayStrategy
+	NewWeightedHeuristicBiddingStrategy               = strategies.NewWeightedHeuristicBiddingStrategy
+	NewWeightedHeuristicGameChoiceStrategy            = strategies.NewWeightedHeuristicGameChoiceStrategy
+	NewPerfectInfoMinimaxStrategyWithDepth            = strategies.NewPerfectInfoMinimaxStrategyWithDepth
+	NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth = strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth
 )
 
 // BiddingStrategy interface for bidding decisions
@@ -162,9 +166,11 @@ func (sa *SkatAgent) Clone() *SkatAgent {
 	// Game choice strategy is typically shared (heuristic)
 	clone.gameChoiceStrategy = sa.gameChoiceStrategy
 
-	// Clone card play strategy if neural (to avoid mutex contention on VM)
+	// Clone stateful card play strategies to avoid shared per-game memory.
 	if neuralCard, ok := sa.cardPlayStrategy.(*strategies.NeuralCardPlayStrategy); ok {
 		clone.cardPlayStrategy = neuralCard.Clone()
+	} else if heuristicCard, ok := sa.cardPlayStrategy.(*strategies.HeuristicCardPlayStrategy); ok {
+		clone.cardPlayStrategy = heuristicCard.Clone()
 	} else {
 		clone.cardPlayStrategy = sa.cardPlayStrategy // Share strategy if not cloneable
 	}
@@ -218,6 +224,20 @@ func NewRandomAgent(name string) *SkatAgent {
 		biddingStrategy:    &RandomBiddingStrategy{},
 		gameChoiceStrategy: &RandomGameChoiceStrategy{},
 		cardPlayStrategy:   &RandomCardPlayStrategy{},
+	}
+}
+
+// NewPerfectInfoMinimaxVsHeuristicAgent creates a perfect-info card-play agent
+// that searches its own choices and predicts heuristic play for other players.
+func NewPerfectInfoMinimaxVsHeuristicAgent(name string, depth int) *SkatAgent {
+	if depth == 0 {
+		depth = 30
+	}
+	return &SkatAgent{
+		name:               name,
+		biddingStrategy:    strategies.NewHeuristicBiddingStrategy(),
+		gameChoiceStrategy: &HeuristicGameChoiceStrategy{},
+		cardPlayStrategy:   strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth(depth),
 	}
 }
 
@@ -312,6 +332,12 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 			depth = 7 // Default depth
 		}
 		agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth)
+	case "minimax-heuristic", "perfect-info-heuristic":
+		depth := config.MinimaxDepth
+		if depth == 0 {
+			depth = 30 // Full card-play phase against predicted heuristic opponents
+		}
+		agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth(depth)
 	case "neural":
 		if config.NeuralWeightsPath == "" {
 			return nil, fmt.Errorf("neural card play requires weight path")

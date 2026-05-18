@@ -519,6 +519,14 @@ func (h *HeuristicCardPlayStrategy) GetName() string {
 	return "HeuristicCardPlay"
 }
 
+func (h *HeuristicCardPlayStrategy) Clone() *HeuristicCardPlayStrategy {
+	clone := NewHeuristicCardPlayStrategy()
+	for card, played := range h.cardsPlayed {
+		clone.cardsPlayed[card] = played
+	}
+	return clone
+}
+
 // OnTrickComplete tracks cards that have been played
 func (h *HeuristicCardPlayStrategy) OnTrickComplete(trick []game.Card) {
 	if h.cardsPlayed == nil {

@@ -280,8 +280,16 @@ func WithAgentCardPlay(gs *game.GameState) *game.GameState {
 		}
 		// Resolve trick if complete
 		if len(gs.Trick) == 3 {
+			trick := append([]game.Card{}, gs.Trick...)
 			if _, err := gs.ResolveTrick(); err != nil {
 				panic(fmt.Sprintf("ResolveTrick error: %v", err))
+			}
+			for i := range gs.Players {
+				if gs.Players[i].IsAgent {
+					if agent := GetAgentForPlayer(gs.Players[i]); agent != nil {
+						agent.OnTrickComplete(trick)
+					}
+				}
 			}
 		}
 	}

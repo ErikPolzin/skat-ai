@@ -17,22 +17,72 @@ import (
 
 // ImitationExample represents a single (state, action) pair for supervised learning
 type ImitationExample struct {
-	State      [114]float32 // DQN state encoding
-	ValidMask  [32]float32  // Valid moves at this state
-	Action     int          // Card index that expert chose
-	IsDeclarer bool         // Role (for separate networks)
+	State      [encoding.StateFeatureSize]float32 // DQN state encoding
+	ValidMask  [32]float32                        // Valid moves at this state
+	Action     int                                // Card index that expert chose
+	IsDeclarer bool                               // Role (for separate networks)
+	Policy     [32]float32                        // Soft target policy from expert scores
+}
+
+func isSearchTeacher(name string) bool {
+	return name == "minimax" || name == "minimax-heuristic"
+}
+
+func teacherDisplayName(name string) string {
+	switch name {
+	case "minimax":
+		return "Minimax"
+	case "minimax-heuristic":
+		return "MinimaxVsHeuristic"
+	default:
+		return name
+	}
+}
+
+func newSearchTeacherAgent(name, teacher string, depth int, biddingThreshold float64) *agent.SkatAgent {
+	var cardPlay agent.CardPlayStrategy
+	switch teacher {
+	case "minimax-heuristic":
+		cardPlay = strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth(depth)
+	default:
+		cardPlay = strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth)
+	}
+
+	return agent.NewAgentWithStrategies(
+		name,
+		strategies.NewHeuristicBiddingStrategyWithThreshold(biddingThreshold),
+		&agent.HeuristicGameChoiceStrategy{},
+		cardPlay,
+	)
 }
 
 func main() {
 	numExamples := flag.Int("examples", 100000, "Number of examples to collect (per role: declarer and defender)")
 	outputFile := flag.String("output", ".data/imitation_dataset.csv", "Output file for dataset")
-	searchDepth := flag.Int("depth", 7, "Minimax search depth for declarer (default: 7)")
+	searchDepth := flag.Int("depth", 7, "Minimax search depth for expert card-play labels (default: 7)")
+	teacher := flag.String("teacher", "minimax", "Declarer label teacher: minimax or minimax-heuristic")
+	defenderTeacher := flag.String("defender-teacher", "heuristic", "Defender label teacher: heuristic, minimax, or minimax-heuristic")
+	biddingThreshold := flag.Float64("bidding-threshold", 0.5, "Heuristic bidding threshold for contract generation; higher means stronger declarer hands")
 	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel workers")
 	flag.Parse()
 
+	if !isSearchTeacher(*teacher) {
+		fmt.Fprintf(os.Stderr, "Unknown teacher %q (use minimax or minimax-heuristic)\n", *teacher)
+		os.Exit(1)
+	}
+	if *defenderTeacher != "heuristic" && !isSearchTeacher(*defenderTeacher) {
+		fmt.Fprintf(os.Stderr, "Unknown defender teacher %q (use heuristic, minimax, or minimax-heuristic)\n", *defenderTeacher)
+		os.Exit(1)
+	}
+
 	fmt.Printf("Generating imitation learning dataset with %d examples per role...\n", *numExamples)
-	fmt.Printf("  Declarer strategy: Minimax (depth %d)\n", *searchDepth)
-	fmt.Printf("  Defender strategy: Heuristic\n")
+	fmt.Printf("  Declarer strategy: %s (depth %d)\n", teacherDisplayName(*teacher), *searchDepth)
+	fmt.Printf("  Defender strategy: %s", teacherDisplayName(*defenderTeacher))
+	if isSearchTeacher(*defenderTeacher) {
+		fmt.Printf(" (depth %d)", *searchDepth)
+	}
+	fmt.Printf("\n")
+	fmt.Printf("  Contract bidding: heuristic threshold %.2f\n", *biddingThreshold)
 	fmt.Printf("  Filtering: Excluding Zwangsspiel and overbid games\n")
 	fmt.Printf("Using %d parallel workers\n", *workers)
 
@@ -71,20 +121,19 @@ func main() {
 	worker := func() {
 		defer wg.Done()
 
-		// Create minimax agent for declarer examples
-		minimaxAgent := agent.NewAgentWithStrategies(
-			"MinimaxDeclarer",
-			strategies.NewWeightedHeuristicBiddingStrategy(),
-			strategies.NewWeightedHeuristicGameChoiceStrategy(),
-			strategies.NewPerfectInfoMinimaxStrategyWithDepth(*searchDepth),
-		)
+		// Create search agent for expert card-play labels.
+		searchAgent := newSearchTeacherAgent("SearchExpert", *teacher, *searchDepth, *biddingThreshold)
+		defenderSearchAgent := searchAgent
+		if isSearchTeacher(*defenderTeacher) && *defenderTeacher != *teacher {
+			defenderSearchAgent = newSearchTeacherAgent("DefenderSearchExpert", *defenderTeacher, *searchDepth, *biddingThreshold)
+		}
 
 		// Create heuristic agent for defender examples and opponent simulation
 		heuristicAgent := agent.NewAgentWithStrategies(
 			"HeuristicDefender",
-			&agent.HeuristicBiddingStrategy{},
+			strategies.NewHeuristicBiddingStrategyWithThreshold(*biddingThreshold),
 			&agent.HeuristicGameChoiceStrategy{},
-			&agent.HeuristicCardPlayStrategy{},
+			agent.NewHeuristicCardPlayStrategy(),
 		)
 
 		// Keep generating games until we signal stop
@@ -93,7 +142,7 @@ func main() {
 			case <-stopChan:
 				return
 			default:
-				examples := playGameAndCollectExamples(minimaxAgent, heuristicAgent)
+				examples := playGameAndCollectExamples(searchAgent, defenderSearchAgent, heuristicAgent, *defenderTeacher)
 				if len(examples) > 0 {
 					// Try to send, but stop if channel is closed
 					select {
@@ -203,14 +252,17 @@ func main() {
 	defer writer.Flush()
 
 	// Write header
-	header := make([]string, 0, 114+32+2)
-	for i := 0; i < 114; i++ {
+	header := make([]string, 0, encoding.StateFeatureSize+32+2+32)
+	for i := 0; i < encoding.StateFeatureSize; i++ {
 		header = append(header, fmt.Sprintf("s%d", i))
 	}
 	for i := 0; i < 32; i++ {
 		header = append(header, fmt.Sprintf("m%d", i))
 	}
 	header = append(header, "action", "is_declarer")
+	for i := 0; i < 32; i++ {
+		header = append(header, fmt.Sprintf("p%d", i))
+	}
 	if err := writer.Write(header); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write header: %v\n", err)
 		os.Exit(1)
@@ -218,9 +270,9 @@ func main() {
 
 	// Write examples
 	for _, ex := range dataset {
-		record := make([]string, 0, 114+32+2)
+		record := make([]string, 0, encoding.StateFeatureSize+32+2+32)
 
-		// State features (114)
+		// State features
 		for _, val := range ex.State {
 			record = append(record, strconv.FormatFloat(float64(val), 'f', 6, 32))
 		}
@@ -237,6 +289,9 @@ func main() {
 		} else {
 			record = append(record, "0")
 		}
+		for _, val := range ex.Policy {
+			record = append(record, strconv.FormatFloat(float64(val), 'f', 6, 32))
+		}
 
 		if err := writer.Write(record); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to write record: %v\n", err)
@@ -250,8 +305,8 @@ func main() {
 
 	fmt.Printf("\nDataset Statistics:\n")
 	fmt.Printf("  Total examples: %d\n", len(dataset))
-	fmt.Printf("  Declarer examples: %d (%.1f%%) - trained with Minimax\n", actualDeclarer, declarerPct)
-	fmt.Printf("  Defender examples: %d (%.1f%%) - trained with Heuristic\n", actualDefender, defenderPct)
+	fmt.Printf("  Declarer examples: %d (%.1f%%) - trained with %s\n", actualDeclarer, declarerPct, teacherDisplayName(*teacher))
+	fmt.Printf("  Defender examples: %d (%.1f%%) - trained with %s\n", actualDefender, defenderPct, teacherDisplayName(*defenderTeacher))
 	fmt.Printf("\n✓ Dataset generation complete!\n")
 }
 
@@ -270,8 +325,8 @@ func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, bool) {
 	return agent.WithAgentGameChoice(g)
 }
 
-// collectDeclarerExamples plays a game with minimax declarer vs heuristic defenders
-func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+// collectDeclarerExamples plays a game with search-teacher declarer vs heuristic defenders.
+func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
 	var examples []ImitationExample
 
 	if g.Declarer == nil {
@@ -279,8 +334,8 @@ func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 	}
 
 	declarer := *g.Declarer
-	// Minimax declarer vs heuristic defenders
-	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), minimaxAgent)
+	// Search-teacher declarer vs heuristic defenders
+	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), searchAgent)
 	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), heuristicAgent)
 	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), heuristicAgent)
 
@@ -299,6 +354,7 @@ func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 			// Get expert action
 			card := currentAgent.SelectMove(g, validMoves)
 			action := encoding.CardToIndex(card)
+			policy := oneHotPolicy(action)
 
 			// Store declarer example
 			examples = append(examples, ImitationExample{
@@ -306,6 +362,7 @@ func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 				ValidMask:  validMask,
 				Action:     action,
 				IsDeclarer: true,
+				Policy:     policy,
 			})
 
 			// Play card
@@ -322,17 +379,15 @@ func collectDeclarerExamples(g *game.GameState, minimaxAgent, heuristicAgent *ag
 
 		// Resolve trick if complete
 		if len(g.Trick) == 3 {
-			if _, err := g.ResolveTrick(); err != nil {
-				panic(fmt.Sprintf("ResolveTrick error: %v", err))
-			}
+			resolveTrickAndNotify(g)
 		}
 	}
 
 	return examples
 }
 
-// collectDefenderExamples plays a game with heuristic defenders vs heuristic declarer
-func collectDefenderExamples(g *game.GameState, heuristicAgent *agent.SkatAgent) []ImitationExample {
+// collectDefenderExamples plays a game with heuristic declarer vs the selected defender teacher.
+func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAgent *agent.SkatAgent, defenderTeacher string) []ImitationExample {
 	var examples []ImitationExample
 
 	if g.Declarer == nil {
@@ -340,10 +395,15 @@ func collectDefenderExamples(g *game.GameState, heuristicAgent *agent.SkatAgent)
 	}
 
 	declarer := *g.Declarer
-	// Heuristic declarer vs heuristic defenders
+	defenderAgent := heuristicAgent
+	if isSearchTeacher(defenderTeacher) {
+		defenderAgent = defenderSearchAgent
+	}
+
+	// Heuristic declarer vs selected defender teacher
 	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), heuristicAgent)
-	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), heuristicAgent)
-	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), heuristicAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), defenderAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), defenderAgent.CachedClone())
 
 	// Card play phase
 	for g.Phase == game.PhasePlaying {
@@ -356,9 +416,11 @@ func collectDefenderExamples(g *game.GameState, heuristicAgent *agent.SkatAgent)
 			state := enc.ToSlice()
 			validMask := enc.GetValidMask()
 
-			// Get heuristic defender action
-			card := heuristicAgent.SelectMove(g, validMoves)
+			// Get expert defender action
+			currentAgent := agent.GetAgentForPlayer(g.GetCurrentPlayer())
+			card := currentAgent.SelectMove(g, validMoves)
 			action := encoding.CardToIndex(card)
+			policy := oneHotPolicy(action)
 
 			// Store defender example
 			examples = append(examples, ImitationExample{
@@ -366,6 +428,7 @@ func collectDefenderExamples(g *game.GameState, heuristicAgent *agent.SkatAgent)
 				ValidMask:  validMask,
 				Action:     action,
 				IsDeclarer: false,
+				Policy:     policy,
 			})
 
 			// Play card
@@ -383,17 +446,37 @@ func collectDefenderExamples(g *game.GameState, heuristicAgent *agent.SkatAgent)
 
 		// Resolve trick if complete
 		if len(g.Trick) == 3 {
-			if _, err := g.ResolveTrick(); err != nil {
-				panic(fmt.Sprintf("ResolveTrick error: %v", err))
-			}
+			resolveTrickAndNotify(g)
 		}
 	}
 
 	return examples
 }
 
-// playGameAndCollectExamples plays games twice: once for declarer examples, once for defender examples
-func playGameAndCollectExamples(minimaxAgent *agent.SkatAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+func resolveTrickAndNotify(g *game.GameState) {
+	trick := append([]game.Card{}, g.Trick...)
+	if _, err := g.ResolveTrick(); err != nil {
+		panic(fmt.Sprintf("ResolveTrick error: %v", err))
+	}
+	for i := range g.Players {
+		if g.Players[i].IsAgent {
+			if agent := agent.GetAgentForPlayer(g.Players[i]); agent != nil {
+				agent.OnTrickComplete(trick)
+			}
+		}
+	}
+}
+
+func oneHotPolicy(action int) [32]float32 {
+	var policy [32]float32
+	if action >= 0 && action < len(policy) {
+		policy[action] = 1.0
+	}
+	return policy
+}
+
+// playGameAndCollectExamples plays games twice: once for declarer examples, once for defender examples.
+func playGameAndCollectExamples(searchAgent, defenderSearchAgent, heuristicAgent *agent.SkatAgent, defenderTeacher string) []ImitationExample {
 	var examples []ImitationExample
 
 	// Setup game and run bidding once
@@ -409,14 +492,14 @@ func playGameAndCollectExamples(minimaxAgent *agent.SkatAgent, heuristicAgent *a
 		return examples
 	}
 
-	// Collect declarer examples: minimax declarer vs heuristic defenders
+	// Collect declarer examples: search-teacher declarer vs heuristic defenders
 	gDeclarer := g.Clone()
-	declarerExamples := collectDeclarerExamples(gDeclarer, minimaxAgent, heuristicAgent)
+	declarerExamples := collectDeclarerExamples(gDeclarer, searchAgent, heuristicAgent)
 	examples = append(examples, declarerExamples...)
 
-	// Collect defender examples: heuristic declarer vs heuristic defenders
+	// Collect defender examples: heuristic declarer vs selected defender teacher
 	gDefender := g.Clone()
-	defenderExamples := collectDefenderExamples(gDefender, heuristicAgent)
+	defenderExamples := collectDefenderExamples(gDefender, defenderSearchAgent, heuristicAgent, defenderTeacher)
 	examples = append(examples, defenderExamples...)
 
 	return examples

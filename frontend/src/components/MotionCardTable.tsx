@@ -77,6 +77,42 @@ function getGameModeSVG(gameMode: string, trumpSuit?: string): string {
   return `/res/${getGameModeDisplay(gameMode, trumpSuit)}.svg`;
 }
 
+function compareCardsForHand(
+  a: CardType,
+  b: CardType,
+  gameMode: string,
+  trumpSuit?: string,
+) {
+  if (gameMode == "null") {
+    if (a.suit !== b.suit) {
+      return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
+    }
+    return rankOrderNull.indexOf(a.rank) - rankOrderNull.indexOf(b.rank);
+  }
+
+  const aIsJack = a.rank === "J";
+  const bIsJack = b.rank === "J";
+  const aIsTrump = aIsJack || (trumpSuit && a.suit === trumpSuit);
+  const bIsTrump = bIsJack || (trumpSuit && b.suit === trumpSuit);
+
+  if (aIsTrump && !bIsTrump) return 1;
+  if (!aIsTrump && bIsTrump) return -1;
+
+  if (aIsTrump && bIsTrump) {
+    if (aIsJack && !bIsJack) return 1;
+    if (!aIsJack && bIsJack) return -1;
+    if (aIsJack && bIsJack) {
+      return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
+    }
+    return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
+  }
+
+  if (a.suit !== b.suit) {
+    return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
+  }
+  return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
+}
+
 export function MotionCardTable() {
   const game = useGameContext();
   const theme = useTheme();
@@ -413,48 +449,9 @@ export function MotionCardTable() {
 
   const sortedPlayerHand = useMemo(
     () =>
-      game.playerHand.toSorted((a, b) => {
-        if (game.gameMode == "null") {
-          if (a.suit !== b.suit) {
-            return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
-          }
-          return rankOrderNull.indexOf(a.rank) - rankOrderNull.indexOf(b.rank);
-        }
-        // In skat, jacks are always trumps
-        const aIsJack = a.rank === "J";
-        const bIsJack = b.rank === "J";
-
-        // Check if cards are trumps (considering game mode)
-        const aIsTrump =
-          aIsJack || (game.trumpSuit && a.suit === game.trumpSuit);
-        const bIsTrump =
-          bIsJack || (game.trumpSuit && b.suit === game.trumpSuit);
-
-        // Trumps go to the right (higher index)
-        if (aIsTrump && !bIsTrump) return 1;
-        if (!aIsTrump && bIsTrump) return -1;
-
-        // Both trumps or both not trumps
-        if (aIsTrump && bIsTrump) {
-          // Jacks are higher than suit trumps
-          if (aIsJack && !bIsJack) return 1;
-          if (!aIsJack && bIsJack) return -1;
-
-          // Both jacks - sort by suit
-          if (aIsJack && bIsJack) {
-            return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
-          }
-
-          // Both suit trumps - sort by rank
-          return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
-        }
-
-        // Both non-trumps - sort by suit then rank
-        if (a.suit !== b.suit) {
-          return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
-        }
-        return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
-      }),
+      game.playerHand.toSorted((a, b) =>
+        compareCardsForHand(a, b, game.gameMode, game.trumpSuit),
+      ),
     [game.gameMode, game.playerHand, game.trumpSuit],
   );
 
@@ -468,16 +465,17 @@ export function MotionCardTable() {
             : playedByIndex === game.leftPlayer?.position
               ? (game.leftPlayer.card_count ?? 0)
               : (game.topPlayer?.card_count ?? 0);
+
         return playedByIndex === game.playerPosition
           ? `player-card-${card.rank}-${card.suit}`
           : `card-${playedByIndex}-${cardIndex}`;
       }),
     [
+      game.leftPlayer,
       game.playerPosition,
+      game.topPlayer?.card_count,
       game.trick,
       game.trickStarter,
-      game.leftPlayer,
-      game.topPlayer?.card_count,
     ],
   );
 
@@ -496,6 +494,46 @@ export function MotionCardTable() {
   const makeExtraCenterSpace = useMemo(() => {
     return game.isDeclarer && (game.isDeclarerChoice || game.isSkatExchange);
   }, [game.isDeclarer, game.isDeclarerChoice, game.isSkatExchange]);
+
+  const getTrickInitialPosition = (card: CardType, index: number) => {
+    const playedByIndex = (game.trickStarter + index) % 3;
+    const playerOffset = makeExtraCenterSpace ? 50 : 0;
+    const opponentOffset = makeExtraCenterSpace ? -50 : 0;
+
+    if (playedByIndex === game.playerPosition) {
+      const handWithCard = sortedPlayerHand.some(
+        (candidate) =>
+          candidate.rank === card.rank && candidate.suit === card.suit,
+      )
+        ? sortedPlayerHand
+        : [...sortedPlayerHand, card].toSorted((a, b) =>
+            compareCardsForHand(a, b, game.gameMode, game.trumpSuit),
+          );
+      const cardIndex = handWithCard.findIndex(
+        (candidate) =>
+          candidate.rank === card.rank && candidate.suit === card.suit,
+      );
+      const position = getPlayerCardPosition(
+        Math.max(cardIndex, 0),
+        handWithCard.length,
+      );
+      return { ...position, y: position.y + playerOffset };
+    }
+
+    if (playedByIndex === game.leftPlayer?.position) {
+      const cardIndex = game.leftPlayer.card_count ?? 0;
+      const position = getOpponentCardPosition(
+        "left",
+        cardIndex,
+        cardIndex + 1,
+      );
+      return { ...position, x: position.x + opponentOffset };
+    }
+
+    const cardIndex = game.topPlayer?.card_count ?? 0;
+    const position = getOpponentCardPosition("top", cardIndex, cardIndex + 1);
+    return { ...position, y: position.y + opponentOffset };
+  };
 
   const centerOverrideUI = useMemo(() => {
     return !game.controls.isConnected ? (
@@ -1033,67 +1071,77 @@ export function MotionCardTable() {
               )}
 
               {/* Trick Cards */}
-              {!game.gameOver &&
-                game.trick.map((card, index) => (
-                  <Card
-                    key={trickKeys[index]}
-                    index={index}
-                    rank={card.rank}
-                    suit={card.suit}
-                    className="motion-card"
-                    skipInitialAnimation={true}
-                    animate={{
-                      ...getTrickPosition(index, game.trick.length),
-                    }}
-                    // Pass custom exit prop that will be used when card is removed
-                    custom={{
-                      trickWinner: game.trickWinner,
-                      declarerPosition: game.declarerPosition,
-                      playerIsDeclarer,
-                    }}
-                    exit={(() => {
-                      // Only completed tricks should collect into a score pile.
-                      // Partial trick cards can briefly disappear during optimistic/server
-                      // reconciliation and should not look like they were scored.
-                      if (game.trick.length < 3) {
-                        return { opacity: 0, transition: { duration: 0.12 } };
-                      }
-
-                      // Use the trick winner stored when the WebSocket message arrived
-                      // This is the most reliable way to get the correct winner for exit animations
-                      const trickWinner = game.trickWinnerRef.current.winner;
-                      const declarerPosition =
-                        game.trickWinnerRef.current.declarer;
-
-                      if (trickWinner == null || declarerPosition == null) {
-                        return { opacity: 0, transition: { duration: 0.12 } };
-                      }
-
-                      // Check if the trick winner is the declarer
-                      const declarerWonTrick = trickWinner === declarerPosition;
-
-                      if (declarerWonTrick) {
-                        // Declarer won - cards go to declarer's pile
-                        if (playerIsDeclarer) {
-                          // Player is declarer - go to player pile (bottom)
-                          return { ...getPlayerPilePosition() };
-                        } else {
-                          // Opponent is declarer - go to opponent pile (top)
-                          return { ...getOpponentPilePosition() };
+              <AnimatePresence>
+                {!game.gameOver &&
+                  game.trick.map((card, index) => (
+                    <Card
+                      key={trickKeys[index]}
+                      index={index}
+                      rank={card.rank}
+                      suit={card.suit}
+                      className="motion-card"
+                      skipInitialAnimation={true}
+                      initial={getTrickInitialPosition(card, index)}
+                      animate={{
+                        ...getTrickPosition(index, game.trick.length),
+                      }}
+                      // Pass custom exit prop that will be used when card is removed
+                      custom={{
+                        trickWinner: game.trickWinner,
+                        declarerPosition: game.declarerPosition,
+                        playerIsDeclarer,
+                      }}
+                      exit={(() => {
+                        // Only completed tricks should collect into a score pile.
+                        // Partial trick cards can briefly disappear during optimistic/server
+                        // reconciliation and should not look like they were scored.
+                        if (game.trick.length < 3) {
+                          return {
+                            opacity: 0,
+                            transition: { duration: 0.12 },
+                          };
                         }
-                      } else {
-                        // Defenders won - cards go to defenders' pile
-                        if (playerIsDeclarer) {
-                          // Player is declarer - defenders' pile is opponent pile (top)
-                          return { ...getOpponentPilePosition() };
-                        } else {
-                          // Player is defender - defenders' pile is player pile (bottom)
-                          return { ...getPlayerPilePosition() };
+
+                        // Use the trick winner stored when the WebSocket message arrived
+                        // This is the most reliable way to get the correct winner for exit animations
+                        const trickWinner = game.trickWinnerRef.current.winner;
+                        const declarerPosition =
+                          game.trickWinnerRef.current.declarer;
+
+                        if (trickWinner == null || declarerPosition == null) {
+                          return {
+                            opacity: 0,
+                            transition: { duration: 0.12 },
+                          };
                         }
-                      }
-                    })()}
-                  />
-                ))}
+
+                        // Check if the trick winner is the declarer
+                        const declarerWonTrick =
+                          trickWinner === declarerPosition;
+
+                        if (declarerWonTrick) {
+                          // Declarer won - cards go to declarer's pile
+                          if (playerIsDeclarer) {
+                            // Player is declarer - go to player pile (bottom)
+                            return { ...getPlayerPilePosition() };
+                          } else {
+                            // Opponent is declarer - go to opponent pile (top)
+                            return { ...getOpponentPilePosition() };
+                          }
+                        } else {
+                          // Defenders won - cards go to defenders' pile
+                          if (playerIsDeclarer) {
+                            // Player is declarer - defenders' pile is opponent pile (top)
+                            return { ...getOpponentPilePosition() };
+                          } else {
+                            // Player is defender - defenders' pile is player pile (bottom)
+                            return { ...getPlayerPilePosition() };
+                          }
+                        }
+                      })()}
+                    />
+                  ))}
+              </AnimatePresence>
             </>
           )}
         </AnimatePresence>

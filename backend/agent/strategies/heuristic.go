@@ -11,11 +11,13 @@ type HeuristicBiddingStrategy struct {
 }
 
 func NewHeuristicBiddingStrategy() *HeuristicBiddingStrategy {
-	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluator()}
+	gameChoiceStrat := NewHeuristicGameChoiceStrategy()
+	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluator(gameChoiceStrat)}
 }
 
 func NewHeuristicBiddingStrategyWithConfig(config ContractEvaluatorConfig) *HeuristicBiddingStrategy {
-	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluatorWithConfig(config)}
+	gameChoiceStrat := NewHeuristicGameChoiceStrategy()
+	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluatorWithConfig(gameChoiceStrat, config)}
 }
 
 func (h *HeuristicBiddingStrategy) GetName() string {
@@ -37,15 +39,15 @@ type HeuristicGameChoiceStrategy struct {
 }
 
 func NewHeuristicGameChoiceStrategy() *HeuristicGameChoiceStrategy {
-	return &HeuristicGameChoiceStrategy{
-		evaluator: NewContractEvaluator(),
-	}
+	strat := &HeuristicGameChoiceStrategy{}
+	strat.evaluator = NewContractEvaluator(strat)
+	return strat
 }
 
 func NewHeuristicGameChoiceStrategyWithConfig(config ContractEvaluatorConfig) *HeuristicGameChoiceStrategy {
-	return &HeuristicGameChoiceStrategy{
-		evaluator: NewContractEvaluatorWithConfig(config),
-	}
+	strat := &HeuristicGameChoiceStrategy{}
+	strat.evaluator = NewContractEvaluatorWithConfig(strat, config)
+	return strat
 }
 
 func (h *HeuristicGameChoiceStrategy) GetName() string {

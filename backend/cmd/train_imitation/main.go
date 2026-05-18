@@ -118,7 +118,7 @@ func main() {
 			testAgent := agent.NewAgentWithStrategies(
 				"Imitation",
 				strategies.NewHeuristicBiddingStrategyWithConfig(cfg),
-				&agent.HeuristicGameChoiceStrategy{},
+				strategies.NewHeuristicGameChoiceStrategyWithConfig(cfg),
 				testStrategy,
 			)
 

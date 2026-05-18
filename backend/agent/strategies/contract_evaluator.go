@@ -44,11 +44,11 @@ type ContractEvaluator struct {
 	heuristic *HeuristicGameChoiceStrategy
 }
 
-func NewContractEvaluator() *ContractEvaluator {
-	return NewContractEvaluatorWithConfig(DefaultContractEvaluatorConfig())
+func NewContractEvaluator(heuristic *HeuristicGameChoiceStrategy) *ContractEvaluator {
+	return NewContractEvaluatorWithConfig(heuristic, DefaultContractEvaluatorConfig())
 }
 
-func NewContractEvaluatorWithConfig(config ContractEvaluatorConfig) *ContractEvaluator {
+func NewContractEvaluatorWithConfig(heuristic *HeuristicGameChoiceStrategy, config ContractEvaluatorConfig) *ContractEvaluator {
 	if config.MinWinProbability == 0 {
 		config.MinWinProbability = DefaultContractEvaluatorConfig().MinWinProbability
 	}
@@ -57,7 +57,7 @@ func NewContractEvaluatorWithConfig(config ContractEvaluatorConfig) *ContractEva
 	}
 	return &ContractEvaluator{
 		config:    config,
-		heuristic: &HeuristicGameChoiceStrategy{},
+		heuristic: heuristic,
 	}
 }
 

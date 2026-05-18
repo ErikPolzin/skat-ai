@@ -6,7 +6,7 @@ import (
 )
 
 func TestContractEvaluatorBestUsesBidAndSharedScores(t *testing.T) {
-	evaluator := NewContractEvaluator()
+	choice := NewHeuristicGameChoiceStrategy()
 	hand := []game.Card{
 		{Suit: game.Clubs, Rank: game.Jack},
 		{Suit: game.Spades, Rank: game.Jack},
@@ -20,7 +20,7 @@ func TestContractEvaluatorBestUsesBidAndSharedScores(t *testing.T) {
 		{Suit: game.Diamonds, Rank: game.Seven},
 	}
 
-	best, ok := evaluator.Best(hand, 24)
+	best, ok := choice.evaluator.Best(hand, 24)
 	if !ok {
 		t.Fatalf("expected a playable contract")
 	}
@@ -33,7 +33,7 @@ func TestContractEvaluatorBestUsesBidAndSharedScores(t *testing.T) {
 }
 
 func TestContractEvaluatorRejectsUnplayableBid(t *testing.T) {
-	evaluator := NewContractEvaluator()
+	choice := NewHeuristicGameChoiceStrategy()
 	hand := []game.Card{
 		{Suit: game.Clubs, Rank: game.Seven},
 		{Suit: game.Clubs, Rank: game.Eight},
@@ -47,7 +47,7 @@ func TestContractEvaluatorRejectsUnplayableBid(t *testing.T) {
 		{Suit: game.Hearts, Rank: game.Ten},
 	}
 
-	best, ok := evaluator.Best(hand, 63)
+	best, ok := choice.evaluator.Best(hand, 63)
 	if ok {
 		t.Fatalf("expected no acceptable contract, got %+v", best)
 	}
@@ -67,13 +67,11 @@ func TestContractStrategiesShareEvaluatorDecision(t *testing.T) {
 		{Suit: game.Diamonds, Rank: game.Seven},
 	}
 
-	evaluator := NewContractEvaluator()
-	expected, ok := evaluator.Best(hand, 24)
+	choice := NewHeuristicGameChoiceStrategy()
+	expected, ok := choice.evaluator.Best(hand, 24)
 	if !ok {
 		t.Fatalf("expected evaluator to find a contract")
 	}
-
-	choice := NewHeuristicGameChoiceStrategy()
 	mode, suit := choice.ChooseGame(hand, 24)
 	if mode != expected.Mode || suit != expected.TrumpSuit {
 		t.Fatalf("game choice did not use evaluator result: got %s/%s, want %s/%s", mode, suit, expected.Mode, expected.TrumpSuit)

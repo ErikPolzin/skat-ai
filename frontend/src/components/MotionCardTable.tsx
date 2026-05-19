@@ -129,6 +129,9 @@ export function MotionCardTable() {
   // Track whether cards should animate from deck (true) or spread from left (false)
   const [shouldAnimateFromDeck, setShouldAnimateFromDeck] = useState(false);
   const hasInitializedRef = useRef(false);
+  const [selectedPlayedCard, setSelectedPlayedCard] = useState<CardType | null>(
+    null,
+  );
 
   // Track window size for responsive positioning
   const [windowSize, setWindowSize] = useState({
@@ -287,6 +290,7 @@ export function MotionCardTable() {
         return;
       }
 
+      setSelectedPlayedCard(card);
       setSelectedCards([]);
       game.controls.playCard(card);
     }
@@ -534,7 +538,16 @@ export function MotionCardTable() {
         Math.max(cardIndex, 0),
         handWithCard.length,
       );
-      return { ...position, y: position.y + playerOffset };
+      const selectedLift = selectedPlayedCard
+        ? isSameCard(selectedPlayedCard, card)
+          ? -20
+          : 0
+        : 0;
+      return {
+        ...position,
+        y: position.y + playerOffset + selectedLift,
+        rotateY: 180,
+      };
     }
 
     if (playedByIndex === game.leftPlayer?.position) {

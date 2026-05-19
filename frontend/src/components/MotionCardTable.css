@@ -50,6 +50,7 @@
   position: absolute;
   width: var(--card-width) !important;
   height: var(--card-height) !important;
+  border-radius: 8px;
   transform-origin: center center;
   transform: translate(-50%, -50%);
   transform-style: preserve-3d;
@@ -485,7 +486,7 @@
   right: -5px;
   bottom: -5px;
   background: linear-gradient(45deg, transparent, rgba(255, 215, 0, 0.3), transparent);
-  border-radius: 8px;
+  border-radius: 13px;
   z-index: -1;
   animation: pulse 1.5s ease-in-out infinite;
 }

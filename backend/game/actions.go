@@ -339,7 +339,7 @@ func (gs *GameState) calculatePotentialGameValue() int {
 	}
 
 	if gs.Mode == ModeNull {
-		return 23
+		return gs.nullGameValue()
 	}
 
 	baseValue := 0

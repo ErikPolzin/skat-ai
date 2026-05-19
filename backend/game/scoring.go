@@ -36,15 +36,16 @@ func (gs *GameState) Result() GameResult {
 		}
 	case ModeNull:
 		// Null games have fixed values
-		result.BaseValue = 23
+		result.BaseValue = gs.nullGameValue()
 		result.Matadors = 0
 		result.Multiplier = 1
 		result.DeclarerWon = gs.DeclarerScore == 0
 		result.IsSchneider = false
 		result.IsSchwarz = false
-		result.Value = 23
+		result.PlayedHand = gs.PlayedHand
+		result.Value = result.BaseValue
 		if !result.DeclarerWon {
-			result.Value = -46 // Null lost is doubled
+			result.Value = -2 * result.BaseValue // Null lost is doubled
 		}
 		return result
 	}
@@ -108,6 +109,13 @@ func (gs *GameState) Result() GameResult {
 	return result
 }
 
+func (gs *GameState) nullGameValue() int {
+	if gs.PlayedHand {
+		return 35
+	}
+	return 23
+}
+
 func (gs *GameState) PlayerResults() *[3]PlayerResultState {
 	if gs.Phase != PhaseComplete || gs.Declarer == nil {
 		return nil
@@ -158,13 +166,30 @@ func (gs *GameState) countMatadorsWithSign() int {
 	copy(allCards, declarer.Hand)
 	allCards = append(allCards, gs.Skat[0], gs.Skat[1])
 
-	// Jack order for matadors: Club, Spade, Heart, Diamond (high to low)
-	jackOrder := []Suit{Clubs, Spades, Hearts, Diamonds}
+	// Matador order starts with the four jacks. In suit games it continues
+	// through the trump suit cards in descending trump order.
+	matadorOrder := []Card{
+		{Suit: Clubs, Rank: Jack},
+		{Suit: Spades, Rank: Jack},
+		{Suit: Hearts, Rank: Jack},
+		{Suit: Diamonds, Rank: Jack},
+	}
+	if gs.Mode == ModeSuit {
+		matadorOrder = append(matadorOrder,
+			Card{Suit: gs.TrumpSuit, Rank: Ace},
+			Card{Suit: gs.TrumpSuit, Rank: Ten},
+			Card{Suit: gs.TrumpSuit, Rank: King},
+			Card{Suit: gs.TrumpSuit, Rank: Queen},
+			Card{Suit: gs.TrumpSuit, Rank: Nine},
+			Card{Suit: gs.TrumpSuit, Rank: Eight},
+			Card{Suit: gs.TrumpSuit, Rank: Seven},
+		)
+	}
 
 	// Check if declarer has Club Jack
 	hasClubJack := false
 	for _, card := range allCards {
-		if card.Rank == Jack && card.Suit == Clubs {
+		if card == matadorOrder[0] {
 			hasClubJack = true
 			break
 		}
@@ -172,36 +197,36 @@ func (gs *GameState) countMatadorsWithSign() int {
 
 	matadors := 0
 	if hasClubJack {
-		// "With" matadors - count consecutive jacks from top
-		for _, suit := range jackOrder {
-			hasJack := false
+		// "With" matadors - count consecutive top trumps from the Club Jack.
+		for _, matador := range matadorOrder {
+			hasMatador := false
 			for _, card := range allCards {
-				if card.Rank == Jack && card.Suit == suit {
-					hasJack = true
+				if card == matador {
+					hasMatador = true
 					break
 				}
 			}
-			if hasJack {
+			if hasMatador {
 				matadors++
 			} else {
-				break // Stop at first missing jack
+				break // Stop at first missing top trump
 			}
 		}
 		return matadors // Positive = with
 	} else {
-		// "Without" matadors - count consecutive jacks from top that are missing
-		for _, suit := range jackOrder {
-			hasJack := false
+		// "Without" matadors - count consecutive top trumps that are missing.
+		for _, matador := range matadorOrder {
+			hasMatador := false
 			for _, card := range allCards {
-				if card.Rank == Jack && card.Suit == suit {
-					hasJack = true
+				if card == matador {
+					hasMatador = true
 					break
 				}
 			}
-			if !hasJack {
+			if !hasMatador {
 				matadors++
 			} else {
-				break // Stop at first jack found
+				break // Stop at first top trump found
 			}
 		}
 		return -matadors // Negative = without

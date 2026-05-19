@@ -1,82 +1,13 @@
 import { useState, useMemo } from "react";
 import { CircularProgress } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
-import { type Card } from "../types";
+import {
+  SUITS,
+  calculatePotentialGameValue,
+  canAnnounceSchneider,
+  canAnnounceSchwarz,
+} from "../utils/skatRules";
 import "./GameModeSelector.css";
-
-// Calculate matadors from hand (including skat cards)
-function countMatadors(hand: Card[], skatCards: Card[]): number {
-  const jackOrder = ["♣", "♠", "♥", "♦"];
-
-  // Combine hand and skat cards for matador calculation
-  // In Skat, matadors are based on all 12 cards the declarer had access to
-  const allCards = [...hand, ...skatCards];
-
-  // Check if player has Club Jack
-  const hasClubJack = allCards.some((c) => c.rank === "J" && c.suit === "♣");
-
-  let matadors = 0;
-  if (hasClubJack) {
-    // "With" matadors - count consecutive jacks from top
-    for (const suit of jackOrder) {
-      if (allCards.some((c) => c.rank === "J" && c.suit === suit)) {
-        matadors++;
-      } else {
-        break;
-      }
-    }
-  } else {
-    // "Without" matadors - count consecutive jacks from top that are missing
-    for (const suit of jackOrder) {
-      if (!allCards.some((c) => c.rank === "J" && c.suit === suit)) {
-        matadors++;
-      } else {
-        break;
-      }
-    }
-  }
-
-  return matadors;
-}
-
-const suitMap: Record<string, number> = {
-  "♦": 9,
-  "♥": 10,
-  "♠": 11,
-  "♣": 12,
-};
-
-// Calculate potential game value
-function calculateGameValue(
-  mode: string,
-  trumpSuit: string,
-  hand: Card[],
-  skatCards: Card[],
-  playedHand: boolean,
-  schneiderAnnounced: boolean,
-  schwarzAnnounced: boolean,
-): number {
-  let baseValue = 0;
-
-  switch (mode) {
-    case "grand":
-      baseValue = 24;
-      break;
-    case "suit":
-      baseValue = suitMap[trumpSuit] || 9;
-      break;
-    case "null":
-      return 23;
-  }
-
-  const matadorCount = countMatadors(hand, skatCards);
-  let multiplier = 1 + matadorCount; // 1 for "game" + matadors
-  if (playedHand) multiplier += 1;
-  if (schneiderAnnounced) multiplier += 1;
-  if (schwarzAnnounced) multiplier += 1;
-
-  return baseValue * multiplier;
-}
 
 export function GameModeSelector() {
   const game = useGameContext();
@@ -85,28 +16,42 @@ export function GameModeSelector() {
   const [announceSchneider, setAnnounceSchneider] = useState<boolean>(false);
   const [announceSchwarz, setAnnounceSchwarz] = useState<boolean>(false);
 
-  // Check if everyone passed (minimum bid of 18 was assigned)
+  const schneiderCanBeAnnounced = canAnnounceSchneider(
+    selectedMode,
+    game.playedHand,
+  );
+  const schwarzCanBeAnnounced = canAnnounceSchwarz(
+    selectedMode,
+    game.playedHand,
+    announceSchneider,
+  );
+  const effectiveAnnounceSchneider =
+    schneiderCanBeAnnounced && announceSchneider;
+  const effectiveAnnounceSchwarz =
+    schwarzCanBeAnnounced && announceSchwarz;
+
+  // Check if everyone passed and forehand was forced to play.
   const everyonePassed = game.bidValue === 0;
 
   // Calculate game value for current selection
   const gameValue = useMemo(() => {
-    return calculateGameValue(
-      selectedMode,
-      selectedTrump,
-      game.hand,
-      game.skatCards,
-      game.playedHand,
-      announceSchneider,
-      announceSchwarz,
-    );
+    return calculatePotentialGameValue({
+      mode: selectedMode,
+      trumpSuit: selectedTrump,
+      hand: game.hand,
+      skatCards: game.skatCards,
+      playedHand: game.playedHand,
+      announcedSchneider: effectiveAnnounceSchneider,
+      announcedSchwarz: effectiveAnnounceSchwarz,
+    });
   }, [
     selectedMode,
     selectedTrump,
     game.hand,
     game.skatCards,
     game.playedHand,
-    announceSchneider,
-    announceSchwarz,
+    effectiveAnnounceSchneider,
+    effectiveAnnounceSchwarz,
   ]);
 
   const isDisabled = !game.controls.isConnected || game.controls.isLoading;
@@ -117,25 +62,32 @@ export function GameModeSelector() {
       game.controls.declareGame(
         selectedMode,
         selectedMode === "suit" ? selectedTrump : "",
-        announceSchneider,
-        announceSchwarz,
+        effectiveAnnounceSchneider,
+        effectiveAnnounceSchwarz,
       );
+    }
+  };
+
+  const handleModeSelect = (mode: string) => {
+    setSelectedMode(mode);
+    if (!canAnnounceSchneider(mode, game.playedHand)) {
+      setAnnounceSchneider(false);
+      setAnnounceSchwarz(false);
     }
   };
 
   return (
     <div className="game-mode-selector">
       {everyonePassed && (
-        <div className="everyone-passed-notice">
-          All players passed. As dealer, you must declare with minimum bid of
-          18.
-        </div>
+        <div className="everyone-passed-notice">All players passed.</div>
       )}
 
       <div className="game-value-info">
         <span>Game Value: {gameValue}</span>
         {isOverbidDeclaration && (
-          <span className="invalid">Below bid ({game.bidValue}) - overbid loss</span>
+          <span className="invalid">
+            Below bid ({game.bidValue}) - overbid loss
+          </span>
         )}
       </div>
 
@@ -144,7 +96,7 @@ export function GameModeSelector() {
       >
         <h4>Select Trump:</h4>
         <div className="trump-options">
-          {["♣", "♠", "♥", "♦"].map((suit) => (
+          {SUITS.map((suit) => (
             <button
               key={suit}
               className={`trump-option ${suit === "♥" || suit === "♦" ? "red" : "black"} ${
@@ -164,7 +116,7 @@ export function GameModeSelector() {
       <div className="mode-options">
         <button
           className={`mode-option ${selectedMode === "grand" ? "selected" : ""}`}
-          onClick={() => setSelectedMode("grand")}
+          onClick={() => handleModeSelect("grand")}
         >
           <span className="mode-name">Grand</span>
           <span className="mode-desc">Jacks only</span>
@@ -172,7 +124,7 @@ export function GameModeSelector() {
 
         <button
           className={`mode-option ${selectedMode === "suit" ? "selected" : ""}`}
-          onClick={() => setSelectedMode("suit")}
+          onClick={() => handleModeSelect("suit")}
         >
           <span className="mode-name">Suit</span>
           <span className="mode-desc">Choose trump</span>
@@ -180,14 +132,14 @@ export function GameModeSelector() {
 
         <button
           className={`mode-option ${selectedMode === "null" ? "selected" : ""}`}
-          onClick={() => setSelectedMode("null")}
+          onClick={() => handleModeSelect("null")}
         >
           <span className="mode-name">Null</span>
           <span className="mode-desc">No tricks</span>
         </button>
       </div>
 
-      {game.playedHand && selectedMode !== "null" && (
+      {schneiderCanBeAnnounced && (
         <div className="announcements">
           <label className="announcement-option">
             <input
@@ -203,13 +155,13 @@ export function GameModeSelector() {
             <span>Announce Schneider (+1 multiplier)</span>
           </label>
           <label
-            className={`announcement-option ${!announceSchneider ? "disabled" : ""}`}
+            className={`announcement-option ${!schwarzCanBeAnnounced ? "disabled" : ""}`}
           >
             <input
               type="checkbox"
               checked={announceSchwarz}
               onChange={(e) => setAnnounceSchwarz(e.target.checked)}
-              disabled={!announceSchneider}
+              disabled={!schwarzCanBeAnnounced}
             />
             <span>Announce Schwarz (+1 multiplier)</span>
           </label>
@@ -235,9 +187,9 @@ export function GameModeSelector() {
               : selectedMode === "null"
                 ? "Null"
                 : `${selectedTrump} Suit`}
-            {announceSchwarz
+            {effectiveAnnounceSchwarz
               ? " (Schwarz)"
-              : announceSchneider
+              : effectiveAnnounceSchneider
                 ? " (Schneider)"
                 : ""}
             {isOverbidDeclaration ? " and lose" : ""}

@@ -26,96 +26,17 @@ import { GameLobbyWaiting } from "./GameLobbyWaiting";
 import { BiddingControls } from "./BiddingControls";
 import { SkatExchange } from "./SkatExchange";
 import { GameOverScreen } from "./GameOverScreen";
-import { canPlayCard } from "../utils/skatRules";
+import {
+  canPlayCard,
+  compareCardsForHand,
+  getGameModeDisplay,
+  getGameModeSVG,
+  isSameCard,
+} from "../utils/skatRules";
 import { CircularTimer } from "./CircularTimer";
 import { useDeadlineTimer } from "../hooks/useDeadlineTimer";
 import ThemedLoader from "./ThemedLoader";
 import { useNavigate } from "react-router-dom";
-
-const rankOrder = ["7", "8", "9", "Q", "K", "10", "A", "J"];
-const rankOrderNull = ["7", "8", "9", "10", "J", "Q", "K", "A"];
-const suitOrder = ["♦", "♥", "♠", "♣"];
-
-// Helper function to convert suit emoji to word
-function getSuitName(suitEmoji?: string): string {
-  if (!suitEmoji) return "";
-
-  switch (suitEmoji) {
-    case "♠":
-      return "Spades";
-    case "♥":
-      return "Hearts";
-    case "♦":
-      return "Diamonds";
-    case "♣":
-      return "Clubs";
-    default:
-      return suitEmoji;
-  }
-}
-
-// Helper function to format game mode display
-function getGameModeDisplay(gameMode: string, trumpSuit?: string): string {
-  switch (gameMode.toLowerCase()) {
-    case "null":
-      return "Null";
-    case "grand":
-      return "Grand";
-    case "suit":
-      if (trumpSuit) {
-        // Convert emoji to suit name
-        const suitName = getSuitName(trumpSuit);
-        return suitName;
-      }
-      return "Suit";
-    default:
-      return gameMode;
-  }
-}
-
-function getGameModeSVG(gameMode: string, trumpSuit?: string): string {
-  return `/res/${getGameModeDisplay(gameMode, trumpSuit)}.svg`;
-}
-
-function compareCardsForHand(
-  a: CardType,
-  b: CardType,
-  gameMode: string,
-  trumpSuit?: string,
-) {
-  if (gameMode == "null") {
-    if (a.suit !== b.suit) {
-      return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
-    }
-    return rankOrderNull.indexOf(a.rank) - rankOrderNull.indexOf(b.rank);
-  }
-
-  const aIsJack = a.rank === "J";
-  const bIsJack = b.rank === "J";
-  const aIsTrump = aIsJack || (trumpSuit && a.suit === trumpSuit);
-  const bIsTrump = bIsJack || (trumpSuit && b.suit === trumpSuit);
-
-  if (aIsTrump && !bIsTrump) return 1;
-  if (!aIsTrump && bIsTrump) return -1;
-
-  if (aIsTrump && bIsTrump) {
-    if (aIsJack && !bIsJack) return 1;
-    if (!aIsJack && bIsJack) return -1;
-    if (aIsJack && bIsJack) {
-      return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
-    }
-    return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
-  }
-
-  if (a.suit !== b.suit) {
-    return suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
-  }
-  return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
-}
-
-function isSameCard(a: CardType, b: CardType) {
-  return a.rank === b.rank && a.suit === b.suit;
-}
 
 export function MotionCardTable() {
   const game = useGameContext();

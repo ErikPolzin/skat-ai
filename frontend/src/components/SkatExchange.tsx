@@ -14,9 +14,6 @@ export function SkatExchange({
   onDiscardCards,
 }: SkatExchangeProps) {
   const game = useGameContext();
-
-  // Check if everyone passed (minimum bid of 18 was assigned)
-  const everyonePassed = game.bidValue === 0 && game.isDeclarer;
   const isDisabled = !game.controls.isConnected || game.controls.isLoading;
 
   if (!game.hasPickedUpSkat) {
@@ -24,12 +21,6 @@ export function SkatExchange({
       <div className="skat-exchange">
         <div className="skat-preview">
           <h3>Skat Decision</h3>
-          {everyonePassed && (
-            <p className="everyone-passed-notice">
-              All players passed. As dealer, you must declare with minimum bid
-              of 18.
-            </p>
-          )}
           <div className="skat-cards">
             {Array.from({ length: 2 }).map((_, index) => (
               <Card
@@ -86,7 +77,6 @@ export function SkatExchange({
           onClick={onDiscardCards}
           disabled={selectedCards.length !== 2 || isDisabled}
           style={{
-            opacity: isDisabled ? 0.5 : 1,
             cursor: isDisabled ? "not-allowed" : "pointer",
           }}
         >

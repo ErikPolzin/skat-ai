@@ -131,7 +131,7 @@ export default function HistoryScreen() {
           ) : (
             <List dense>
               {history.map((result, index) => (
-                <ListItem key={result.game_id}>
+                <ListItem key={result.session_id}>
                   <ListItemText
                     primary={
                       <Box

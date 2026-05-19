@@ -20,6 +20,10 @@ func (gs *GameState) Result() GameResult {
 
 	// Base value depends on game mode
 	switch gs.Mode {
+	case ModeRamsch:
+		result.DeclarerWon = false
+		result.Value = 0
+		return result
 	case ModeGrand:
 		result.BaseValue = 24
 	case ModeSuit:
@@ -39,7 +43,7 @@ func (gs *GameState) Result() GameResult {
 		result.BaseValue = gs.nullGameValue()
 		result.Matadors = 0
 		result.Multiplier = 1
-		result.DeclarerWon = gs.DeclarerScore == 0
+		result.DeclarerWon = gs.DeclarerCardScore() == 0
 		result.IsSchneider = false
 		result.IsSchwarz = false
 		result.PlayedHand = gs.PlayedHand
@@ -117,10 +121,44 @@ func (gs *GameState) nullGameValue() int {
 }
 
 func (gs *GameState) PlayerResults() *[3]PlayerResultState {
-	if gs.Phase != PhaseComplete || gs.Declarer == nil {
+	if gs.Phase != PhaseComplete || (gs.ForfeitedPlayer == nil && gs.Declarer == nil && gs.Mode != ModeRamsch) {
 		return nil
 	}
 	results := [3]PlayerResultState{}
+	if gs.ForfeitedPlayer != nil {
+		for pos := Dealer; pos <= Speaker; pos++ {
+			player := gs.Players[pos]
+			if player == nil {
+				continue
+			}
+			points := 60
+			isWinner := true
+			if pos == *gs.ForfeitedPlayer {
+				points = -120
+				isWinner = false
+			}
+			results[int(pos)] = PlayerResultState{
+				GameID:         gs.ID,
+				SessionID:      gs.SessionID,
+				PlayerID:       player.ID,
+				IsWinner:       isWinner,
+				IsDeclarer:     gs.Declarer != nil && pos == *gs.Declarer,
+				IsOverbid:      gs.Declarer != nil && pos == *gs.Declarer && gs.Overbid,
+				PlayerPosition: pos,
+				PlayerPoints:   points,
+			}
+		}
+		return &results
+	}
+
+	lowestRamschScore := 121
+	if gs.Mode == ModeRamsch {
+		for pos := Dealer; pos <= Speaker; pos++ {
+			if gs.Players[pos] != nil && gs.PlayerScores[pos] < lowestRamschScore {
+				lowestRamschScore = gs.PlayerScores[pos]
+			}
+		}
+	}
 
 	for pos := Dealer; pos <= Speaker; pos++ {
 		player := gs.Players[pos]
@@ -128,17 +166,21 @@ func (gs *GameState) PlayerResults() *[3]PlayerResultState {
 			continue
 		}
 		isDeclarer := gs.Declarer != nil && pos == *gs.Declarer
-		isForfeit := gs.ForfeitedPlayer != nil && pos == *gs.ForfeitedPlayer
+		isWinner := gs.isWinner(pos)
+		playerPoints := gs.CalculatePlayerPoints(pos)
+		if gs.Mode == ModeRamsch {
+			isWinner = gs.PlayerScores[pos] == lowestRamschScore
+			playerPoints = -gs.PlayerScores[pos]
+		}
 		results[int(pos)] = PlayerResultState{
 			GameID:         gs.ID,
 			SessionID:      gs.SessionID,
 			PlayerID:       player.ID,
-			IsWinner:       gs.isWinner(pos),
+			IsWinner:       isWinner,
 			IsDeclarer:     isDeclarer,
 			IsOverbid:      isDeclarer && gs.Overbid,
-			IsForfeit:      isForfeit,
 			PlayerPosition: pos,
-			PlayerPoints:   gs.CalculatePlayerPoints(pos),
+			PlayerPoints:   playerPoints,
 		}
 	}
 	return &results

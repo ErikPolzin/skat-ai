@@ -12,10 +12,21 @@ import (
 type GameMode string
 
 const (
-	ModeGrand GameMode = "grand" // Only Jacks are trump
-	ModeSuit  GameMode = "suit"  // One suit is trump (plus Jacks)
-	ModeNull  GameMode = "null"  // No trumps, declarer tries to lose
+	ModeGrand  GameMode = "grand"  // Only Jacks are trump
+	ModeSuit   GameMode = "suit"   // One suit is trump (plus Jacks)
+	ModeNull   GameMode = "null"   // No trumps, declarer tries to lose
+	ModeRamsch GameMode = "ramsch" // No declarer, each player tries to take few points
 )
+
+type PassPolicy string
+
+const (
+	PassPolicyReshuffle     PassPolicy = "reshuffle"
+	PassPolicyForceListener PassPolicy = "force_listener"
+	PassPolicyRamsch        PassPolicy = "ramsch"
+)
+
+const DefaultMaxGames = 10
 
 // ValidBidValues are the legal bid values in Skat (based on game values)
 var ValidBidValues = []int{
@@ -42,6 +53,8 @@ type GameState struct {
 	Code          GameCode        `json:"code"`
 	SessionID     string          `json:"session_id"` // Session ID for mutiple games
 	GameNumber    int             `json:"game_number"`
+	MaxGames      int             `json:"max_games"`
+	PassPolicy    PassPolicy      `json:"pass_policy"`
 	Players       [3]*PlayerState `json:"players"`        // Players in the game
 	Skat          SkatCards       `json:"-"`              // Ommitted in JSON, not public knowledge
 	CurrentPlayer GamePosition    `json:"current_player"` // Current player position
@@ -53,8 +66,7 @@ type GameState struct {
 	TrickStarter  GamePosition    `json:"trick_starter"`  // Who started the current trick
 	CardsPlayed   [][]Card        `json:"-"`              // History of all tricks
 	Phase         GamePhase       `json:"phase"`          // Current phase of the game
-	DeclarerScore int             `json:"declarer_score"` // Current score for declarer
-	OpponentScore int             `json:"opponent_score"` // Current score for opponents
+	PlayerScores  [3]int          `json:"player_scores"`  // Card points taken by each player
 	Matadors      int             `json:"matadors"`       // Matadors count (positive=with, negative=without)
 
 	// Hand and announcements
@@ -93,6 +105,8 @@ type GameSessionState struct {
 	Code        string  `json:"code"`
 	GameID      string  `json:"game_id"`
 	PlayerCount int     `json:"player_count"`
+	MaxGames    int     `json:"max_games"`
+	PassPolicy  string  `json:"pass_policy"`
 	CreatedAt   string  `json:"created_at"`
 	EndedAt     *string `json:"ended_at"`
 }
@@ -106,11 +120,19 @@ type PlayerResultState struct {
 	IsWinner       bool         `json:"is_winner"`
 	IsDeclarer     bool         `json:"is_declarer"`
 	IsOverbid      bool         `json:"is_overbid"`
-	IsForfeit      bool         `json:"is_forfeit"`
-	RatingBefore   int          `json:"rating_before"`
-	RatingAfter    int          `json:"rating_after"`
-	RatingChange   int          `json:"rating_change"`
 	OtherPlayers   []string     `json:"other_players,omitempty"`
+}
+
+type PlayerSessionResultState struct {
+	SessionID    string   `json:"session_id"`
+	PlayerID     string   `json:"player_id"`
+	PlayerPoints int      `json:"player_points"`
+	IsWinner     bool     `json:"is_winner"`
+	IsForfeit    bool     `json:"is_forfeit"`
+	RatingBefore int      `json:"rating_before"`
+	RatingAfter  int      `json:"rating_after"`
+	RatingChange int      `json:"rating_change"`
+	OtherPlayers []string `json:"other_players,omitempty"`
 }
 
 // SessionGameResult represents the results of a single game within a session
@@ -166,6 +188,8 @@ func NewGame() *GameState {
 		SessionID:       uuid.New().String(),
 		Code:            NewGameCode(),
 		Players:         [3]*PlayerState{},
+		MaxGames:        DefaultMaxGames,
+		PassPolicy:      PassPolicyForceListener,
 		Phase:           PhaseWaitingForPlayers, // Start waiting for players
 		Declarer:        nil,                    // Not determined yet
 		CurrentPlayer:   0,                      // Dealer starts as the current player
@@ -349,6 +373,8 @@ func (gs *GameState) Clone() *GameState {
 		Code:                  gs.Code,
 		SessionID:             gs.SessionID,
 		GameNumber:            gs.GameNumber,
+		MaxGames:              gs.MaxGames,
+		PassPolicy:            gs.PassPolicy,
 		CurrentPlayer:         gs.CurrentPlayer,
 		Declarer:              declarer,
 		Mode:                  gs.Mode,
@@ -356,8 +382,7 @@ func (gs *GameState) Clone() *GameState {
 		Phase:                 gs.Phase,
 		TrickWinner:           trickWinner,
 		TrickStarter:          gs.TrickStarter,
-		DeclarerScore:         gs.DeclarerScore,
-		OpponentScore:         gs.OpponentScore,
+		PlayerScores:          gs.PlayerScores,
 		Matadors:              gs.Matadors,
 		PlayedHand:            gs.PlayedHand,
 		AnnouncedSchneider:    gs.AnnouncedSchneider,
@@ -426,7 +451,7 @@ func (gs *GameState) IsSchneider() bool {
 		return false
 	}
 	// In normal games, Schneider means one side got 90+ points
-	return gs.DeclarerScore >= 90 || gs.OpponentScore >= 90
+	return gs.DeclarerCardScore() >= 90 || gs.OpponentCardScore() >= 90
 }
 
 // IsSchwarz returns true if the game ended with Schwarz
@@ -437,16 +462,7 @@ func (gs *GameState) IsSchwarz() bool {
 		return false
 	}
 	// In normal games, Schwarz means one side took all tricks (120 points)
-	return gs.DeclarerScore == 120 || gs.OpponentScore == 120
-}
-
-// IsZwangsspiel returns true if bidding ended at 0 and forehand/listener was
-// forced to play after the other two players passed.
-func (gs *GameState) IsZwangsspiel() bool {
-	if gs.BidValue != 0 || gs.Declarer == nil || *gs.Declarer != Listener {
-		return false
-	}
-	return gs.SpeakerPassed && gs.DealerPassed
+	return gs.DeclarerCardScore() == 120 || gs.OpponentCardScore() == 120
 }
 
 // GetGameResult returns the result of the game including schneider/schwarz
@@ -461,7 +477,7 @@ func (gs *GameState) GetGameResult() (declarerWon bool, schneider bool, schwarz 
 
 	if gs.Mode == ModeNull {
 		// Null game: declarer wins if they take no tricks
-		declarerWon = gs.DeclarerScore == 0
+		declarerWon = gs.DeclarerCardScore() == 0
 		// Null games don't have schneider/schwarz
 		schneider = false
 		schwarz = false
@@ -469,18 +485,38 @@ func (gs *GameState) GetGameResult() (declarerWon bool, schneider bool, schwarz 
 	}
 
 	// Normal games: declarer needs 61+ points to win
-	declarerWon = gs.DeclarerScore >= 61
+	declarerWon = gs.DeclarerCardScore() >= 61
 
 	// Check for schneider (90+ points by one side)
 	if declarerWon {
-		schneider = gs.OpponentScore < 30 // Opponents got less than 30
-		schwarz = gs.OpponentScore == 0   // Opponents got no points
+		schneider = gs.OpponentCardScore() < 30 // Opponents got less than 30
+		schwarz = gs.OpponentCardScore() == 0   // Opponents got no points
 	} else {
-		schneider = gs.DeclarerScore < 30 // Declarer got less than 30
-		schwarz = gs.DeclarerScore == 0   // Declarer got no points
+		schneider = gs.DeclarerCardScore() < 30 // Declarer got less than 30
+		schwarz = gs.DeclarerCardScore() == 0   // Declarer got no points
 	}
 
 	return
+}
+
+func (gs *GameState) DeclarerCardScore() int {
+	if gs.Declarer == nil {
+		return 0
+	}
+	return gs.PlayerScores[*gs.Declarer]
+}
+
+func (gs *GameState) OpponentCardScore() int {
+	if gs.Declarer == nil {
+		return 0
+	}
+	score := 0
+	for _, pos := range AllPositions {
+		if pos != *gs.Declarer {
+			score += gs.PlayerScores[pos]
+		}
+	}
+	return score
 }
 
 func (gs *GameState) GetPlayerByPosition(position GamePosition) *PlayerState {

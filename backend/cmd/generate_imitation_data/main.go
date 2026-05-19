@@ -494,7 +494,7 @@ func playGameAndCollectExamples(searchAgent, defenderSearchAgent, heuristicAgent
 	}
 
 	// Skip Zwangsspiel games (all players passed - forced game with weak hand)
-	if g.IsZwangsspiel() {
+	if g.AllPlayersPassed() {
 		return examples
 	}
 

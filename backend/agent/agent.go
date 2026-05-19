@@ -377,8 +377,8 @@ func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.Play
 	}
 
 	// Check if this is a Zwangsspiel (all players passed)
-	isZwangsspiel := gs.IsZwangsspiel()
-	if isZwangsspiel {
+	allPassed := gs.AllPlayersPassed()
+	if allPassed {
 		sa.metrics.passedGames.Add(1)
 	}
 
@@ -390,7 +390,7 @@ func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.Play
 
 		if playerResult.IsWinner {
 			sa.metrics.wins.Add(1)
-			if isZwangsspiel {
+			if allPassed {
 				sa.metrics.passedGamesWon.Add(1)
 			}
 		}

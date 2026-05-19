@@ -9,22 +9,26 @@ import (
 // MemoryDatabase is an in-memory implementation of the Database interface
 // Useful for testing and running without database persistence
 type MemoryDatabase struct {
-	profiles      map[string]*ProfileEntry
-	games         map[string]*game.GameState
-	playerResults map[string][]game.PlayerResultState
-	ratings       map[string]*PlayerRating
-	agentConfigs  map[string]*AgentConfig
-	mu            sync.RWMutex
+	profiles       map[string]*ProfileEntry
+	games          map[string]*game.GameState
+	sessions       map[string]*game.GameSessionState
+	playerResults  map[string][]game.PlayerResultState
+	sessionResults map[string][]game.PlayerSessionResultState
+	ratings        map[string]*PlayerRating
+	agentConfigs   map[string]*AgentConfig
+	mu             sync.RWMutex
 }
 
 // NewMemoryDatabase creates a new in-memory database
 func NewMemoryDatabase() *MemoryDatabase {
 	return &MemoryDatabase{
-		profiles:      make(map[string]*ProfileEntry),
-		games:         make(map[string]*game.GameState),
-		playerResults: make(map[string][]game.PlayerResultState),
-		ratings:       make(map[string]*PlayerRating),
-		agentConfigs:  make(map[string]*AgentConfig),
+		profiles:       make(map[string]*ProfileEntry),
+		games:          make(map[string]*game.GameState),
+		sessions:       make(map[string]*game.GameSessionState),
+		playerResults:  make(map[string][]game.PlayerResultState),
+		sessionResults: make(map[string][]game.PlayerSessionResultState),
+		ratings:        make(map[string]*PlayerRating),
+		agentConfigs:   make(map[string]*AgentConfig),
 	}
 }
 
@@ -70,7 +74,15 @@ func (d *MemoryDatabase) SaveProfile(profile ProfileEntry) error {
 }
 
 func (d *MemoryDatabase) SaveGameSession(session game.GameSessionState) error {
-	// No-op for memory database - sessions are implicit
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if session.MaxGames <= 0 {
+		session.MaxGames = game.DefaultMaxGames
+	}
+	if session.PassPolicy == "" {
+		session.PassPolicy = string(game.PassPolicyForceListener)
+	}
+	d.sessions[session.ID] = &session
 	return nil
 }
 
@@ -79,15 +91,30 @@ func (d *MemoryDatabase) GetGameSession(sessionID string) (*game.GameSessionStat
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
+	if session, ok := d.sessions[sessionID]; ok {
+		return session, nil
+	}
 	_, ok := d.games[sessionID]
 	if !ok {
+		for _, gameState := range d.games {
+			if gameState.SessionID == sessionID {
+				return &game.GameSessionState{
+					ID:          sessionID,
+					Code:        string(gameState.Code),
+					GameID:      gameState.ID,
+					PlayerCount: gameState.PlayerCount(),
+					MaxGames:    gameState.MaxGames,
+					PassPolicy:  string(gameState.PassPolicy),
+				}, nil
+			}
+		}
 		return nil, fmt.Errorf("game session not found")
 	}
-
-	// Memory DB uses sessionID as the code since we don't persist sessions
 	return &game.GameSessionState{
-		ID:   sessionID,
-		Code: sessionID[:8], // Use first 8 chars of session ID as code
+		ID:         sessionID,
+		Code:       sessionID[:8],
+		MaxGames:   game.DefaultMaxGames,
+		PassPolicy: string(game.PassPolicyForceListener),
 	}, nil
 }
 
@@ -150,6 +177,8 @@ func (d *MemoryDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 				Code:        string(gameState.Code),
 				GameID:      gameState.ID,
 				PlayerCount: gameState.PlayerCount(),
+				MaxGames:    gameState.MaxGames,
+				PassPolicy:  string(gameState.PassPolicy),
 			})
 		}
 	}
@@ -173,29 +202,61 @@ func (d *MemoryDatabase) SavePlayerResults(results []game.PlayerResultState) err
 	defer d.mu.Unlock()
 
 	for _, result := range results {
-		d.playerResults[result.PlayerID] = append(d.playerResults[result.PlayerID], result)
+		existing := d.playerResults[result.PlayerID]
+		replaced := false
+		for i := range existing {
+			if existing[i].GameID == result.GameID {
+				existing[i] = result
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			existing = append(existing, result)
+		}
+		d.playerResults[result.PlayerID] = existing
 	}
 	return nil
 }
 
-func (d *MemoryDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
+func (d *MemoryDatabase) SavePlayerSessionResults(results []game.PlayerSessionResultState) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for _, result := range results {
+		existing := d.sessionResults[result.PlayerID]
+		replaced := false
+		for i := range existing {
+			if existing[i].SessionID == result.SessionID {
+				existing[i] = result
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			existing = append(existing, result)
+		}
+		d.sessionResults[result.PlayerID] = existing
+	}
+	return nil
+}
+
+func (d *MemoryDatabase) GetPlayerSessionResults(playerID string, limit int) ([]game.PlayerSessionResultState, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	results, ok := d.playerResults[playerID]
+	results, ok := d.sessionResults[playerID]
 	if !ok {
-		return []game.PlayerResultState{}, nil
+		return []game.PlayerSessionResultState{}, nil
 	}
 
-	// Return most recent results first
-	start := 0
-
-	// Reverse order to get most recent first
-	reversed := make([]game.PlayerResultState, 0, len(results)-start)
-	for i := len(results) - 1; i >= start; i-- {
+	reversed := make([]game.PlayerSessionResultState, 0, len(results))
+	for i := len(results) - 1; i >= 0; i-- {
 		reversed = append(reversed, results[i])
+		if limit > 0 && len(reversed) >= limit {
+			break
+		}
 	}
-
 	return reversed, nil
 }
 
@@ -212,7 +273,7 @@ func (d *MemoryDatabase) CountGamesInSession(sessionID string) (int, error) {
 	return count, nil
 }
 
-func (d *MemoryDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultState, error) {
+func (d *MemoryDatabase) GetPlayerResultsForSession(sessionID string) ([]game.PlayerResultState, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -257,15 +318,15 @@ func (d *MemoryDatabase) GetFormattedSessionResults(sessionID string) ([]game.Se
 		}
 
 		result := game.SessionGameResult{
-			GameID:         gs.ID,
-			GameNumber:     gs.GameNumber,
-			DeclarerName:   declarerName,
-			DeclarerWon:    declarerWon,
-			GameMode:       string(gs.Mode),
-			TrumpSuit:      gs.TrumpSuit.String(),
-			PlayerResults:  make(map[string]int),
-			PlayerNames:    make(map[string]string),
-			PlayerWinners:  make(map[string]bool),
+			GameID:          gs.ID,
+			GameNumber:      gs.GameNumber,
+			DeclarerName:    declarerName,
+			DeclarerWon:     declarerWon,
+			GameMode:        string(gs.Mode),
+			TrumpSuit:       gs.TrumpSuit.String(),
+			PlayerResults:   make(map[string]int),
+			PlayerNames:     make(map[string]string),
+			PlayerWinners:   make(map[string]bool),
 			ForfeitedPlayer: gs.ForfeitedPlayer,
 		}
 

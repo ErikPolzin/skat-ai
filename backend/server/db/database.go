@@ -20,9 +20,10 @@ type Database interface {
 	ListOpenSessions() ([]game.GameSessionState, error)
 	ListPlayers(gameID string) ([3]*game.PlayerState, error)
 	SavePlayerResults(result []game.PlayerResultState) error
-	GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error)
+	SavePlayerSessionResults(result []game.PlayerSessionResultState) error
+	GetPlayerSessionResults(playerID string, limit int) ([]game.PlayerSessionResultState, error)
 	CountGamesInSession(sessionID string) (int, error)
-	GetSessionResults(sessionID string) ([]game.PlayerResultState, error)
+	GetPlayerResultsForSession(sessionID string) ([]game.PlayerResultState, error)
 	GetFormattedSessionResults(sessionID string) ([]game.SessionGameResult, error)
 	ListAgentProfiles() ([]ProfileEntry, error)
 	CleanupStaleGames(inactiveMinutes int, onlinePlayerIDs []string) (int, error)

@@ -76,43 +76,125 @@ func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fr
 
 // saveGameResults saves player results when a game completes
 func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
-	if gs.Phase == game.PhaseComplete {
-		results := gs.PlayerResults()
-		if results == nil {
-			logger.Warning("Failed to update player ratings, no results")
-			return nil
-		}
+	if gs.Phase != game.PhaseComplete {
+		return nil
+	}
+	results := gs.PlayerResults()
+	if results == nil {
+		logger.Warning("Failed to save player results, no results")
+		return nil
+	}
 
-		playerRatings := make(map[string]*rating.PlayerRating)
+	maxGames := gs.MaxGames
+	if maxGames <= 0 {
+		maxGames = game.DefaultMaxGames
+	}
+	isFinalGame := gs.GameNumber+1 >= maxGames || gs.ForfeitedPlayer != nil
 
-		for _, player := range gs.Players {
-			if player != nil {
-				rating, err := s.db.GetPlayerRating(player.ID)
-				if err != nil {
-					return fmt.Errorf("failed to get player rating: %w", err)
-				}
-				playerRatings[player.ID] = rating.ToGamePlayerRating()
+	session, err := s.db.GetGameSession(gs.SessionID)
+	if err == nil && session.EndedAt != nil {
+		return nil
+	}
+
+	// Save Skat/game points after each completed game so the session table can update.
+	if err := s.db.SavePlayerResults(results[:]); err != nil {
+		logger.Warning("Failed to save player results: %e", err)
+	}
+
+	if !isFinalGame {
+		return nil
+	}
+
+	gameResults, err := s.db.GetPlayerResultsForSession(gs.SessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session game results: %w", err)
+	}
+	sessionResults := aggregateSessionResults(gs, gameResults)
+
+	playerRatings := make(map[string]*rating.PlayerRating)
+	aiCount := 0
+	for _, player := range gs.Players {
+		if player != nil {
+			rating, err := s.db.GetPlayerRating(player.ID)
+			if err != nil {
+				return fmt.Errorf("failed to get player rating: %w", err)
 			}
-		}
-
-		// Update player ratings and populate rating fields in results
-		err := rating.UpdateRatings(gs, results, playerRatings)
-		if err != nil {
-			logger.Warning("Failed to update player ratings: %e", err)
-		}
-
-		for _, rat := range playerRatings {
-			if err := s.db.SavePlayerRating(db.NewPlayerRating(rat)); err != nil {
-				return fmt.Errorf("failed to save player rating: %w", err)
+			playerRatings[player.ID] = rating.ToGamePlayerRating()
+			if player.IsAgent {
+				aiCount++
 			}
-		}
-
-		// Save results with rating information
-		if err := s.db.SavePlayerResults(results[:]); err != nil {
-			logger.Warning("Failed to save player results: %e", err)
 		}
 	}
+
+	if err := rating.UpdateRatings(sessionResults, playerRatings, aiCount); err != nil {
+		logger.Warning("Failed to update player ratings: %e", err)
+	}
+
+	for _, rat := range playerRatings {
+		if err := s.db.SavePlayerRating(db.NewPlayerRating(rat)); err != nil {
+			return fmt.Errorf("failed to save player rating: %w", err)
+		}
+	}
+
+	if err := s.db.SavePlayerSessionResults(sessionResults); err != nil {
+		logger.Warning("Failed to save player session results: %e", err)
+	}
+
+	endedAt := time.Now().UTC().Format(time.RFC3339)
+	if err := s.db.SaveGameSession(game.GameSessionState{
+		ID:          gs.SessionID,
+		Code:        string(gs.Code),
+		GameID:      gs.ID,
+		PlayerCount: gs.PlayerCount(),
+		MaxGames:    maxGames,
+		PassPolicy:  string(gs.PassPolicy),
+		EndedAt:     &endedAt,
+	}); err != nil {
+		logger.Warning("Failed to mark session ended: %e", err)
+	}
 	return nil
+}
+
+func aggregateSessionResults(gs *game.GameState, gameResults []game.PlayerResultState) []game.PlayerSessionResultState {
+	type gamePlayerKey struct {
+		gameID   string
+		playerID string
+	}
+
+	deduped := make(map[gamePlayerKey]game.PlayerResultState)
+	for _, result := range gameResults {
+		deduped[gamePlayerKey{gameID: result.GameID, playerID: result.PlayerID}] = result
+	}
+
+	totals := make(map[string]int)
+	for _, result := range deduped {
+		totals[result.PlayerID] += result.PlayerPoints
+	}
+
+	topScore := 0
+	hasScore := false
+	for _, points := range totals {
+		if !hasScore || points > topScore {
+			topScore = points
+			hasScore = true
+		}
+	}
+
+	sessionResults := make([]game.PlayerSessionResultState, 0, len(totals))
+	for _, player := range gs.Players {
+		if player == nil {
+			continue
+		}
+		points := totals[player.ID]
+		sessionResults = append(sessionResults, game.PlayerSessionResultState{
+			SessionID:    gs.SessionID,
+			PlayerID:     player.ID,
+			PlayerPoints: points,
+			IsWinner:     hasScore && points == topScore,
+			IsForfeit:    gs.ForfeitedPlayer != nil && gs.GetPositionForPlayer(player.ID) == *gs.ForfeitedPlayer,
+		})
+	}
+	return sessionResults
 }
 
 func (s *Server) BroadcastAIActions(gs *game.GameState) {

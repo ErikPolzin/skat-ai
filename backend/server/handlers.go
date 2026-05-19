@@ -164,12 +164,41 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 
 	// Create empty session
 	gs := game.NewGame()
+	var req struct {
+		MaxGames   int    `json:"max_games"`
+		PassPolicy string `json:"pass_policy"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if req.MaxGames == 0 {
+		req.MaxGames = game.DefaultMaxGames
+	}
+	if req.MaxGames < 1 || req.MaxGames > 100 {
+		http.Error(w, "max_games must be between 1 and 100", http.StatusBadRequest)
+		return
+	}
+	passPolicy := game.PassPolicy(req.PassPolicy)
+	if passPolicy == "" {
+		passPolicy = game.PassPolicyForceListener
+	}
+	if passPolicy != game.PassPolicyReshuffle && passPolicy != game.PassPolicyForceListener && passPolicy != game.PassPolicyRamsch {
+		http.Error(w, "invalid pass_policy", http.StatusBadRequest)
+		return
+	}
+	gs.MaxGames = req.MaxGames
+	gs.PassPolicy = passPolicy
 
 	// Save the session to the database
 	if err := s.db.SaveGameSession(game.GameSessionState{
-		ID:     gs.SessionID,
-		Code:   string(gs.Code),
-		GameID: gs.ID,
+		ID:         gs.SessionID,
+		Code:       string(gs.Code),
+		GameID:     gs.ID,
+		MaxGames:   gs.MaxGames,
+		PassPolicy: string(gs.PassPolicy),
 	}); err != nil {
 		http.Error(w, fmt.Sprintf("failed to save game session: %v", err), http.StatusInternalServerError)
 		return
@@ -541,11 +570,11 @@ func (s *Server) handleGetPlayerHistory(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	results, err := s.db.GetPlayerResults(playerID, limit)
+	results, err := s.db.GetPlayerSessionResults(playerID, limit)
 	if err != nil {
-		logger.Warning("Failed to get player results: %e", err)
+		logger.Warning("Failed to get player session results: %e", err)
 		// Return empty array on error rather than failing
-		results = []game.PlayerResultState{}
+		results = []game.PlayerSessionResultState{}
 	}
 
 	// Rating changes are now included in player results
@@ -936,6 +965,14 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 
 	player := gs.Players[position]
 	player.ReadyForNext = true
+	maxGames := gs.MaxGames
+	if maxGames <= 0 {
+		maxGames = game.DefaultMaxGames
+	}
+	if gs.GameNumber+1 >= maxGames {
+		http.Error(w, "session is complete", http.StatusBadRequest)
+		return
+	}
 
 	// Check if all human players are ready
 	allReady := true
@@ -1051,16 +1088,18 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 	logger.Info("Game %s timeout reported by client for %s", gs.Code, currentPlayer.Name)
 
 	// Forfeit the game
-	results := gs.ForfeitDueToInactivity()
+	gs.ForfeitDueToInactivity()
 	logger.Info("Set game %s phase to complete", gs.Code)
 
-	// Save results to database
-	if err := s.db.SavePlayerResults(results); err != nil {
-		logger.Warning("Failed to save timeout forfeit results: %e", err)
-	}
-
 	// Save the updated game state
-	go s.cache.SaveGame(*gs)
+	go func() {
+		if err := s.cache.SaveGame(*gs); err != nil {
+			logger.Warning("Failed to save timeout forfeit game: %e", err)
+		}
+		if err := s.maybeSaveGameResults(gs); err != nil {
+			logger.Warning("Failed to save timeout forfeit results: %e", err)
+		}
+	}()
 
 	// Broadcast the updated game state so clients show game over screen
 	timeoutMsg := fmt.Sprintf("%s was inactive for 2 minutes and has forfeited the game", currentPlayer.Name)
@@ -1112,11 +1151,11 @@ func (s *Server) handleGetPlayerRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := s.db.GetPlayerResults(playerID, 200)
+	results, err := s.db.GetPlayerSessionResults(playerID, 200)
 	if err != nil {
-		logger.Warning("Failed to get player results: %e", err)
+		logger.Warning("Failed to get player session results: %e", err)
 		// Return empty array on error rather than failing
-		results = []game.PlayerResultState{}
+		results = []game.PlayerSessionResultState{}
 	}
 	timeline := []int{}
 	for i := len(results) - 1; i >= 0; i-- {

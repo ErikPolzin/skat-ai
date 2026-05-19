@@ -87,7 +87,7 @@ func runThreshold(strategy string, threshold float64, games int) (stats, error) 
 		g = g.WithCardsDealt()
 		g = agent.WithAgentBidding(g, config)
 
-		if g.IsZwangsspiel() {
+		if g.AllPlayersPassed() {
 			s.zwang++
 		}
 		if g.BidValue > s.maxBid {

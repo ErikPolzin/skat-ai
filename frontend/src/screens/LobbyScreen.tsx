@@ -15,12 +15,13 @@ import {
   useMediaQuery,
   useTheme,
   Container,
+  MenuItem,
 } from "@mui/material";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 import { lineClasses } from "@mui/x-charts/LineChart";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import HistoryIcon from "@mui/icons-material/History";
-import { createGame, joinGame, uploadAvatar } from "../api/games";
+import { createGame, joinGame, uploadAvatar, type PassPolicy } from "../api/games";
 import {
   selectPlayerId,
   selectProfileIcon,
@@ -190,6 +191,9 @@ const Header = () => {
 
 const GamesTab = () => {
   const [gameCode, setGameCode] = useState<string>("");
+  const [maxGames, setMaxGames] = useState<number>(10);
+  const [passPolicy, setPassPolicy] =
+    useState<PassPolicy>("force_listener");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const navigate = useNavigate();
   const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
@@ -201,7 +205,10 @@ const GamesTab = () => {
 
       if (!currentGameCode) {
         // Create a new game and get the code
-        const createData = await createGame();
+        const createData = await createGame({
+          max_games: maxGames,
+          pass_policy: passPolicy,
+        });
         currentGameCode = createData.code;
       }
 
@@ -247,6 +254,33 @@ const GamesTab = () => {
           }}
           fullWidth
         />
+        {!gameCode && (
+          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
+            <TextField
+              label="Games"
+              type="number"
+              value={maxGames}
+              onChange={(e) =>
+                setMaxGames(
+                  Math.max(1, Math.min(100, Number(e.target.value) || 1)),
+                )
+              }
+              disabled={isLoading}
+              slotProps={{ htmlInput: { min: 1, max: 100 } }}
+            />
+            <TextField
+              select
+              label="All pass"
+              value={passPolicy}
+              onChange={(e) => setPassPolicy(e.target.value as PassPolicy)}
+              disabled={isLoading}
+            >
+              <MenuItem value="force_listener">Force forehand</MenuItem>
+              <MenuItem value="reshuffle">Re-shuffle</MenuItem>
+              <MenuItem value="ramsch">Play Ramsch</MenuItem>
+            </TextField>
+          </Box>
+        )}
         <Button
           variant="contained"
           color="primary"

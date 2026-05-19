@@ -61,34 +61,11 @@ func CalculateRatingChange(rating, opponentRating int, actualScore float64, game
 }
 
 // UpdateRatings updates ratings for all players and populates rating fields in results
-// In Skat, the declarer plays against two opponents as a team
-func UpdateRatings(gameState *game.GameState, results *[3]game.PlayerResultState, ratings map[string]*PlayerRating) error {
-	if gameState.Phase != game.PhaseComplete {
-		return fmt.Errorf("game is not complete")
+func UpdateRatings(results []game.PlayerSessionResultState, ratings map[string]*PlayerRating, aiCount int) error {
+	if len(results) < 2 {
+		return fmt.Errorf("expected at least 2 session results, got %d", len(results))
 	}
 
-	// Get game result
-	declarerWon, _, _ := gameState.GetGameResult()
-	gameValue := gameState.Result().Value
-
-	// Get declarer
-	if gameState.Declarer == nil {
-		return fmt.Errorf("declarer not set")
-	}
-	declarer := gameState.Players[*gameState.Declarer]
-	if declarer == nil {
-		return fmt.Errorf("declarer not found")
-	}
-
-	// Count AI opponents and scale K-factor accordingly
-	aiCount := 0
-	for _, player := range gameState.Players {
-		if player != nil && player.IsAgent {
-			aiCount++
-		}
-	}
-
-	// K-factor multiplier based on AI opponents: 1.0 (0 AIs), 0.5 (1 AI), 0.25 (2 AIs)
 	aiMultiplier := 1.0
 	if aiCount == 1 {
 		aiMultiplier = 0.5
@@ -96,90 +73,77 @@ func UpdateRatings(gameState *game.GameState, results *[3]game.PlayerResultState
 		aiMultiplier = 0.25
 	}
 
-	// Get opponents and calculate average opponent rating
-	var opponents []*game.PlayerState
-	var opponentRatings []int
-	for pos, player := range gameState.Players {
-		if player != nil && game.GamePosition(pos) != *gameState.Declarer {
-			opponents = append(opponents, player)
-			opponentRatings = append(opponentRatings, ratings[player.ID].Rating)
+	topScore := results[0].PlayerPoints
+	bottomScore := results[0].PlayerPoints
+	for _, result := range results {
+		if result.PlayerPoints > topScore {
+			topScore = result.PlayerPoints
+		}
+		if result.PlayerPoints < bottomScore {
+			bottomScore = result.PlayerPoints
 		}
 	}
-
-	if len(opponents) != 2 {
-		return fmt.Errorf("expected 2 opponents, got %d", len(opponents))
+	scoreSpread := topScore - bottomScore
+	if scoreSpread < 60 {
+		scoreSpread = 60
 	}
 
-	avgOpponentRating := (opponentRatings[0] + opponentRatings[1]) / 2
-
-	// Calculate rating changes
-	declarerActualScore := 0.0
-	if declarerWon {
-		declarerActualScore = 1.0
-	}
-	opponentActualScore := 1.0 - declarerActualScore
-
-	// Map to store rating changes
 	ratingChanges := make(map[string]int)
-
-	// Calculate declarer's rating change
-	declarerRating := ratings[declarer.ID]
-	declarerChange := CalculateRatingChange(
-		declarerRating.Rating,
-		avgOpponentRating,
-		declarerActualScore,
-		gameValue,
-		declarerRating.GamesPlayed,
-	)
-	declarerChange = int(float64(declarerChange) * aiMultiplier)
-	ratingChanges[declarer.ID] = declarerChange
-
-	// Update declarer rating
-	declarerRating.Rating += declarerChange
-	declarerRating.GamesPlayed++
-	if declarerWon {
-		declarerRating.Wins++
-	} else {
-		declarerRating.Losses++
-	}
-	if declarerRating.Rating > declarerRating.PeakRating {
-		declarerRating.PeakRating = declarerRating.Rating
-	}
-
-	// Update opponent ratings
-	// Note: Opponents who passed don't get wins/losses/games_played updated
-	// Only their rating is adjusted to reflect the declarer's performance
-	for _, opponent := range opponents {
-		opponentRating := ratings[opponent.ID]
-
-		// Opponents play as a team, so they share the result
-		opponentChange := CalculateRatingChange(
-			opponentRating.Rating,
-			declarerRating.Rating-declarerChange, // Use old declarer rating
-			opponentActualScore,
-			gameValue,
-			opponentRating.GamesPlayed,
-		)
-		opponentChange = int(float64(opponentChange) * aiMultiplier)
-		ratingChanges[opponent.ID] = opponentChange
-
-		opponentRating.Rating += opponentChange
-		// Don't update games_played, wins, or losses for opponents
-		// Only the declarer's stats are updated
-		if opponentRating.Rating > opponentRating.PeakRating {
-			opponentRating.PeakRating = opponentRating.Rating
+	for _, result := range results {
+		playerRating, ok := ratings[result.PlayerID]
+		if !ok {
+			return fmt.Errorf("missing rating for player %s", result.PlayerID)
 		}
+
+		actualTotal := 0.0
+		expectedTotal := 0.0
+		opponents := 0
+		for _, opponent := range results {
+			if opponent.PlayerID == result.PlayerID {
+				continue
+			}
+			opponentRating, ok := ratings[opponent.PlayerID]
+			if !ok {
+				return fmt.Errorf("missing rating for opponent %s", opponent.PlayerID)
+			}
+			switch {
+			case result.PlayerPoints > opponent.PlayerPoints:
+				actualTotal += 1.0
+			case result.PlayerPoints == opponent.PlayerPoints:
+				actualTotal += 0.5
+			}
+			expectedTotal += CalculateExpectedScore(playerRating.Rating, opponentRating.Rating)
+			opponents++
+		}
+		if opponents == 0 {
+			continue
+		}
+
+		actualScore := actualTotal / float64(opponents)
+		expectedScore := expectedTotal / float64(opponents)
+		kFactor := GetKFactor(playerRating.GamesPlayed)
+		change := float64(kFactor) * (actualScore - expectedScore)
+		change *= CalculateGameValueMultiplier(scoreSpread)
+		change = change * aiMultiplier
+		ratingChanges[result.PlayerID] = int(math.Round(change))
 	}
 
-	// Update results with rating information
 	for i := range results {
-		playerID := results[i].PlayerID
-		if change, ok := ratingChanges[playerID]; ok {
-			rating := ratings[playerID]
-			results[i].RatingBefore = rating.Rating - change
-			results[i].RatingAfter = rating.Rating
-			results[i].RatingChange = change
+		playerRating := ratings[results[i].PlayerID]
+		change := ratingChanges[results[i].PlayerID]
+		results[i].RatingBefore = playerRating.Rating
+		playerRating.Rating += change
+		playerRating.GamesPlayed++
+		if results[i].IsWinner {
+			playerRating.Wins++
+		} else {
+			playerRating.Losses++
 		}
+		if playerRating.Rating > playerRating.PeakRating {
+			playerRating.PeakRating = playerRating.Rating
+		}
+		results[i].RatingAfter = playerRating.Rating
+		results[i].RatingChange = change
 	}
 
 	return nil

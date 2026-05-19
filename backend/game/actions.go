@@ -71,7 +71,7 @@ func (gs *GameState) PlayCard(card Card) (string, error) {
 }
 
 func (gs *GameState) ResolveTrick() (string, error) {
-	if gs.Declarer == nil {
+	if gs.Mode != ModeRamsch && gs.Declarer == nil {
 		return "", fmt.Errorf("declarer not set")
 	}
 	if gs.TrickWinner == nil {
@@ -79,10 +79,21 @@ func (gs *GameState) ResolveTrick() (string, error) {
 	}
 
 	// Calculate points based on game mode
-	if gs.Mode == ModeNull {
+	if gs.Mode == ModeRamsch {
+		for _, card := range gs.Trick {
+			gs.PlayerScores[*gs.TrickWinner] += card.Value()
+		}
+	} else if gs.Mode == ModeNull {
 		// In null games, if declarer takes any trick, game ends immediately
 		if *gs.TrickWinner == *gs.Declarer {
-			gs.DeclarerScore = 1          // Mark that declarer won a trick (any non-zero value = loss)
+			trickPoints := 0
+			for _, card := range gs.Trick {
+				trickPoints += card.Value()
+			}
+			if trickPoints == 0 {
+				trickPoints = 1
+			}
+			gs.PlayerScores[*gs.Declarer] += trickPoints
 			gs.Phase = PhaseComplete      // Game ends immediately - declarer loses
 			gs.CurrentPlayerDeadline = "" // Clear deadline when game ends
 			gs.CardsPlayed = append(gs.CardsPlayed, gs.Trick)
@@ -93,11 +104,7 @@ func (gs *GameState) ResolveTrick() (string, error) {
 	} else {
 		// In normal games, calculate card points
 		for _, card := range gs.Trick {
-			if *gs.TrickWinner == *gs.Declarer {
-				gs.DeclarerScore += card.Value()
-			} else {
-				gs.OpponentScore += card.Value()
-			}
+			gs.PlayerScores[*gs.TrickWinner] += card.Value()
 		}
 	}
 
@@ -112,8 +119,8 @@ func (gs *GameState) ResolveTrick() (string, error) {
 		gs.Phase = PhaseComplete
 		gs.CurrentPlayerDeadline = "" // Clear deadline when game ends
 		// Add skat cards to declarer's score in normal games
-		if gs.Mode != ModeNull {
-			gs.DeclarerScore += gs.Skat[0].Value() + gs.Skat[1].Value()
+		if (gs.Mode == ModeSuit || gs.Mode == ModeGrand) && gs.Declarer != nil {
+			gs.PlayerScores[*gs.Declarer] += gs.Skat[0].Value() + gs.Skat[1].Value()
 		}
 	}
 
@@ -171,8 +178,14 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 				d := Speaker
 				declarer = &d
 			} else if !gs.ListenerPassed {
-				d := Listener
-				declarer = &d
+				if gs.BidValue == 0 {
+					// Both other players passed without bidding. Forehand/listener now
+					// chooses whether to play at 0 or pass into the session all-pass policy.
+					gs.CurrentPlayer = Listener
+				} else {
+					d := Listener
+					declarer = &d
+				}
 			} else {
 				// We have Zwangsspiel
 			}
@@ -229,10 +242,23 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		}
 	}
 
-	if gs.IsZwangsspiel() {
-		// All three passed explicitly - Listener must play by forehand privilege (Zwangsspiel)
-		forcedDeclarer := Listener
-		declarer = &forcedDeclarer
+	if gs.AllPlayersPassed() {
+		switch gs.PassPolicy {
+		case PassPolicyReshuffle:
+			gs.ResetForRedeal()
+			gs.UpdateCurrentPlayerDeadline()
+			return "All players passed; cards will be reshuffled", nil
+		case PassPolicyRamsch:
+			gs.Declarer = nil
+			gs.Mode = ModeRamsch
+			gs.TrumpSuit = NoSuit
+			gs.Phase = PhasePlaying
+			gs.CurrentPlayer = Listener
+		default:
+			// All three passed explicitly - Listener must play by forehand privilege (Zwangsspiel)
+			forcedDeclarer := Listener
+			declarer = &forcedDeclarer
+		}
 	}
 	if declarer != nil {
 		gs.Declarer = declarer
@@ -247,10 +273,42 @@ func (gs *GameState) Bid(accept bool) (string, error) {
 		} else {
 			action = fmt.Sprintf("I accept %d", bidValue)
 		}
+	} else if gs.Mode == ModeRamsch && gs.Phase == PhasePlaying && gs.AllPlayersPassed() {
+		action = "All players passed; Ramsch begins"
 	}
 
 	gs.UpdateCurrentPlayerDeadline()
 	return action, nil
+}
+
+func (gs *GameState) AllPlayersPassed() bool {
+	return gs.BidValue == 0 && gs.ListenerPassed && gs.SpeakerPassed && gs.DealerPassed
+}
+
+func (gs *GameState) ResetForRedeal() {
+	gs.Phase = PhaseDealing
+	gs.Mode = ModeSuit
+	gs.TrumpSuit = NoSuit
+	gs.Declarer = nil
+	gs.BidValue = 0
+	gs.CurrentPlayer = Dealer
+	gs.ListenerPassed = false
+	gs.SpeakerPassed = false
+	gs.DealerPassed = false
+	gs.Overbid = false
+	gs.PlayerScores = [3]int{}
+	gs.Trick = nil
+	gs.TrickWinner = nil
+	gs.CardsPlayed = nil
+	gs.ForfeitedPlayer = nil
+	gs.PlayedHand = false
+	gs.AnnouncedSchneider = false
+	gs.AnnouncedSchwarz = false
+	for _, player := range gs.Players {
+		if player != nil {
+			player.Hand = []Card{}
+		}
+	}
 }
 
 // HandleDeal processes the deal action from the dealer before bidding
@@ -471,9 +529,10 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.SpeakerPassed = false
 	gs.DealerPassed = false
 	gs.Overbid = false
-	gs.DeclarerScore = 0
-	gs.OpponentScore = 0
+	gs.PlayerScores = [3]int{}
 	gs.Trick = nil
+	gs.TrickWinner = nil
+	gs.CardsPlayed = nil
 	gs.ForfeitedPlayer = nil
 	gs.PlayedHand = false
 	gs.AnnouncedSchneider = false

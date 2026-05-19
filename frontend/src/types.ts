@@ -14,7 +14,7 @@ export interface GameState {
   hand?: Card[];
   position?: number;
   declarer_won?: boolean;
-  declarer_score?: number;
+  player_scores?: [number, number, number];
 }
 
 export interface SessionGameResult {
@@ -22,7 +22,7 @@ export interface SessionGameResult {
   game_number: number;
   declarer_name: string;
   declarer_won: boolean;
-  game_mode: "grand" | "suit" | "null";
+  game_mode: "grand" | "suit" | "null" | "ramsch";
   trump_suit: "♣" | "♠" | "♥" | "♦";
   player_results: { [playerId: string]: number };
   player_names: { [playerId: string]: string };

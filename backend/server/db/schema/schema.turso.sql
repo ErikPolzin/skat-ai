@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     code TEXT NOT NULL,
     game_id TEXT DEFAULT NULL,
     player_count INT DEFAULT 0,
+    max_games INTEGER NOT NULL DEFAULT 10,
+    pass_policy TEXT NOT NULL DEFAULT 'force_listener',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     ended_at DATETIME
 );
@@ -43,8 +45,9 @@ CREATE TABLE IF NOT EXISTS games (
     trick_winner INTEGER DEFAULT 0,
     current_player INTEGER DEFAULT 0,
     declarer INTEGER,
-    declarer_score INTEGER DEFAULT 0,
-    opponent_score INTEGER DEFAULT 0,
+    player_score_dealer INTEGER DEFAULT 0,
+    player_score_listener INTEGER DEFAULT 0,
+    player_score_speaker INTEGER DEFAULT 0,
     game_mode TEXT DEFAULT '',
     trump_suit INTEGER DEFAULT 0,
     bid_value INTEGER DEFAULT 0,
@@ -84,9 +87,21 @@ CREATE TABLE IF NOT EXISTS player_results (
     player_points INTEGER DEFAULT 0,
     is_winner INTEGER DEFAULT 0,
     is_declarer INTEGER DEFAULT 0,
+    FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS player_session_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    player_points INTEGER DEFAULT 0,
+    is_winner INTEGER DEFAULT 0,
+    is_forfeit INTEGER DEFAULT 0,
     rating_before INTEGER DEFAULT 1500,
     rating_after INTEGER DEFAULT 1500,
     rating_change INTEGER DEFAULT 0,
+    UNIQUE(session_id, player_id),
     FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
@@ -95,6 +110,8 @@ CREATE INDEX IF NOT EXISTS idx_players_game_id ON players(game_id);
 CREATE INDEX IF NOT EXISTS idx_player_results_game_id ON player_results(game_id);
 CREATE INDEX IF NOT EXISTS idx_player_results_player_id ON player_results(player_id);
 CREATE INDEX IF NOT EXISTS idx_player_results_session_id ON player_results(session_id);
+CREATE INDEX IF NOT EXISTS idx_player_session_results_player_id ON player_session_results(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_session_results_session_id ON player_session_results(session_id);
 
 CREATE TABLE IF NOT EXISTS player_ratings (
     profile_id TEXT PRIMARY KEY,

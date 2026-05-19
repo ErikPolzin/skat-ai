@@ -45,11 +45,14 @@ export function GameOverScreen() {
         </span>
       ) : (
         <span className="game-over-score">
-          {game.declarer?.name}: {game.playerWon === game.isDeclarer ? "+" : ""}
-          {result.value}
+          {game.gameMode === "ramsch"
+            ? "Ramsch complete"
+            : `${game.declarer?.name}: ${
+                game.playerWon === game.isDeclarer ? "+" : ""
+              }${result.value}`}
         </span>
       )}
-      {!result.is_forfeit && !game.isNull && result.base_value > 0 && (
+      {!result.is_forfeit && !game.isNull && game.gameMode !== "ramsch" && result.base_value > 0 && (
         <TableContainer component={Paper}>
           <Table size="small">
             <TableBody>
@@ -115,7 +118,7 @@ export function GameOverScreen() {
                 ? "Waiting for other players..."
                 : game.controls.isLoading
                   ? "Loading..."
-                  : `Play Next (${game.gamesPlayed + 1}/10)`}
+                  : `Play Next (${game.gamesPlayed + 1}/${game.maxGames})`}
             </Button>
             {game.player?.ready_for_next && (
               <span

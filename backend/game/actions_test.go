@@ -110,7 +110,7 @@ func TestNullHandResultUsesNullHandValue(t *testing.T) {
 	gs := newDeclarerChoiceStateForTest(0)
 	gs.Mode = ModeNull
 	gs.PlayedHand = true
-	gs.DeclarerScore = 0
+	gs.PlayerScores[*gs.Declarer] = 0
 
 	result := gs.Result()
 

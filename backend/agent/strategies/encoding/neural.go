@@ -21,7 +21,7 @@ type NeuralCardPlayEncoding struct {
 	// Game context (14 features)
 	GameMode        [6]float32 // One-hot: [Grand, Clubs, Spades, Hearts, Diamonds, Null]
 	TrickPosition   [3]float32 // [leading, second, third]
-	Scores          [2]float32 // [declarer_score/120, opponent_score/120]
+	Scores          [2]float32 // [derived declarer score / 120, derived opponent score / 120]
 	TricksRemaining float32    // tricks_left / 10
 	TrumpSituation  [2]float32 // [my_trump_count/11, estimated_opponent_trumps/11]
 
@@ -171,8 +171,8 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 	}
 
 	// Scores (normalized to 0-1, max score is 120)
-	encoding.Scores[0] = float32(gs.DeclarerScore) / 120.0
-	encoding.Scores[1] = float32(gs.OpponentScore) / 120.0
+	encoding.Scores[0] = float32(gs.DeclarerCardScore()) / 120.0
+	encoding.Scores[1] = float32(gs.OpponentCardScore()) / 120.0
 
 	// Tricks remaining (each player has 10 cards, so 10 tricks total)
 	cardsInHand := len(myHand)
@@ -259,13 +259,13 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 
 	encoding.GamePressure[0] = clamp01(float32(gs.BidValue) / 264.0)
 	if gs.Mode == game.ModeNull {
-		if gs.DeclarerScore > 0 {
+		if gs.DeclarerCardScore() > 0 {
 			encoding.GamePressure[1] = 1.0
 		}
 		encoding.GamePressure[2] = 1.0 - encoding.GamePressure[1]
 	} else {
-		encoding.GamePressure[1] = clamp01(float32(61-gs.DeclarerScore) / 61.0)
-		encoding.GamePressure[2] = clamp01(float32(60-gs.OpponentScore) / 60.0)
+		encoding.GamePressure[1] = clamp01(float32(61-gs.DeclarerCardScore()) / 61.0)
+		encoding.GamePressure[2] = clamp01(float32(60-gs.OpponentCardScore()) / 60.0)
 	}
 	if gs.PlayedHand {
 		encoding.GamePressure[3] = 1.0

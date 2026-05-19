@@ -393,7 +393,7 @@ func (m *MCTSCardPlayStrategy) isTrump(state *game.GameState, card game.Card) bo
 
 func (m *MCTSCardPlayStrategy) evaluateTerminalState(state *game.GameState, playerID game.GamePosition) float64 {
 	isPlayerDeclarer := state.Declarer != nil && playerID == *state.Declarer
-	declarerPoints := float64(state.DeclarerScore)
+	declarerPoints := float64(state.DeclarerCardScore())
 
 	// Normalize to [-1, 1] range centered at 61 (winning threshold)
 	// Score of 61 -> 0.0, score of 120 -> ~1.0, score of 0 -> ~-1.0

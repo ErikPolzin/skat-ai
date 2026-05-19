@@ -50,7 +50,7 @@ function GameScreenContent() {
             playerId={game.player?.id}
             gameId={game.gameId}
             gamesPlayed={game.gamesPlayed}
-            maxGames={10}
+            maxGames={game.maxGames}
             players={game.players}
           />
         </Box>
@@ -63,7 +63,7 @@ function GameScreenContent() {
           playerId={game.player?.id}
           gameId={game.gameId}
           gamesPlayed={game.gamesPlayed}
-          maxGames={10}
+          maxGames={game.maxGames}
           players={game.players}
         />
       )}

@@ -25,8 +25,8 @@ func TestBiddingPhases(t *testing.T) {
 			expectedBid:    18,
 		},
 		{
-			name:           "Speaker passes, Dealer passes",
-			bids:           []bool{false, false}, // Speaker pass, Dealer pass -> Listener wins at 0
+			name:           "Speaker passes, Dealer passes, Listener plays",
+			bids:           []bool{false, false, true}, // Speaker pass, Dealer pass, Listener accepts -> Listener wins at 0
 			expectedWinner: Listener,
 			expectedBid:    0,
 		},
@@ -93,6 +93,123 @@ func TestBiddingPhases(t *testing.T) {
 				t.Errorf("Expected bid value %d, got %d", tt.expectedBid, gs.BidValue)
 			}
 		})
+	}
+}
+
+func newBiddingGameForTest(policy PassPolicy) *GameState {
+	gs := NewGame()
+	gs.PassPolicy = policy
+	gs.AddPlayer(&PlayerState{ID: "dealer", Name: "Dealer"})
+	gs.AddPlayer(&PlayerState{ID: "listener", Name: "Listener"})
+	gs.AddPlayer(&PlayerState{ID: "speaker", Name: "Speaker"})
+	gs.Deal()
+	return gs
+}
+
+func TestListenerCanChooseAfterSpeakerAndDealerPassAtZero(t *testing.T) {
+	gs := newBiddingGameForTest(PassPolicyForceListener)
+
+	if _, err := gs.Bid(false); err != nil {
+		t.Fatalf("speaker pass failed: %v", err)
+	}
+	if gs.CurrentPlayer != Dealer {
+		t.Fatalf("expected dealer to act after speaker pass, got %d", gs.CurrentPlayer)
+	}
+
+	if _, err := gs.Bid(false); err != nil {
+		t.Fatalf("dealer pass failed: %v", err)
+	}
+	if gs.Phase != PhaseBidding {
+		t.Fatalf("expected bidding to continue for listener decision, got %s", gs.Phase)
+	}
+	if gs.CurrentPlayer != Listener {
+		t.Fatalf("expected listener to get all-pass decision, got %d", gs.CurrentPlayer)
+	}
+	if gs.Declarer != nil {
+		t.Fatalf("expected no declarer before listener decision, got %d", *gs.Declarer)
+	}
+}
+
+func TestListenerCanVoluntarilyPlayAtZeroAfterOthersPass(t *testing.T) {
+	gs := newBiddingGameForTest(PassPolicyReshuffle)
+
+	gs.Bid(false) // Speaker passes
+	gs.Bid(false) // Dealer passes
+	if _, err := gs.Bid(true); err != nil {
+		t.Fatalf("listener accept failed: %v", err)
+	}
+
+	if gs.Phase != PhaseSkatExchange {
+		t.Fatalf("expected skat exchange, got %s", gs.Phase)
+	}
+	if gs.Declarer == nil || *gs.Declarer != Listener {
+		t.Fatalf("expected listener declarer, got %v", gs.Declarer)
+	}
+	if gs.BidValue != 0 {
+		t.Fatalf("expected zero bid, got %d", gs.BidValue)
+	}
+}
+
+func TestAllPassPolicyForceListenerAfterExplicitListenerPass(t *testing.T) {
+	gs := newBiddingGameForTest(PassPolicyForceListener)
+
+	gs.Bid(false) // Speaker passes
+	gs.Bid(false) // Dealer passes
+	if _, err := gs.Bid(false); err != nil {
+		t.Fatalf("listener pass failed: %v", err)
+	}
+
+	if gs.Phase != PhaseSkatExchange {
+		t.Fatalf("expected forced listener skat exchange, got %s", gs.Phase)
+	}
+	if gs.Declarer == nil || *gs.Declarer != Listener {
+		t.Fatalf("expected listener declarer, got %v", gs.Declarer)
+	}
+	if !gs.AllPlayersPassed() {
+		t.Fatalf("expected all players passed")
+	}
+}
+
+func TestAllPassPolicyReshuffleAfterExplicitListenerPass(t *testing.T) {
+	gs := newBiddingGameForTest(PassPolicyReshuffle)
+
+	gs.Bid(false) // Speaker passes
+	gs.Bid(false) // Dealer passes
+	if _, err := gs.Bid(false); err != nil {
+		t.Fatalf("listener pass failed: %v", err)
+	}
+
+	if gs.Phase != PhaseDealing {
+		t.Fatalf("expected redeal phase, got %s", gs.Phase)
+	}
+	if gs.Declarer != nil {
+		t.Fatalf("expected no declarer after reshuffle, got %d", *gs.Declarer)
+	}
+	if gs.SpeakerPassed || gs.DealerPassed || gs.ListenerPassed {
+		t.Fatalf("expected pass flags reset after reshuffle")
+	}
+}
+
+func TestAllPassPolicyRamschAfterExplicitListenerPass(t *testing.T) {
+	gs := newBiddingGameForTest(PassPolicyRamsch)
+
+	gs.Bid(false) // Speaker passes
+	gs.Bid(false) // Dealer passes
+	if _, err := gs.Bid(false); err != nil {
+		t.Fatalf("listener pass failed: %v", err)
+	}
+
+	if gs.Phase != PhasePlaying {
+		t.Fatalf("expected Ramsch to start playing, got %s", gs.Phase)
+	}
+	if gs.Mode != ModeRamsch {
+		t.Fatalf("expected Ramsch mode, got %s", gs.Mode)
+	}
+	if gs.Declarer != nil {
+		t.Fatalf("expected no declarer in Ramsch, got %d", *gs.Declarer)
+	}
+	if gs.CurrentPlayer != Listener {
+		t.Fatalf("expected forehand/listener to lead Ramsch, got %d", gs.CurrentPlayer)
 	}
 }
 

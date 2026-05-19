@@ -52,7 +52,8 @@ function jsonHeaders(
   };
 }
 
-export type GameMode = "grand" | "suit" | "null";
+export type GameMode = "grand" | "suit" | "null" | "ramsch";
+export type PassPolicy = "reshuffle" | "force_listener" | "ramsch";
 export type TrumpSuit = "♣" | "♠" | "♥" | "♦";
 export type GamePosition = 0 | 1 | 2;
 
@@ -61,6 +62,8 @@ export interface GameState {
   code: string;
   session_id: string;
   game_number: number;
+  max_games: number;
+  pass_policy: PassPolicy;
   players: [ServerPlayer | null, ServerPlayer | null, ServerPlayer | null];
   current_player: GamePosition;
   declarer: GamePosition | null;
@@ -70,8 +73,7 @@ export interface GameState {
   trick_winner: GamePosition | null;
   trick_starter: GamePosition;
   phase: string;
-  declarer_score: number;
-  opponent_score: number;
+  player_scores: [number, number, number];
   bid_value: number;
   listener_passed: boolean;
   speaker_passed: boolean;
@@ -112,6 +114,8 @@ export interface GameSession {
   code: string;
   game_id?: string;
   player_count: number;
+  max_games: number;
+  pass_policy: PassPolicy;
   created_at: string;
   ended_at?: string;
 }
@@ -138,12 +142,20 @@ export async function fetchGameState(gameId: string): Promise<GameInfo> {
   return response.json();
 }
 
-export async function createGame(): Promise<{ game_id: string; code: string }> {
+export interface CreateGameOptions {
+  max_games: number;
+  pass_policy: PassPolicy;
+}
+
+export async function createGame(
+  options?: CreateGameOptions,
+): Promise<{ game_id: string; code: string }> {
   const url = `${getApiUrl()}/api/games`;
 
   const response = await fetch(url, {
     method: "POST",
     headers: jsonHeaders(),
+    body: options ? JSON.stringify(options) : undefined,
   });
 
   if (!response.ok) {
@@ -228,13 +240,14 @@ export async function getActiveGames(playerId: string): Promise<ActiveGame[]> {
 }
 
 export interface PlayerResult {
-  game_id: string;
   session_id: string;
   player_id: string;
-  player_position: number;
   player_points: number;
   is_winner: boolean;
+  is_forfeit?: boolean;
   other_players?: string[];
+  rating_before?: number;
+  rating_after?: number;
   rating_change?: number;
 }
 

@@ -341,14 +341,25 @@ export function MotionCardTable() {
     };
   };
 
-  // Determine who is partnered with whom
-  const playerIsDeclarer = game.isDeclarer;
-  const playerPileScore = playerIsDeclarer
-    ? game.declarerScore
-    : game.opponentScore;
-  const opponentPileScore = playerIsDeclarer
-    ? game.opponentScore
-    : game.declarerScore;
+	// Determine who is partnered with whom
+	const playerIsDeclarer = game.isDeclarer;
+	const isRamsch = game.gameMode === "ramsch";
+	const playerPileScore =
+		isRamsch && game.playerPosition !== null
+			? game.playerScores[game.playerPosition]
+			: playerIsDeclarer
+				? game.declarerScore
+				: game.opponentScore;
+	const opponentPileScore =
+		isRamsch && game.playerPosition !== null
+			? game.playerScores.reduce(
+					(sum, score, index) =>
+						index === game.playerPosition ? sum : sum + score,
+					0,
+				)
+			: playerIsDeclarer
+				? game.opponentScore
+				: game.declarerScore;
   const totalCardPoints = 120;
   const clampedPlayerScore = Math.max(
     0,

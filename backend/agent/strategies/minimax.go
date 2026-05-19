@@ -466,8 +466,9 @@ func (m *PerfectInfoMinimaxStrategy) hashState(state *game.GameState) uint64 {
 	hash = hash*31 + uint64(state.CurrentPlayer)
 
 	// Hash declarer score
-	hash = hash*31 + uint64(state.DeclarerScore)
-	hash = hash*31 + uint64(state.OpponentScore)
+	for _, score := range state.PlayerScores {
+		hash = hash*31 + uint64(score)
+	}
 	hash = hash*31 + uint64(state.TrickStarter)
 	hash = hash*31 + uint64(state.TrumpSuit)
 	hash = hash*31 + hashGameMode(state.Mode)
@@ -527,7 +528,7 @@ func (m *PerfectInfoMinimaxStrategy) evaluateTerminal(state *game.GameState) flo
 		declarerWon = false
 	}
 
-	margin := float64(state.DeclarerScore - state.OpponentScore)
+	margin := float64(state.DeclarerCardScore() - state.OpponentCardScore())
 	if state.Mode == game.ModeNull {
 		if declarerWon {
 			return 1000.0
@@ -543,7 +544,7 @@ func (m *PerfectInfoMinimaxStrategy) evaluateTerminal(state *game.GameState) flo
 // evaluateMaterial calculates material advantage (points)
 func (m *PerfectInfoMinimaxStrategy) evaluateMaterial(state *game.GameState, declarer game.GamePosition) float64 {
 	// Start with current score
-	score := float64(state.DeclarerScore)
+	score := float64(state.DeclarerCardScore())
 
 	// Add remaining card values in hands
 	for p := 0; p < 3; p++ {

@@ -294,16 +294,14 @@ func (s *Server) checkInactivityTimeouts() {
 			}
 
 			// Forfeit the game
-			results := gs.ForfeitDueToInactivity()
-
-			// Save results to database
-			if err := s.db.SavePlayerResults(results); err != nil {
-				logger.Warning("Failed to save timeout forfeit results: %e", err)
-			}
+			gs.ForfeitDueToInactivity()
 
 			// Save the updated game state
 			if err := s.cache.SaveGame(gs); err != nil {
 				logger.Warning("Failed to save game after timeout: %e", err)
+			}
+			if err := s.maybeSaveGameResults(&gs); err != nil {
+				logger.Warning("Failed to save timeout forfeit results: %e", err)
 			}
 
 			// Broadcast the updated game state so clients show game over screen

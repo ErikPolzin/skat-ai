@@ -184,8 +184,11 @@ func (gs *GameState) SerializeForPlayer(playerID string) *GameInfo {
 		}
 	}
 
-	// Determine if players can start the next game (max 10 games per session)
-	canPlayNext := gs.Phase == PhaseComplete && gs.GameNumber < 10
+	maxGames := gs.MaxGames
+	if maxGames <= 0 {
+		maxGames = DefaultMaxGames
+	}
+	canPlayNext := gs.Phase == PhaseComplete && gs.GameNumber+1 < maxGames
 
 	info := &GameInfo{
 		State:       gs,

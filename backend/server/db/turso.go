@@ -124,14 +124,23 @@ func (d *TursoDatabase) SaveProfile(profile ProfileEntry) error {
 }
 
 func (d *TursoDatabase) SaveGameSession(session game.GameSessionState) error {
+	if session.MaxGames <= 0 {
+		session.MaxGames = game.DefaultMaxGames
+	}
+	if session.PassPolicy == "" {
+		session.PassPolicy = string(game.PassPolicyForceListener)
+	}
 	_, err := d.DB.Exec(
-		`INSERT INTO game_sessions (id, code, game_id, player_count)
-		VALUES (?, ?, ?, ?)
+		`INSERT INTO game_sessions (id, code, game_id, player_count, max_games, pass_policy, ended_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			code = excluded.code,
 			game_id = excluded.game_id,
-			player_count = excluded.player_count`,
-		session.ID, session.Code, session.GameID, session.PlayerCount,
+			player_count = excluded.player_count,
+			max_games = excluded.max_games,
+			pass_policy = excluded.pass_policy,
+			ended_at = excluded.ended_at`,
+		session.ID, session.Code, session.GameID, session.PlayerCount, session.MaxGames, session.PassPolicy, session.EndedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save game session: %w", err)
@@ -142,10 +151,10 @@ func (d *TursoDatabase) SaveGameSession(session game.GameSessionState) error {
 func (d *TursoDatabase) GetGameSession(sessionID string) (*game.GameSessionState, error) {
 	var session game.GameSessionState
 	err := d.DB.QueryRow(`
-		SELECT id, code, created_at, ended_at
+		SELECT id, code, game_id, player_count, max_games, pass_policy, created_at, ended_at
 		FROM game_sessions
 		WHERE id = ?
-	`, sessionID).Scan(&session.ID, &session.Code, &session.CreatedAt, &session.EndedAt)
+	`, sessionID).Scan(&session.ID, &session.Code, &session.GameID, &session.PlayerCount, &session.MaxGames, &session.PassPolicy, &session.CreatedAt, &session.EndedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game session not found")
 	}
@@ -160,9 +169,9 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	var skatString, trickString, cardsPlayedString string
 	var deadline sql.NullString
 	err := d.DB.QueryRow(
-		`SELECT g.id, g.session_id, gss.code, g.game_number, g.phase, g.skat, g.trick,
+		`SELECT g.id, g.session_id, gss.code, g.game_number, gss.max_games, gss.pass_policy, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
-			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
+			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
 			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
 			g.current_player_deadline, g.forfeited_player, g.cards_played
@@ -171,9 +180,9 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		WHERE g.id = ?`,
 		gameID,
 	).Scan(
-		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
+		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
-		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
+		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
@@ -219,9 +228,9 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 	var skatString, trickString, cardsPlayedString string
 	var deadline sql.NullString
 	err := d.DB.QueryRow(
-		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
+		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
-			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
+			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
 			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
 			g.current_player_deadline, g.forfeited_player, g.cards_played
@@ -232,9 +241,9 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 		LIMIT 1`,
 		sessionCode,
 	).Scan(
-		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
+		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
-		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
+		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
@@ -294,21 +303,23 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 		`INSERT INTO games (
 			id, session_id, game_number, phase, skat, trick,
 			trick_starter, trick_winner, current_player,
-			declarer, declarer_score, opponent_score,
+			declarer, player_score_dealer, player_score_listener, player_score_speaker,
 			game_mode, trump_suit, bid_value, matadors,
 			played_hand, announced_schneider, announced_schwarz,
 			listener_passed, speaker_passed, dealer_passed, overbid,
 			current_player_deadline, forfeited_player, cards_played,
 			created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT (id) DO UPDATE SET
 			session_id = excluded.session_id, game_number = excluded.game_number,
 			phase = excluded.phase, skat = excluded.skat, trick = excluded.trick,
 			trick_starter = excluded.trick_starter, trick_winner = excluded.trick_winner,
 			current_player = excluded.current_player,
-			declarer = excluded.declarer, declarer_score = excluded.declarer_score,
-			opponent_score = excluded.opponent_score,
+			declarer = excluded.declarer,
+			player_score_dealer = excluded.player_score_dealer,
+			player_score_listener = excluded.player_score_listener,
+			player_score_speaker = excluded.player_score_speaker,
 			game_mode = excluded.game_mode, trump_suit = excluded.trump_suit,
 			bid_value = excluded.bid_value, matadors = excluded.matadors,
 			played_hand = excluded.played_hand, announced_schneider = excluded.announced_schneider,
@@ -320,7 +331,7 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			updated_at = CURRENT_TIMESTAMP`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
-		gs.Declarer, gs.DeclarerScore, gs.OpponentScore,
+		gs.Declarer, gs.PlayerScores[0], gs.PlayerScores[1], gs.PlayerScores[2],
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
 		gs.PlayedHand, gs.AnnouncedSchneider, gs.AnnouncedSchwarz,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,
@@ -354,12 +365,12 @@ func (d *TursoDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 	// Query for games in waiting_for_players phase
 	// Count actual players dynamically instead of relying on stale player_count column
 	rows, err := d.DB.Query(`
-		SELECT gs.id, gs.code, gs.game_id, COALESCE(COUNT(p.profile_id), 0) as player_count, gs.created_at, gs.ended_at
+		SELECT gs.id, gs.code, gs.game_id, COALESCE(COUNT(p.profile_id), 0) as player_count, gs.max_games, gs.pass_policy, gs.created_at, gs.ended_at
 		FROM game_sessions gs
 		JOIN games g ON g.id = gs.game_id
 		LEFT JOIN players p ON p.game_id = g.id
 		WHERE g.phase = 'waiting_for_players'
-		GROUP BY gs.id, gs.code, gs.game_id, gs.created_at, gs.ended_at
+		GROUP BY gs.id, gs.code, gs.game_id, gs.max_games, gs.pass_policy, gs.created_at, gs.ended_at
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list open games: %w", err)
@@ -370,7 +381,7 @@ func (d *TursoDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 	for rows.Next() {
 		var se game.GameSessionState
 		if err := rows.Scan(
-			&se.ID, &se.Code, &se.GameID, &se.PlayerCount, &se.CreatedAt, &se.EndedAt); err != nil {
+			&se.ID, &se.Code, &se.GameID, &se.PlayerCount, &se.MaxGames, &se.PassPolicy, &se.CreatedAt, &se.EndedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan game: %w", err)
 		}
 
@@ -443,19 +454,102 @@ func (d *TursoDatabase) SavePlayerResults(results []game.PlayerResultState) erro
 			isDeclarer = 1
 		}
 
+		if _, err := d.DB.Exec(
+			`DELETE FROM player_results WHERE game_id = ? AND player_id = ?`,
+			result.GameID, result.PlayerID,
+		); err != nil {
+			return fmt.Errorf("failed to replace player result: %w", err)
+		}
+
 		_, err := d.DB.Exec(
 			`INSERT INTO player_results (
-				game_id, session_id, player_id, player_position, player_points, is_winner, is_declarer,
-				rating_before, rating_after, rating_change
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				game_id, session_id, player_id, player_position, player_points, is_winner, is_declarer
+			) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			result.GameID, result.SessionID, result.PlayerID, result.PlayerPosition, result.PlayerPoints, isWinner, isDeclarer,
-			result.RatingBefore, result.RatingAfter, result.RatingChange,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save player result: %w", err)
 		}
 	}
 	return nil
+}
+
+func (d *TursoDatabase) SavePlayerSessionResults(results []game.PlayerSessionResultState) error {
+	for _, result := range results {
+		isWinner := 0
+		if result.IsWinner {
+			isWinner = 1
+		}
+		isForfeit := 0
+		if result.IsForfeit {
+			isForfeit = 1
+		}
+
+		_, err := d.DB.Exec(
+			`INSERT INTO player_session_results (
+				session_id, player_id, player_points, is_winner, is_forfeit,
+				rating_before, rating_after, rating_change
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (session_id, player_id) DO UPDATE SET
+				player_points = excluded.player_points,
+				is_winner = excluded.is_winner,
+				is_forfeit = excluded.is_forfeit,
+				rating_before = excluded.rating_before,
+				rating_after = excluded.rating_after,
+				rating_change = excluded.rating_change`,
+			result.SessionID, result.PlayerID, result.PlayerPoints, isWinner, isForfeit,
+			result.RatingBefore, result.RatingAfter, result.RatingChange,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to save player session result: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *TursoDatabase) GetPlayerSessionResults(playerID string, limit int) ([]game.PlayerSessionResultState, error) {
+	query := `
+		SELECT psr.session_id, psr.player_id, psr.player_points, psr.is_winner, psr.is_forfeit,
+			   psr.rating_before, psr.rating_after, psr.rating_change,
+			   GROUP_CONCAT(DISTINCT CASE WHEN p.profile_id != psr.player_id THEN prof.name END) AS other_players
+		FROM player_session_results psr
+		LEFT JOIN games g ON g.session_id = psr.session_id
+		LEFT JOIN players p ON p.game_id = g.id
+		LEFT JOIN profiles prof ON prof.id = p.profile_id
+		WHERE psr.player_id = ?
+		GROUP BY psr.id, psr.session_id, psr.player_id, psr.player_points, psr.is_winner, psr.is_forfeit,
+		         psr.rating_before, psr.rating_after, psr.rating_change
+		ORDER BY psr.id DESC
+	`
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	rows, err := d.DB.Query(query, playerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get player session results: %w", err)
+	}
+	defer rows.Close()
+
+	var results []game.PlayerSessionResultState
+	for rows.Next() {
+		var result game.PlayerSessionResultState
+		var isWinner, isForfeit int
+		var otherPlayersStr *string
+		if err := rows.Scan(
+			&result.SessionID, &result.PlayerID, &result.PlayerPoints, &isWinner, &isForfeit,
+			&result.RatingBefore, &result.RatingAfter, &result.RatingChange, &otherPlayersStr,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan player session result: %w", err)
+		}
+		result.IsWinner = isWinner != 0
+		result.IsForfeit = isForfeit != 0
+		if otherPlayersStr != nil && *otherPlayersStr != "" {
+			result.OtherPlayers = strings.Split(*otherPlayersStr, ",")
+		}
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 func (d *TursoDatabase) CountGamesInSession(sessionID string) (int, error) {
@@ -470,11 +564,10 @@ func (d *TursoDatabase) CountGamesInSession(sessionID string) (int, error) {
 	return count, nil
 }
 
-func (d *TursoDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultState, error) {
+func (d *TursoDatabase) GetPlayerResultsForSession(sessionID string) ([]game.PlayerResultState, error) {
 	rows, err := d.DB.Query(`
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-			   COALESCE(pr.is_declarer AND g.overbid, 0) AS is_overbid,
-			   CASE WHEN g.forfeited_player = pr.player_position THEN 1 ELSE 0 END AS is_forfeit
+			   COALESCE(pr.is_declarer AND g.overbid, 0) AS is_overbid
 		FROM player_results pr
 		LEFT JOIN games g ON g.id = pr.game_id
 		WHERE pr.session_id = ?
@@ -488,15 +581,14 @@ func (d *TursoDatabase) GetSessionResults(sessionID string) ([]game.PlayerResult
 	var results []game.PlayerResultState
 	for rows.Next() {
 		var result game.PlayerResultState
-		var isWinner, isDeclarer, isOverbid, isForfeit int
+		var isWinner, isDeclarer, isOverbid int
 		if err := rows.Scan(&result.GameID, &result.SessionID, &result.PlayerID,
-			&result.PlayerPosition, &result.PlayerPoints, &isWinner, &isDeclarer, &isOverbid, &isForfeit); err != nil {
+			&result.PlayerPosition, &result.PlayerPoints, &isWinner, &isDeclarer, &isOverbid); err != nil {
 			return nil, fmt.Errorf("failed to scan player result: %w", err)
 		}
 		result.IsWinner = isWinner != 0
 		result.IsDeclarer = isDeclarer != 0
 		result.IsOverbid = isOverbid != 0
-		result.IsForfeit = isForfeit != 0
 		results = append(results, result)
 	}
 
@@ -515,7 +607,21 @@ func (d *TursoDatabase) GetFormattedSessionResults(sessionID string) ([]game.Ses
 			COALESCE(declarer_profile.name, '') as declarer_name,
 			CASE
 				WHEN g.forfeited_player IS NOT NULL THEN g.forfeited_player != g.declarer
-				ELSE (g.declarer_score >= 61 AND NOT g.overbid) OR (g.declarer_score = 0 AND g.game_mode = 'null' AND NOT g.overbid)
+				ELSE (
+					CASE g.declarer
+						WHEN 0 THEN g.player_score_dealer
+						WHEN 1 THEN g.player_score_listener
+						WHEN 2 THEN g.player_score_speaker
+						ELSE 0
+					END >= 61 AND NOT g.overbid
+				) OR (
+					CASE g.declarer
+						WHEN 0 THEN g.player_score_dealer
+						WHEN 1 THEN g.player_score_listener
+						WHEN 2 THEN g.player_score_speaker
+						ELSE 0
+					END = 0 AND g.game_mode = 'null' AND NOT g.overbid
+				)
 			END as declarer_won
 		FROM games g
 		LEFT JOIN profiles declarer_profile ON g.declarer IS NOT NULL AND declarer_profile.id = (
@@ -598,60 +704,6 @@ func (d *TursoDatabase) GetFormattedSessionResults(sessionID string) ([]game.Ses
 	}
 
 	return gameResults, nil
-}
-
-func (d *TursoDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
-	query := `
-		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-			   COALESCE(pr.is_declarer AND g.overbid, 0) AS is_overbid,
-			   CASE WHEN g.forfeited_player = pr.player_position THEN 1 ELSE 0 END AS is_forfeit,
-			   pr.rating_before, pr.rating_after, pr.rating_change,
-			   GROUP_CONCAT(DISTINCT CASE WHEN p.profile_id != pr.player_id THEN prof.name END) AS other_players
-		FROM player_results pr
-		LEFT JOIN games g ON g.id = pr.game_id
-		LEFT JOIN players p ON p.game_id = pr.game_id
-		LEFT JOIN profiles prof ON prof.id = p.profile_id
-		WHERE pr.player_id = ?
-		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-		         g.overbid, g.forfeited_player, g.updated_at, g.created_at, pr.rating_before, pr.rating_after, pr.rating_change
-		ORDER BY COALESCE(g.updated_at, g.created_at) DESC, pr.id DESC
-	`
-	if limit > 0 {
-		query += fmt.Sprintf(" LIMIT %d", limit)
-	}
-
-	rows, err := d.DB.Query(query, playerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get player results: %w", err)
-	}
-	defer rows.Close()
-
-	var results []game.PlayerResultState
-	for rows.Next() {
-		var result game.PlayerResultState
-		var isWinner, isDeclarer, isOverbid, isForfeit int
-		var otherPlayersStr *string
-		if err := rows.Scan(
-			&result.GameID, &result.SessionID, &result.PlayerID,
-			&result.PlayerPosition, &result.PlayerPoints, &isWinner, &isDeclarer,
-			&isOverbid, &isForfeit, &result.RatingBefore, &result.RatingAfter, &result.RatingChange,
-			&otherPlayersStr,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan player result: %w", err)
-		}
-		result.IsWinner = isWinner != 0
-		result.IsDeclarer = isDeclarer != 0
-		result.IsOverbid = isOverbid != 0
-		result.IsForfeit = isForfeit != 0
-
-		// Convert comma-separated string to []string
-		if otherPlayersStr != nil && *otherPlayersStr != "" {
-			result.OtherPlayers = strings.Split(*otherPlayersStr, ",")
-		}
-
-		results = append(results, result)
-	}
-	return results, nil
 }
 
 func (d *TursoDatabase) ListAgentProfiles() ([]ProfileEntry, error) {

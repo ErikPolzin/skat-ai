@@ -100,11 +100,18 @@ func (d *PgDatabase) SaveProfile(profile ProfileEntry) error {
 }
 
 func (d *PgDatabase) SaveGameSession(session game.GameSessionState) error {
+	if session.MaxGames <= 0 {
+		session.MaxGames = game.DefaultMaxGames
+	}
+	if session.PassPolicy == "" {
+		session.PassPolicy = string(game.PassPolicyForceListener)
+	}
 	_, err := d.DB.Exec(
-		`INSERT INTO game_sessions (id, code, game_id, player_count, ended_at)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (id) DO NOTHING`,
-		session.ID, session.Code, session.GameID, session.PlayerCount, session.EndedAt,
+		`INSERT INTO game_sessions (id, code, game_id, player_count, max_games, pass_policy, ended_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (id) DO UPDATE SET
+			code = $2, game_id = $3, player_count = $4, max_games = $5, pass_policy = $6, ended_at = $7`,
+		session.ID, session.Code, session.GameID, session.PlayerCount, session.MaxGames, session.PassPolicy, session.EndedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save game session: %w", err)
@@ -115,10 +122,10 @@ func (d *PgDatabase) SaveGameSession(session game.GameSessionState) error {
 func (d *PgDatabase) GetGameSession(sessionID string) (*game.GameSessionState, error) {
 	var session game.GameSessionState
 	err := d.DB.QueryRow(`
-		SELECT id, code, created_at, ended_at
+		SELECT id, code, game_id, player_count, max_games, pass_policy, created_at, ended_at
 		FROM game_sessions
 		WHERE id = $1
-	`, sessionID).Scan(&session.ID, &session.Code, &session.CreatedAt, &session.EndedAt)
+	`, sessionID).Scan(&session.ID, &session.Code, &session.GameID, &session.PlayerCount, &session.MaxGames, &session.PassPolicy, &session.CreatedAt, &session.EndedAt)
 	if err != nil {
 		if err.Error() == "no rows in result set" {
 			return nil, fmt.Errorf("game session not found")
@@ -135,9 +142,9 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	var trickWinner sql.NullInt64
 	var gs game.GameState
 	err := d.DB.QueryRow(
-		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
+		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
-			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
+			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
 			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
 			g.current_player_deadline, g.forfeited_player, g.cards_played
@@ -146,9 +153,9 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		WHERE g.id = $1`,
 		gameID,
 	).Scan(
-		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
+		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &trickWinner, &gs.CurrentPlayer, &declarer,
-		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
+		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
@@ -209,9 +216,9 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 	var declarer sql.NullInt64
 	var trickWinner sql.NullInt64
 	err := d.DB.QueryRow(
-		`SELECT g.id, g.session_id, gs.code, g.game_number, g.phase, g.skat, g.trick,
+		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
-			g.declarer_score, g.opponent_score, g.game_mode, g.trump_suit,
+			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
 			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
 			g.current_player_deadline, g.forfeited_player, g.cards_played
@@ -222,9 +229,9 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		LIMIT 1`,
 		sessionCode,
 	).Scan(
-		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.Phase, &skatString, &trickString,
+		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &trickWinner, &gs.CurrentPlayer, &declarer,
-		&gs.DeclarerScore, &gs.OpponentScore, &gs.Mode, &gs.TrumpSuit,
+		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
 		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
@@ -309,26 +316,26 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 		`INSERT INTO games (
 			id, session_id, game_number, phase, skat, trick,
 			trick_starter, trick_winner, current_player,
-			declarer, declarer_score, opponent_score,
+			declarer, player_score_dealer, player_score_listener, player_score_speaker,
 			game_mode, trump_suit, bid_value, matadors,
 			played_hand, announced_schneider, announced_schwarz,
 			listener_passed, speaker_passed, dealer_passed, overbid,
 			current_player_deadline, forfeited_player, cards_played,
 			created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
 			NOW(), NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			session_id = $2, game_number = $3, phase = $4, skat = $5, trick = $6,
 			trick_starter = $7, trick_winner = $8, current_player = $9,
-			declarer = $10, declarer_score = $11, opponent_score = $12,
-			game_mode = $13, trump_suit = $14, bid_value = $15, matadors = $16,
-			played_hand = $17, announced_schneider = $18, announced_schwarz = $19,
-			listener_passed = $20, speaker_passed = $21, dealer_passed = $22, overbid = $23,
-			current_player_deadline = $24, forfeited_player = $25, cards_played = $26,
+			declarer = $10, player_score_dealer = $11, player_score_listener = $12, player_score_speaker = $13,
+			game_mode = $14, trump_suit = $15, bid_value = $16, matadors = $17,
+			played_hand = $18, announced_schneider = $19, announced_schwarz = $20,
+			listener_passed = $21, speaker_passed = $22, dealer_passed = $23, overbid = $24,
+			current_player_deadline = $25, forfeited_player = $26, cards_played = $27,
 			updated_at = NOW()`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, trickWinner, gs.CurrentPlayer,
-		declarer, gs.DeclarerScore, gs.OpponentScore,
+		declarer, gs.PlayerScores[0], gs.PlayerScores[1], gs.PlayerScores[2],
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
 		gs.PlayedHand, gs.AnnouncedSchneider, gs.AnnouncedSchwarz,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,
@@ -362,12 +369,12 @@ func (d *PgDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 	// Query for games in waiting_for_players phase
 	// Count actual players dynamically instead of relying on stale player_count column
 	rows, err := d.DB.Query(`
-		SELECT gs.id, gs.game_id, gs.code, COALESCE(COUNT(p.profile_id), 0) as player_count, gs.created_at, gs.ended_at
+		SELECT gs.id, gs.game_id, gs.code, COALESCE(COUNT(p.profile_id), 0) as player_count, gs.max_games, gs.pass_policy, gs.created_at, gs.ended_at
 		FROM game_sessions gs
 		JOIN games g ON g.id = gs.game_id
 		LEFT JOIN players p ON p.game_id = g.id
 		WHERE g.phase = 'waiting_for_players'
-		GROUP BY gs.id, gs.game_id, gs.code, gs.created_at, gs.ended_at
+		GROUP BY gs.id, gs.game_id, gs.code, gs.max_games, gs.pass_policy, gs.created_at, gs.ended_at
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list open games: %w", err)
@@ -378,7 +385,7 @@ func (d *PgDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 	for rows.Next() {
 		var se game.GameSessionState
 		if err := rows.Scan(
-			&se.ID, &se.GameID, &se.Code, &se.PlayerCount, &se.CreatedAt, &se.EndedAt); err != nil {
+			&se.ID, &se.GameID, &se.Code, &se.PlayerCount, &se.MaxGames, &se.PassPolicy, &se.CreatedAt, &se.EndedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan game: %w", err)
 		}
 
@@ -441,13 +448,18 @@ func (d *PgDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 
 func (d *PgDatabase) SavePlayerResults(results []game.PlayerResultState) error {
 	for _, result := range results {
+		if _, err := d.DB.Exec(
+			`DELETE FROM player_results WHERE game_id = $1 AND player_id = $2`,
+			result.GameID, result.PlayerID,
+		); err != nil {
+			return fmt.Errorf("failed to replace player result: %w", err)
+		}
+
 		_, err := d.DB.Exec(
 			`INSERT INTO player_results (
-				game_id, session_id, player_id, player_position, player_points, is_winner, is_declarer,
-				rating_before, rating_after, rating_change
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+				game_id, session_id, player_id, player_position, player_points, is_winner, is_declarer
+			) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 			result.GameID, result.SessionID, result.PlayerID, result.PlayerPosition, result.PlayerPoints, result.IsWinner, result.IsDeclarer,
-			result.RatingBefore, result.RatingAfter, result.RatingChange,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save player result: %w", err)
@@ -456,21 +468,43 @@ func (d *PgDatabase) SavePlayerResults(results []game.PlayerResultState) error {
 	return nil
 }
 
-func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.PlayerResultState, error) {
+func (d *PgDatabase) SavePlayerSessionResults(results []game.PlayerSessionResultState) error {
+	for _, result := range results {
+		_, err := d.DB.Exec(
+			`INSERT INTO player_session_results (
+				session_id, player_id, player_points, is_winner, is_forfeit,
+				rating_before, rating_after, rating_change
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (session_id, player_id) DO UPDATE SET
+				player_points = $3,
+				is_winner = $4,
+				is_forfeit = $5,
+				rating_before = $6,
+				rating_after = $7,
+				rating_change = $8`,
+			result.SessionID, result.PlayerID, result.PlayerPoints, result.IsWinner, result.IsForfeit,
+			result.RatingBefore, result.RatingAfter, result.RatingChange,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to save player session result: %w", err)
+		}
+	}
+	return nil
+}
+
+func (d *PgDatabase) GetPlayerSessionResults(playerID string, limit int) ([]game.PlayerSessionResultState, error) {
 	query := `
-		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-			   COALESCE(pr.is_declarer AND g.overbid, false) AS is_overbid,
-			   COALESCE(g.forfeited_player = pr.player_position, false) AS is_forfeit,
-			   pr.rating_before, pr.rating_after, pr.rating_change,
-			   COALESCE(array_agg(DISTINCT prof.name) FILTER (WHERE p.profile_id != pr.player_id), ARRAY[]::text[]) AS other_players
-		FROM player_results pr
-		LEFT JOIN games g ON g.id = pr.game_id
-		LEFT JOIN players p ON p.game_id = pr.game_id
+		SELECT psr.session_id, psr.player_id, psr.player_points, psr.is_winner, psr.is_forfeit,
+			   psr.rating_before, psr.rating_after, psr.rating_change,
+			   COALESCE(array_agg(DISTINCT prof.name) FILTER (WHERE p.profile_id != psr.player_id), ARRAY[]::text[]) AS other_players
+		FROM player_session_results psr
+		LEFT JOIN games g ON g.session_id = psr.session_id
+		LEFT JOIN players p ON p.game_id = g.id
 		LEFT JOIN profiles prof ON prof.id = p.profile_id
-		WHERE pr.player_id = $1
-		GROUP BY pr.id, pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-		         g.overbid, g.forfeited_player, g.updated_at, g.created_at, pr.rating_before, pr.rating_after, pr.rating_change
-		ORDER BY COALESCE(g.updated_at, g.created_at) DESC, pr.id DESC
+		WHERE psr.player_id = $1
+		GROUP BY psr.id, psr.session_id, psr.player_id, psr.player_points, psr.is_winner, psr.is_forfeit,
+		         psr.rating_before, psr.rating_after, psr.rating_change
+		ORDER BY psr.id DESC
 	`
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
@@ -478,28 +512,23 @@ func (d *PgDatabase) GetPlayerResults(playerID string, limit int) ([]game.Player
 
 	rows, err := d.DB.Query(query, playerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get player results: %w", err)
+		return nil, fmt.Errorf("failed to get player session results: %w", err)
 	}
 	defer rows.Close()
 
-	var results []game.PlayerResultState
+	var results []game.PlayerSessionResultState
 	for rows.Next() {
-		var result game.PlayerResultState
+		var result game.PlayerSessionResultState
 		var otherPlayers pq.StringArray
 		if err := rows.Scan(
-			&result.GameID, &result.SessionID, &result.PlayerID,
-			&result.PlayerPosition, &result.PlayerPoints, &result.IsWinner, &result.IsDeclarer,
-			&result.IsOverbid, &result.IsForfeit, &result.RatingBefore, &result.RatingAfter, &result.RatingChange,
-			&otherPlayers,
+			&result.SessionID, &result.PlayerID, &result.PlayerPoints, &result.IsWinner, &result.IsForfeit,
+			&result.RatingBefore, &result.RatingAfter, &result.RatingChange, &otherPlayers,
 		); err != nil {
-			return nil, fmt.Errorf("failed to scan player result: %w", err)
+			return nil, fmt.Errorf("failed to scan player session result: %w", err)
 		}
-
-		// Convert pq.StringArray to []string
 		if len(otherPlayers) > 0 {
 			result.OtherPlayers = []string(otherPlayers)
 		}
-
 		results = append(results, result)
 	}
 	return results, nil
@@ -517,11 +546,10 @@ func (d *PgDatabase) CountGamesInSession(sessionID string) (int, error) {
 	return count, nil
 }
 
-func (d *PgDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultState, error) {
+func (d *PgDatabase) GetPlayerResultsForSession(sessionID string) ([]game.PlayerResultState, error) {
 	rows, err := d.DB.Query(`
 		SELECT pr.game_id, pr.session_id, pr.player_id, pr.player_position, pr.player_points, pr.is_winner, pr.is_declarer,
-			   COALESCE(pr.is_declarer AND g.overbid, false) AS is_overbid,
-			   COALESCE(g.forfeited_player = pr.player_position, false) AS is_forfeit
+			   COALESCE(pr.is_declarer AND g.overbid, false) AS is_overbid
 		FROM player_results pr
 		LEFT JOIN games g ON g.id = pr.game_id
 		WHERE pr.session_id = $1
@@ -537,7 +565,7 @@ func (d *PgDatabase) GetSessionResults(sessionID string) ([]game.PlayerResultSta
 		var result game.PlayerResultState
 		if err := rows.Scan(&result.GameID, &result.SessionID, &result.PlayerID,
 			&result.PlayerPosition, &result.PlayerPoints, &result.IsWinner, &result.IsDeclarer,
-			&result.IsOverbid, &result.IsForfeit); err != nil {
+			&result.IsOverbid); err != nil {
 			return nil, fmt.Errorf("failed to scan player result: %w", err)
 		}
 		results = append(results, result)
@@ -558,7 +586,21 @@ func (d *PgDatabase) GetFormattedSessionResults(sessionID string) ([]game.Sessio
 			COALESCE(declarer_profile.name, '') as declarer_name,
 			CASE
 				WHEN g.forfeited_player IS NOT NULL THEN g.forfeited_player != g.declarer
-				ELSE (g.declarer_score >= 61 AND NOT g.overbid) OR (g.declarer_score = 0 AND g.game_mode = 'null' AND NOT g.overbid)
+				ELSE (
+					CASE g.declarer
+						WHEN 0 THEN g.player_score_dealer
+						WHEN 1 THEN g.player_score_listener
+						WHEN 2 THEN g.player_score_speaker
+						ELSE 0
+					END >= 61 AND NOT g.overbid
+				) OR (
+					CASE g.declarer
+						WHEN 0 THEN g.player_score_dealer
+						WHEN 1 THEN g.player_score_listener
+						WHEN 2 THEN g.player_score_speaker
+						ELSE 0
+					END = 0 AND g.game_mode = 'null' AND NOT g.overbid
+				)
 			END as declarer_won
 		FROM games g
 		LEFT JOIN profiles declarer_profile ON g.declarer IS NOT NULL AND declarer_profile.id = (

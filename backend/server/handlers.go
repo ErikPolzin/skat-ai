@@ -165,8 +165,9 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	// Create empty session
 	gs := game.NewGame()
 	var req struct {
-		MaxGames   int    `json:"max_games"`
-		PassPolicy string `json:"pass_policy"`
+		MaxGames     int    `json:"max_games"`
+		PassPolicy   string `json:"pass_policy"`
+		TimerEnabled *bool  `json:"timer_enabled"`
 	}
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
@@ -191,14 +192,18 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	}
 	gs.MaxGames = req.MaxGames
 	gs.PassPolicy = passPolicy
+	if req.TimerEnabled != nil {
+		gs.TimerEnabled = *req.TimerEnabled
+	}
 
 	// Save the session to the database
 	if err := s.db.SaveGameSession(game.GameSessionState{
-		ID:         gs.SessionID,
-		Code:       string(gs.Code),
-		GameID:     gs.ID,
-		MaxGames:   gs.MaxGames,
-		PassPolicy: string(gs.PassPolicy),
+		ID:           gs.SessionID,
+		Code:         string(gs.Code),
+		GameID:       gs.ID,
+		MaxGames:     gs.MaxGames,
+		PassPolicy:   string(gs.PassPolicy),
+		TimerEnabled: gs.TimerEnabled,
 	}); err != nil {
 		http.Error(w, fmt.Sprintf("failed to save game session: %v", err), http.StatusInternalServerError)
 		return
@@ -1025,7 +1030,7 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	gameID := vars["id"]
 
-	_, err := getAuthenticatedPlayerID(r)
+	playerID, err := getAuthenticatedPlayerID(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -1037,45 +1042,30 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if gs.GetPositionForPlayer(playerID) == -1 {
+		http.Error(w, "player not in this game", http.StatusBadRequest)
+		return
+	}
+
+	if !gs.TimerEnabled {
+		http.Error(w, "Timer is disabled for this game", http.StatusBadRequest)
+		return
+	}
+
 	// Check if game is already complete
 	if gs.Phase == game.PhaseComplete {
-		// Game is complete, just remove the player instead of forfeiting
-		// Find the player who timed out
-		var timeoutPlayerID string
-
-		// Try to identify the player from the deadline or request
-		if gs.CurrentPlayerDeadline != "" {
-			currentPlayer := gs.GetCurrentPlayer()
-			if currentPlayer != nil {
-				timeoutPlayerID = currentPlayer.ID
-			}
-		}
-
-		if timeoutPlayerID != "" {
-			position := gs.GetPositionForPlayer(timeoutPlayerID)
-			if position != -1 {
-				gs.Players[position] = nil
-				gs.CurrentPlayerDeadline = ""
-
-				// Remove player from database
-				if err := s.db.RemovePlayer(gs.ID, timeoutPlayerID); err != nil {
-					logger.Warning("Failed to remove inactive player from completed game: %e", err)
-				}
-				// Save the updated game state
-				go s.cache.SaveGame(*gs)
-
-				logger.Info("Removed inactive player %s from completed game %s (client-reported)", timeoutPlayerID, gs.Code)
-			}
-		}
-
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "left"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "complete"})
 		return
 	}
 
 	// Check if there's a deadline set
 	if gs.CurrentPlayerDeadline == "" {
 		http.Error(w, "No deadline is set", http.StatusBadRequest)
+		return
+	}
+	if !gs.IsDeadlinePassed() {
+		http.Error(w, "Deadline has not passed", http.StatusBadRequest)
 		return
 	}
 
@@ -1087,25 +1077,11 @@ func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {
 
 	logger.Info("Game %s timeout reported by client for %s", gs.Code, currentPlayer.Name)
 
-	// Forfeit the game
-	gs.ForfeitDueToInactivity()
-	logger.Info("Set game %s phase to complete", gs.Code)
-
-	// Save the updated game state
-	go func() {
-		if err := s.cache.SaveGame(*gs); err != nil {
-			logger.Warning("Failed to save timeout forfeit game: %e", err)
-		}
-		if err := s.maybeSaveGameResults(gs); err != nil {
-			logger.Warning("Failed to save timeout forfeit results: %e", err)
-		}
-	}()
-
-	// Broadcast the updated game state so clients show game over screen
-	timeoutMsg := fmt.Sprintf("%s was inactive for 2 minutes and has forfeited the game", currentPlayer.Name)
-	s.clients.BroadcastStateChange(gs, timeoutMsg, gs.CurrentPlayer)
-
-	logger.Info("Game %s forfeited due to timeout from %s (client-reported)", gs.Code, currentPlayer.Name)
+	if err := s.timeoutGame(gs, true); err != nil {
+		logger.Warning("Failed to process client-reported timeout: %e", err)
+		http.Error(w, "Failed to process timeout", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

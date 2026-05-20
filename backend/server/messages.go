@@ -80,7 +80,7 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
 		return nil
 	}
 	results := gs.PlayerResults()
-	if results == nil {
+	if results == nil && gs.ForfeitedPlayer == nil {
 		logger.Warning("Failed to save player results, no results")
 		return nil
 	}
@@ -96,9 +96,11 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
 		return nil
 	}
 
-	// Save Skat/game points after each completed game so the session table can update.
-	if err := s.db.SavePlayerResults(results[:]); err != nil {
-		logger.Warning("Failed to save player results: %e", err)
+	if results != nil {
+		// Save Skat/game points after each completed game so the session table can update.
+		if err := s.db.SavePlayerResults(results[:]); err != nil {
+			logger.Warning("Failed to save player results: %e", err)
+		}
 	}
 
 	if !isFinalGame {
@@ -142,13 +144,14 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
 
 	endedAt := time.Now().UTC().Format(time.RFC3339)
 	if err := s.db.SaveGameSession(game.GameSessionState{
-		ID:          gs.SessionID,
-		Code:        string(gs.Code),
-		GameID:      gs.ID,
-		PlayerCount: gs.PlayerCount(),
-		MaxGames:    maxGames,
-		PassPolicy:  string(gs.PassPolicy),
-		EndedAt:     &endedAt,
+		ID:           gs.SessionID,
+		Code:         string(gs.Code),
+		GameID:       gs.ID,
+		PlayerCount:  gs.PlayerCount(),
+		MaxGames:     maxGames,
+		PassPolicy:   string(gs.PassPolicy),
+		TimerEnabled: gs.TimerEnabled,
+		EndedAt:      &endedAt,
 	}); err != nil {
 		logger.Warning("Failed to mark session ended: %e", err)
 	}
@@ -173,7 +176,10 @@ func aggregateSessionResults(gs *game.GameState, gameResults []game.PlayerResult
 
 	topScore := 0
 	hasScore := false
-	for _, points := range totals {
+	for playerID, points := range totals {
+		if forfeitedPlayerID(gs) == playerID {
+			continue
+		}
 		if !hasScore || points > topScore {
 			topScore = points
 			hasScore = true
@@ -186,15 +192,27 @@ func aggregateSessionResults(gs *game.GameState, gameResults []game.PlayerResult
 			continue
 		}
 		points := totals[player.ID]
+		isForfeit := gs.ForfeitedPlayer != nil && gs.GetPositionForPlayer(player.ID) == *gs.ForfeitedPlayer
 		sessionResults = append(sessionResults, game.PlayerSessionResultState{
 			SessionID:    gs.SessionID,
 			PlayerID:     player.ID,
 			PlayerPoints: points,
-			IsWinner:     hasScore && points == topScore,
-			IsForfeit:    gs.ForfeitedPlayer != nil && gs.GetPositionForPlayer(player.ID) == *gs.ForfeitedPlayer,
+			IsWinner:     !isForfeit && hasScore && points == topScore,
+			IsForfeit:    isForfeit,
 		})
 	}
 	return sessionResults
+}
+
+func forfeitedPlayerID(gs *game.GameState) string {
+	if gs.ForfeitedPlayer == nil {
+		return ""
+	}
+	player := gs.GetPlayerByPosition(*gs.ForfeitedPlayer)
+	if player == nil {
+		return ""
+	}
+	return player.ID
 }
 
 func (s *Server) BroadcastAIActions(gs *game.GameState) {

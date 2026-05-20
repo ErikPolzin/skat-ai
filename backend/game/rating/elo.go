@@ -107,6 +107,9 @@ func UpdateRatings(results []game.PlayerSessionResultState, ratings map[string]*
 				return fmt.Errorf("missing rating for opponent %s", opponent.PlayerID)
 			}
 			switch {
+			case result.IsForfeit:
+			case opponent.IsForfeit:
+				actualTotal += 1.0
 			case result.PlayerPoints > opponent.PlayerPoints:
 				actualTotal += 1.0
 			case result.PlayerPoints == opponent.PlayerPoints:

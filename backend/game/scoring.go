@@ -7,16 +7,7 @@ func (gs *GameState) Result() GameResult {
 	// Check if game was forfeited
 	result.IsForfeit = gs.ForfeitedPlayer != nil
 
-	// Handle forfeit games with fixed penalty value
-	if result.IsForfeit {
-		result.DeclarerWon = gs.Declarer != nil && *gs.ForfeitedPlayer != *gs.Declarer
-		if result.DeclarerWon {
-			result.Value = 120 // Declarer wins when opponent forfeits
-		} else {
-			result.Value = -120 // Declarer loses when they forfeit
-		}
-		return result
-	}
+	forcedDeclarerResult := gs.forcedDeclarerResultFromForfeit()
 
 	// Base value depends on game mode
 	switch gs.Mode {
@@ -44,6 +35,9 @@ func (gs *GameState) Result() GameResult {
 		result.Matadors = 0
 		result.Multiplier = 1
 		result.DeclarerWon = gs.DeclarerCardScore() == 0
+		if forcedDeclarerResult != nil {
+			result.DeclarerWon = *forcedDeclarerResult
+		}
 		result.IsSchneider = false
 		result.IsSchwarz = false
 		result.PlayedHand = gs.PlayedHand
@@ -65,6 +59,11 @@ func (gs *GameState) Result() GameResult {
 
 	// Determine game outcome
 	result.DeclarerWon, result.IsSchneider, result.IsSchwarz = gs.GetGameResult()
+	if forcedDeclarerResult != nil {
+		result.DeclarerWon = *forcedDeclarerResult
+		result.IsSchneider = false
+		result.IsSchwarz = false
+	}
 
 	// Store hand and announcement flags
 	result.PlayedHand = gs.PlayedHand
@@ -97,7 +96,7 @@ func (gs *GameState) Result() GameResult {
 
 	// If declarer overbid (game value < bid value), they automatically lose
 	// and lose double the BID value (not game value)
-	if gs.Overbid {
+	if gs.Overbid && !result.DeclarerWon {
 		result.DeclarerWon = false
 		result.Value = -2 * int(gs.BidValue)
 		return result
@@ -120,35 +119,21 @@ func (gs *GameState) nullGameValue() int {
 	return 23
 }
 
+func (gs *GameState) forcedDeclarerResultFromForfeit() *bool {
+	if gs.ForfeitedPlayer == nil || gs.Declarer == nil {
+		return nil
+	}
+	declarerWon := *gs.ForfeitedPlayer != *gs.Declarer
+	return &declarerWon
+}
+
 func (gs *GameState) PlayerResults() *[3]PlayerResultState {
 	if gs.Phase != PhaseComplete || (gs.ForfeitedPlayer == nil && gs.Declarer == nil && gs.Mode != ModeRamsch) {
 		return nil
 	}
 	results := [3]PlayerResultState{}
 	if gs.ForfeitedPlayer != nil {
-		for pos := Dealer; pos <= Speaker; pos++ {
-			player := gs.Players[pos]
-			if player == nil {
-				continue
-			}
-			points := 60
-			isWinner := true
-			if pos == *gs.ForfeitedPlayer {
-				points = -120
-				isWinner = false
-			}
-			results[int(pos)] = PlayerResultState{
-				GameID:         gs.ID,
-				SessionID:      gs.SessionID,
-				PlayerID:       player.ID,
-				IsWinner:       isWinner,
-				IsDeclarer:     gs.Declarer != nil && pos == *gs.Declarer,
-				IsOverbid:      gs.Declarer != nil && pos == *gs.Declarer && gs.Overbid,
-				PlayerPosition: pos,
-				PlayerPoints:   points,
-			}
-		}
-		return &results
+		return nil
 	}
 
 	lowestRamschScore := 121
@@ -278,13 +263,7 @@ func (gs *GameState) countMatadorsWithSign() int {
 // CalculatePlayerPoints calculates points for a player
 // In Skat, only the declarer's score changes - opponents don't gain/lose individual points
 func (gs *GameState) CalculatePlayerPoints(pos GamePosition) int {
-	if gs.ForfeitedPlayer != nil {
-		if pos == *gs.ForfeitedPlayer {
-			return -120
-		} else {
-			return 60
-		}
-	} else if gs.Declarer != nil && pos == *gs.Declarer {
+	if gs.Declarer != nil && pos == *gs.Declarer {
 		return gs.Result().Value
 	}
 	return 0

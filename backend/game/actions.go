@@ -547,6 +547,11 @@ func (gs *GameState) NextGame() (string, error) {
 
 // UpdateCurrentPlayerDeadline sets the deadline for the current player (2 minutes from now)
 func (gs *GameState) UpdateCurrentPlayerDeadline() {
+	if !gs.TimerEnabled {
+		gs.CurrentPlayerDeadline = ""
+		return
+	}
+
 	// Only set deadline during active gameplay phases
 	if gs.Phase == PhaseWaitingForPlayers || gs.Phase == PhaseComplete {
 		gs.CurrentPlayerDeadline = ""
@@ -590,29 +595,5 @@ func (gs *GameState) ForfeitDueToInactivity() []PlayerResultState {
 	currentPos := gs.CurrentPlayer
 	gs.ForfeitedPlayer = &currentPos
 
-	// Award forfeit points: inactive player gets -120, others get +60 each
-	results := []PlayerResultState{}
-	currentPlayerPos := gs.CurrentPlayer
-
-	for pos, player := range gs.Players {
-		if player != nil {
-			points := 60 // Other players get points
-			isWinner := true
-			if GamePosition(pos) == currentPlayerPos {
-				points = -120 // Inactive player loses
-				isWinner = false
-			}
-			results = append(results, PlayerResultState{
-				GameID:         gs.ID,
-				SessionID:      gs.SessionID,
-				PlayerID:       player.ID,
-				PlayerPosition: GamePosition(pos),
-				PlayerPoints:   points,
-				IsWinner:       isWinner,
-				IsDeclarer:     gs.Declarer != nil && GamePosition(pos) == *gs.Declarer,
-			})
-		}
-	}
-
-	return results
+	return nil
 }

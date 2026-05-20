@@ -107,11 +107,11 @@ func (d *PgDatabase) SaveGameSession(session game.GameSessionState) error {
 		session.PassPolicy = string(game.DefaultPassPolicy)
 	}
 	_, err := d.DB.Exec(
-		`INSERT INTO game_sessions (id, code, game_id, player_count, max_games, pass_policy, ended_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO game_sessions (id, code, game_id, player_count, max_games, pass_policy, timer_enabled, ended_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (id) DO UPDATE SET
-			code = $2, game_id = $3, player_count = $4, max_games = $5, pass_policy = $6, ended_at = $7`,
-		session.ID, session.Code, session.GameID, session.PlayerCount, session.MaxGames, session.PassPolicy, session.EndedAt,
+			code = $2, game_id = $3, player_count = $4, max_games = $5, pass_policy = $6, timer_enabled = $7, ended_at = $8`,
+		session.ID, session.Code, session.GameID, session.PlayerCount, session.MaxGames, session.PassPolicy, session.TimerEnabled, session.EndedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save game session: %w", err)
@@ -122,10 +122,10 @@ func (d *PgDatabase) SaveGameSession(session game.GameSessionState) error {
 func (d *PgDatabase) GetGameSession(sessionID string) (*game.GameSessionState, error) {
 	var session game.GameSessionState
 	err := d.DB.QueryRow(`
-		SELECT id, code, game_id, player_count, max_games, pass_policy, created_at, ended_at
+		SELECT id, code, game_id, player_count, max_games, pass_policy, timer_enabled, created_at, ended_at
 		FROM game_sessions
 		WHERE id = $1
-	`, sessionID).Scan(&session.ID, &session.Code, &session.GameID, &session.PlayerCount, &session.MaxGames, &session.PassPolicy, &session.CreatedAt, &session.EndedAt)
+	`, sessionID).Scan(&session.ID, &session.Code, &session.GameID, &session.PlayerCount, &session.MaxGames, &session.PassPolicy, &session.TimerEnabled, &session.CreatedAt, &session.EndedAt)
 	if err != nil {
 		if err.Error() == "no rows in result set" {
 			return nil, fmt.Errorf("game session not found")
@@ -142,7 +142,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	var trickWinner sql.NullInt64
 	var gs game.GameState
 	err := d.DB.QueryRow(
-		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, g.phase, g.skat, g.trick,
+		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, gs.timer_enabled, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
@@ -153,7 +153,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		WHERE g.id = $1`,
 		gameID,
 	).Scan(
-		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.Phase, &skatString, &trickString,
+		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.TimerEnabled, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &trickWinner, &gs.CurrentPlayer, &declarer,
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
@@ -216,7 +216,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 	var declarer sql.NullInt64
 	var trickWinner sql.NullInt64
 	err := d.DB.QueryRow(
-		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, g.phase, g.skat, g.trick,
+		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, gs.timer_enabled, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
 			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
@@ -229,7 +229,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		LIMIT 1`,
 		sessionCode,
 	).Scan(
-		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.Phase, &skatString, &trickString,
+		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.TimerEnabled, &gs.Phase, &skatString, &trickString,
 		&gs.TrickStarter, &trickWinner, &gs.CurrentPlayer, &declarer,
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
@@ -369,12 +369,12 @@ func (d *PgDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 	// Query for games in waiting_for_players phase
 	// Count actual players dynamically instead of relying on stale player_count column
 	rows, err := d.DB.Query(`
-		SELECT gs.id, gs.game_id, gs.code, COALESCE(COUNT(p.profile_id), 0) as player_count, gs.max_games, gs.pass_policy, gs.created_at, gs.ended_at
+		SELECT gs.id, gs.game_id, gs.code, COALESCE(COUNT(p.profile_id), 0) as player_count, gs.max_games, gs.pass_policy, gs.timer_enabled, gs.created_at, gs.ended_at
 		FROM game_sessions gs
 		JOIN games g ON g.id = gs.game_id
 		LEFT JOIN players p ON p.game_id = g.id
 		WHERE g.phase = 'waiting_for_players'
-		GROUP BY gs.id, gs.game_id, gs.code, gs.max_games, gs.pass_policy, gs.created_at, gs.ended_at
+		GROUP BY gs.id, gs.game_id, gs.code, gs.max_games, gs.pass_policy, gs.timer_enabled, gs.created_at, gs.ended_at
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list open games: %w", err)
@@ -385,7 +385,7 @@ func (d *PgDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 	for rows.Next() {
 		var se game.GameSessionState
 		if err := rows.Scan(
-			&se.ID, &se.GameID, &se.Code, &se.PlayerCount, &se.MaxGames, &se.PassPolicy, &se.CreatedAt, &se.EndedAt); err != nil {
+			&se.ID, &se.GameID, &se.Code, &se.PlayerCount, &se.MaxGames, &se.PassPolicy, &se.TimerEnabled, &se.CreatedAt, &se.EndedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan game: %w", err)
 		}
 
@@ -788,7 +788,9 @@ func (d *PgDatabase) GetAllExpiredGames() ([]game.GameState, error) {
 	rows, err := d.DB.Query(`
 		SELECT g.id
 		FROM games g
+		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE g.phase != $1 AND g.phase != $2
+		  AND gs.timer_enabled = TRUE
 		  AND g.current_player_deadline IS NOT NULL
 		  AND g.current_player_deadline::text != ''
 		  AND g.current_player_deadline < NOW()

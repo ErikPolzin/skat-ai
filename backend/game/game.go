@@ -27,8 +27,9 @@ const (
 )
 
 const (
-	DefaultMaxGames   = 10
-	DefaultPassPolicy = PassPolicyReshuffle
+	DefaultMaxGames     = 10
+	DefaultPassPolicy   = PassPolicyReshuffle
+	DefaultTimerEnabled = true
 )
 
 // ValidBidValues are the legal bid values in Skat (based on game values)
@@ -58,6 +59,7 @@ type GameState struct {
 	GameNumber    int             `json:"game_number"`
 	MaxGames      int             `json:"max_games"`
 	PassPolicy    PassPolicy      `json:"pass_policy"`
+	TimerEnabled  bool            `json:"timer_enabled"`
 	Players       [3]*PlayerState `json:"players"`        // Players in the game
 	Skat          SkatCards       `json:"-"`              // Ommitted in JSON, not public knowledge
 	CurrentPlayer GamePosition    `json:"current_player"` // Current player position
@@ -104,14 +106,15 @@ type GameResult struct {
 }
 
 type GameSessionState struct {
-	ID          string  `json:"id"`
-	Code        string  `json:"code"`
-	GameID      string  `json:"game_id"`
-	PlayerCount int     `json:"player_count"`
-	MaxGames    int     `json:"max_games"`
-	PassPolicy  string  `json:"pass_policy"`
-	CreatedAt   string  `json:"created_at"`
-	EndedAt     *string `json:"ended_at"`
+	ID           string  `json:"id"`
+	Code         string  `json:"code"`
+	GameID       string  `json:"game_id"`
+	PlayerCount  int     `json:"player_count"`
+	MaxGames     int     `json:"max_games"`
+	PassPolicy   string  `json:"pass_policy"`
+	TimerEnabled bool    `json:"timer_enabled"`
+	CreatedAt    string  `json:"created_at"`
+	EndedAt      *string `json:"ended_at"`
 }
 
 type PlayerResultState struct {
@@ -193,6 +196,7 @@ func NewGame() *GameState {
 		Players:         [3]*PlayerState{},
 		MaxGames:        DefaultMaxGames,
 		PassPolicy:      DefaultPassPolicy,
+		TimerEnabled:    DefaultTimerEnabled,
 		Phase:           PhaseWaitingForPlayers, // Start waiting for players
 		Declarer:        nil,                    // Not determined yet
 		CurrentPlayer:   0,                      // Dealer starts as the current player
@@ -378,6 +382,7 @@ func (gs *GameState) Clone() *GameState {
 		GameNumber:            gs.GameNumber,
 		MaxGames:              gs.MaxGames,
 		PassPolicy:            gs.PassPolicy,
+		TimerEnabled:          gs.TimerEnabled,
 		CurrentPlayer:         gs.CurrentPlayer,
 		Declarer:              declarer,
 		Mode:                  gs.Mode,

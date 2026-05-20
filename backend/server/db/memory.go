@@ -99,22 +99,24 @@ func (d *MemoryDatabase) GetGameSession(sessionID string) (*game.GameSessionStat
 		for _, gameState := range d.games {
 			if gameState.SessionID == sessionID {
 				return &game.GameSessionState{
-					ID:          sessionID,
-					Code:        string(gameState.Code),
-					GameID:      gameState.ID,
-					PlayerCount: gameState.PlayerCount(),
-					MaxGames:    gameState.MaxGames,
-					PassPolicy:  string(gameState.PassPolicy),
+					ID:           sessionID,
+					Code:         string(gameState.Code),
+					GameID:       gameState.ID,
+					PlayerCount:  gameState.PlayerCount(),
+					MaxGames:     gameState.MaxGames,
+					PassPolicy:   string(gameState.PassPolicy),
+					TimerEnabled: gameState.TimerEnabled,
 				}, nil
 			}
 		}
 		return nil, fmt.Errorf("game session not found")
 	}
 	return &game.GameSessionState{
-		ID:         sessionID,
-		Code:       sessionID[:8],
-		MaxGames:   game.DefaultMaxGames,
-		PassPolicy: string(game.DefaultPassPolicy),
+		ID:           sessionID,
+		Code:         sessionID[:8],
+		MaxGames:     game.DefaultMaxGames,
+		PassPolicy:   string(game.DefaultPassPolicy),
+		TimerEnabled: game.DefaultTimerEnabled,
 	}, nil
 }
 
@@ -173,12 +175,13 @@ func (d *MemoryDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 	for sessionID, gameState := range d.games {
 		if gameState.PlayerCount() < 3 && gameState.Phase == game.PhaseWaitingForPlayers {
 			sessions = append(sessions, game.GameSessionState{
-				ID:          sessionID,
-				Code:        string(gameState.Code),
-				GameID:      gameState.ID,
-				PlayerCount: gameState.PlayerCount(),
-				MaxGames:    gameState.MaxGames,
-				PassPolicy:  string(gameState.PassPolicy),
+				ID:           sessionID,
+				Code:         string(gameState.Code),
+				GameID:       gameState.ID,
+				PlayerCount:  gameState.PlayerCount(),
+				MaxGames:     gameState.MaxGames,
+				PassPolicy:   string(gameState.PassPolicy),
+				TimerEnabled: gameState.TimerEnabled,
 			})
 		}
 	}

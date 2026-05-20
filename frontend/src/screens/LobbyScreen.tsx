@@ -16,12 +16,19 @@ import {
   useTheme,
   Container,
   MenuItem,
+  FormControlLabel,
+  Checkbox,
 } from "@mui/material";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 import { lineClasses } from "@mui/x-charts/LineChart";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import HistoryIcon from "@mui/icons-material/History";
-import { createGame, joinGame, uploadAvatar, type PassPolicy } from "../api/games";
+import {
+  createGame,
+  joinGame,
+  uploadAvatar,
+  type PassPolicy,
+} from "../api/games";
 import {
   selectPlayerId,
   selectProfileIcon,
@@ -193,6 +200,7 @@ const GamesTab = () => {
   const [gameCode, setGameCode] = useState<string>("");
   const [maxGames, setMaxGames] = useState<number>(10);
   const [passPolicy, setPassPolicy] = useState<PassPolicy>("reshuffle");
+  const [timerEnabled, setTimerEnabled] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const navigate = useNavigate();
   const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
@@ -207,6 +215,7 @@ const GamesTab = () => {
         const createData = await createGame({
           max_games: maxGames,
           pass_policy: passPolicy,
+          timer_enabled: timerEnabled,
         });
         currentGameCode = createData.code;
       }
@@ -254,7 +263,13 @@ const GamesTab = () => {
           fullWidth
         />
         {!gameCode && (
-          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+              gap: 2,
+            }}
+          >
             <TextField
               label="Games"
               type="number"
@@ -278,6 +293,16 @@ const GamesTab = () => {
               <MenuItem value="force_listener">Force forehand</MenuItem>
               <MenuItem value="ramsch">Play Ramsch</MenuItem>
             </TextField>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={timerEnabled}
+                  onChange={(e) => setTimerEnabled(e.target.checked)}
+                  disabled={isLoading}
+                />
+              }
+              label="Two minute move timeout"
+            />
           </Box>
         )}
         <Button

@@ -17,7 +17,7 @@ import {
 import CheckIcon from "@mui/icons-material/Check";
 import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
 import WarningIcon from "@mui/icons-material/Warning";
-import { type Card as CardType, reportTimeout, leaveGame } from "../api/games";
+import { type Card as CardType, reportTimeout } from "../api/games";
 import "./MotionCardTable.css";
 import { useGameContext } from "../context/GameContext";
 import Card from "./Card";
@@ -53,6 +53,7 @@ export function MotionCardTable() {
   const [selectedPlayedCard, setSelectedPlayedCard] = useState<CardType | null>(
     null,
   );
+  const reportedTimeoutDeadlineRef = useRef<string | null>(null);
 
   // Track window size for responsive positioning
   const [windowSize, setWindowSize] = useState({
@@ -65,6 +66,7 @@ export function MotionCardTable() {
     game.currentPlayerDeadline || "",
   );
   const showDeadlineCountdown =
+    game.timerEnabled &&
     !!game.currentPlayerDeadline &&
     secondsRemaining !== null &&
     secondsRemaining > 0 &&
@@ -72,20 +74,24 @@ export function MotionCardTable() {
 
   // Handle timeout when deadline expires
   useEffect(() => {
-    if (isExpired && game.currentPlayerDeadline && game.player?.id) {
-      if (game.phase === "complete") {
-        // Game is complete, just leave the game
-        leaveGame(game.gameId).catch((err) => {
-          console.error("Failed to leave game after timeout:", err);
-        });
-      } else {
-        // Game is still active, report timeout (which will forfeit)
-        reportTimeout(game.gameId, game.player?.id).catch((err) => {
-          console.error("Failed to report timeout:", err);
-        });
-      }
+    if (
+      !game.timerEnabled ||
+      !isExpired ||
+      !game.currentPlayerDeadline ||
+      !game.player?.id ||
+      game.phase === "complete" ||
+      reportedTimeoutDeadlineRef.current === game.currentPlayerDeadline
+    ) {
+      return;
     }
+
+    reportedTimeoutDeadlineRef.current = game.currentPlayerDeadline;
+    reportTimeout(game.gameId, game.player.id).catch((err) => {
+      reportedTimeoutDeadlineRef.current = null;
+      console.error("Failed to report timeout:", err);
+    });
   }, [
+    game.timerEnabled,
     isExpired,
     game.currentPlayerDeadline,
     game.gameId,

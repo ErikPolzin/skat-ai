@@ -64,6 +64,7 @@ export interface GameState {
   game_number: number;
   max_games: number;
   pass_policy: PassPolicy;
+  timer_enabled: boolean;
   players: [ServerPlayer | null, ServerPlayer | null, ServerPlayer | null];
   current_player: GamePosition;
   declarer: GamePosition | null;
@@ -116,6 +117,7 @@ export interface GameSession {
   player_count: number;
   max_games: number;
   pass_policy: PassPolicy;
+  timer_enabled: boolean;
   created_at: string;
   ended_at?: string;
 }
@@ -145,6 +147,7 @@ export async function fetchGameState(gameId: string): Promise<GameInfo> {
 export interface CreateGameOptions {
   max_games: number;
   pass_policy: PassPolicy;
+  timer_enabled: boolean;
 }
 
 export async function createGame(

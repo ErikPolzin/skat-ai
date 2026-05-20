@@ -70,8 +70,7 @@ type AgentMetrics struct {
 	mu                   sync.Mutex
 	biddingAccepts       map[int]int  // bid value -> count of accepts
 	biddingRejects       map[int]int  // bid value -> count of rejects
-	passedGames          atomic.Int64 // games where all players passed
-	passedGamesWon       atomic.Int64 // Zwangsspiel games won as declarer
+	passedGames          atomic.Int64 // bidding hands where all players passed
 	predictedProbability []float64    // predicted win probabilities for games won
 	actualOutcomes       []bool       // actual outcomes (true = won, false = lost)
 }
@@ -376,12 +375,6 @@ func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.Play
 		return
 	}
 
-	// Check if this is a Zwangsspiel (all players passed)
-	allPassed := gs.AllPlayersPassed()
-	if allPassed {
-		sa.metrics.passedGames.Add(1)
-	}
-
 	if playerResult.IsDeclarer {
 
 		// Declarer metrics
@@ -390,9 +383,6 @@ func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.Play
 
 		if playerResult.IsWinner {
 			sa.metrics.wins.Add(1)
-			if allPassed {
-				sa.metrics.passedGamesWon.Add(1)
-			}
 		}
 
 		if playerResult.IsOverbid {
@@ -437,6 +427,13 @@ func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.Play
 			sa.metrics.defenderWins.Add(1)
 		}
 	}
+}
+
+func (sa *SkatAgent) RecordAllPassEvent() {
+	if sa.metrics == nil {
+		return
+	}
+	sa.metrics.passedGames.Add(1)
 }
 
 // MergeMetrics adds metrics from another agent to this agent
@@ -514,7 +511,6 @@ func (sa *SkatAgent) GetMetrics() AgentMetricsSnapshot {
 		BiddingAccepts:       biddingAccepts,
 		BiddingRejects:       biddingRejects,
 		PassedGames:          sa.metrics.passedGames.Load(),
-		PassedGamesWon:       sa.metrics.passedGamesWon.Load(),
 		PredictedProbability: predictedProb,
 		ActualOutcomes:       actualOutcomes,
 	}
@@ -563,7 +559,6 @@ type AgentMetricsSnapshot struct {
 	BiddingAccepts       map[int]int
 	BiddingRejects       map[int]int
 	PassedGames          int64
-	PassedGamesWon       int64
 	PredictedProbability []float64
 	ActualOutcomes       []bool
 }

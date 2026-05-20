@@ -172,7 +172,7 @@ func generateContract(biddingThreshold float64) (*game.GameState, bool) {
 	g = agent.WithAgentBidding(g, config)
 	g = agent.WithAgentSkatDecision(g)
 	g, overbid := agent.WithAgentGameChoice(g)
-	if overbid || g.Declarer == nil || g.Phase != game.PhasePlaying || g.AllPlayersPassed() {
+	if overbid || g.Declarer == nil || g.Phase != game.PhasePlaying {
 		return nil, false
 	}
 	return g, true

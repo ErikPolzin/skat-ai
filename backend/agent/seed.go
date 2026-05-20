@@ -148,6 +148,19 @@ func (c AgentConfig) MergeMetrics(other AgentConfig) {
 	}
 }
 
+func (c AgentConfig) RecordAllPassEvent() {
+	switch c.Bidding {
+	case BiddingThreeTest, BiddingTwoVsOne:
+		if c.TestAgent != nil {
+			c.TestAgent.RecordAllPassEvent()
+		}
+	case BiddingThreeWay:
+		if c.Agent1 != nil {
+			c.Agent1.RecordAllPassEvent()
+		}
+	}
+}
+
 // generatePlayerID creates a unique random player ID
 func generatePlayerID() string {
 	bytes := make([]byte, 8)
@@ -195,17 +208,31 @@ func WithAgentPlayers(gs *game.GameState, config AgentConfig) *game.GameState {
 }
 
 func WithAgentBidding(gs *game.GameState, config AgentConfig) *game.GameState {
-	if gs.Phase != game.PhaseBidding {
-		panic("Cannot seed with game type, game is not in bidding phase")
-	}
-	// Bidding phase
-	for gs.Phase == game.PhaseBidding {
-		currentAgent := GetAgentForPlayer(gs.GetCurrentPlayer())
-		accept := currentAgent.Bid(gs)
-		_, err := gs.Bid(accept)
-		if err != nil {
-			panic(fmt.Sprintf("Bid error: %v", err))
+	for {
+		if gs.Phase == game.PhaseDealing {
+			gs = gs.WithCardsDealt()
 		}
+		if gs.Phase != game.PhaseBidding {
+			panic("Cannot seed with game type, game is not in bidding phase")
+		}
+		for gs.Phase == game.PhaseBidding {
+			currentAgent := GetAgentForPlayer(gs.GetCurrentPlayer())
+			accept := currentAgent.Bid(gs)
+			_, err := gs.Bid(accept)
+			if err != nil {
+				panic(fmt.Sprintf("Bid error: %v", err))
+			}
+			if gs.Phase == game.PhaseDealing {
+				config.RecordAllPassEvent()
+			}
+		}
+		if gs.Phase != game.PhaseDealing {
+			break
+		}
+	}
+
+	if gs.Declarer == nil {
+		return gs
 	}
 	// After bidding, set up agents for cardplay based on playing mode
 	declarerPos := *gs.Declarer
@@ -303,8 +330,18 @@ func WithAgentCardPlay(gs *game.GameState) *game.GameState {
 // PlayFullGame plays a complete game from deal to finish.
 // The game is played with proper agent positioning based on the AgentConfig.
 func PlayFullGame(gs *game.GameState, config AgentConfig) {
-	gs = gs.WithCardsDealt()
+	if gs.Phase == game.PhaseDealing {
+		gs = gs.WithCardsDealt()
+	}
 	gs = WithAgentBidding(gs, config)
+	if gs.Declarer == nil {
+		if gs.Phase == game.PhasePlaying {
+			gs = WithAgentCardPlay(gs)
+			recordGameResults(gs)
+			return
+		}
+		panic(fmt.Sprintf("Cannot continue game without declarer in phase: %s", gs.Phase))
+	}
 	gs = WithAgentSkatDecision(gs)
 	gs, overbid := WithAgentGameChoice(gs)
 	if !overbid {

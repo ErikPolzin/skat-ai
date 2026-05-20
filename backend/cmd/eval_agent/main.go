@@ -22,14 +22,13 @@ func main() {
 	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, heuristic default=0.55)")
 	minimaxDepth := flag.Int("minimax-depth", 10, "Minimax search depth for perfect-info minimax")
 	mctsSimulations := flag.Int("mcts-simulations", 500, "MCTS simulation count")
-	ignoreZwangsspiel := flag.Bool("ignore-zwangsspiel", false, "Exclude Zwangsspiel (passed) games from evaluation")
 	skipGameplayExamples := flag.Bool("skip-gameplay-examples", false, "Skip slow example game-play section after evaluation")
 	flag.Parse()
 
-	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *threshold, *minimaxDepth, *mctsSimulations, *ignoreZwangsspiel, *skipGameplayExamples)
+	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *threshold, *minimaxDepth, *mctsSimulations, *skipGameplayExamples)
 }
 
-func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int, ignoreZwangsspiel, skipGameplayExamples bool) {
+func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int, skipGameplayExamples bool) {
 	var testAgent *agent.SkatAgent
 	var err error
 
@@ -84,9 +83,6 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 
 	fmt.Println("\n" + strings.Repeat("=", 50))
 	fmt.Printf("Running %d games on %d CPU cores...\n", totalRounds, runtime.GOMAXPROCS(0))
-	if ignoreZwangsspiel {
-		fmt.Println("Ignoring Zwangsspiel (passed) games")
-	}
 	fmt.Println(strings.Repeat("=", 50) + "\n")
 
 	training.EvaluateAgents(evalConfig, totalRounds)
@@ -95,37 +91,21 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 	testMetrics := testAgent.GetMetrics()
 	baselineMetrics := baselineAgent.GetMetrics()
 
-	// Track passed games for display
-	passedGames := testMetrics.PassedGames
-
 	var testGames, testWins, testPoints, testOverbid int64
 	var baselineGames, baselineWins, baselinePoints int64
 
-	if ignoreZwangsspiel {
-		// Exclude Zwangsspiel games and wins from metrics
-		// passedGames is tracked globally, but passedGamesWon is per-agent
-		testGames = testMetrics.Games - testMetrics.PassedGamesWon
-		testWins = testMetrics.Wins - testMetrics.PassedGamesWon
-		testPoints = testMetrics.Points
-		testOverbid = testMetrics.Overbid
-		baselineGames = baselineMetrics.Games - baselineMetrics.PassedGamesWon
-		baselineWins = baselineMetrics.Wins - baselineMetrics.PassedGamesWon
-		baselinePoints = baselineMetrics.Points
-	} else {
-		testGames = testMetrics.Games
-		testWins = testMetrics.Wins
-		testPoints = testMetrics.Points
-		testOverbid = testMetrics.Overbid
-		baselineGames = baselineMetrics.Games
-		baselineWins = baselineMetrics.Wins
-		baselinePoints = baselineMetrics.Points
-	}
+	testGames = testMetrics.Games
+	testWins = testMetrics.Wins
+	testPoints = testMetrics.Points
+	testOverbid = testMetrics.Overbid
+	baselineGames = baselineMetrics.Games
+	baselineWins = baselineMetrics.Wins
+	baselinePoints = baselineMetrics.Points
 
 	fmt.Println("\n" + strings.Repeat("=", 50))
 	fmt.Println("FINAL RESULTS")
 	fmt.Println(strings.Repeat("=", 50))
 
-	// Use raw Games (not adjusted for Zwangsspiel) since DefenderGames isn't adjusted either
 	declarerGamesTotal := testMetrics.Games
 	defenderGamesTotal := testMetrics.DefenderGames
 	totalGamesPlayed := defenderGamesTotal + declarerGamesTotal
@@ -169,11 +149,8 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 		fmt.Printf("  Avg points as declarer: %.1f\n", float64(testPoints)/float64(testGames))
 		fmt.Printf("  Overbid rate: %.1f%% (%d/%d)\n",
 			float64(testOverbid)/float64(testGames)*100, testOverbid, testGames)
-
-		// Calculate passed games percentage
-		passedPct := float64(passedGames) / float64(totalRounds) * 100
-		fmt.Printf("  Passed games: %.1f%% (%d/%d) - all players passed (Zwangsspiel)\n",
-			passedPct, passedGames, totalRounds)
+		fmt.Printf("  All-pass reshuffle rate: %.1f%% (%d/%d)\n",
+			float64(testMetrics.PassedGames)/float64(totalRounds)*100, testMetrics.PassedGames, totalRounds)
 
 		// Game type breakdown
 		testGrand := testMetrics.GrandGames

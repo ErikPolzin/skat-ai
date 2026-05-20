@@ -86,7 +86,7 @@ func main() {
 	}
 	fmt.Printf("\n")
 	fmt.Printf("  Contract bidding: heuristic threshold %.2f\n", *biddingThreshold)
-	fmt.Printf("  Filtering: Excluding Zwangsspiel and overbid games\n")
+	fmt.Printf("  Filtering: Excluding overbid games\n")
 	fmt.Printf("Using %d parallel workers\n", *workers)
 
 	// Channel for collecting results
@@ -176,7 +176,7 @@ func main() {
 						return
 					}
 				} else {
-					// Game was filtered out (Zwangsspiel or overbid)
+					// Game was filtered out (overbid)
 					select {
 					case progressChan <- ProgressUpdate{GamesPlayed: 1}:
 					case <-stopChan:
@@ -490,11 +490,6 @@ func playGameAndCollectExamples(searchAgent, defenderSearchAgent, heuristicAgent
 
 	if g.Declarer == nil || overbid {
 		// No declarer or overbid, skip
-		return examples
-	}
-
-	// Skip Zwangsspiel games (all players passed - forced game with weak hand)
-	if g.AllPlayersPassed() {
 		return examples
 	}
 

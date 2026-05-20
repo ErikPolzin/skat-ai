@@ -19,6 +19,24 @@ export function GameOverScreen() {
 
   const { result } = game;
   const absMatadors = Math.abs(result.matadors);
+  const isRamsch = game.gameMode === "ramsch";
+  const ramschScores = game.players
+    .flatMap((player) =>
+      player
+        ? [
+            {
+              id: player.id,
+              name:
+                player.id === game.player?.id
+                  ? `${player.name} (You)`
+                  : player.name,
+              points: game.playerScores[player.position],
+            },
+          ]
+        : [],
+    )
+    .sort((a, b) => a.points - b.points);
+  const lowestRamschScore = ramschScores[0]?.points ?? 0;
 
   // Map suit symbols to full names
   const suitNames: { [key: string]: string } = {
@@ -45,14 +63,52 @@ export function GameOverScreen() {
         </span>
       ) : (
         <span className="game-over-score">
-          {game.gameMode === "ramsch"
-            ? "Ramsch complete"
+          {isRamsch
+            ? "Lowest score wins"
             : `${game.declarer?.name}: ${
                 game.playerWon === game.isDeclarer ? "+" : ""
               }${result.value}`}
         </span>
       )}
-      {!result.is_forfeit && !game.isNull && game.gameMode !== "ramsch" && result.base_value > 0 && (
+      {!result.is_forfeit && isRamsch && (
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableBody>
+              {ramschScores.map((score) => (
+                <TableRow
+                  key={score.id}
+                  className={
+                    score.points === lowestRamschScore ? "breakdown-total" : ""
+                  }
+                >
+                  <TableCell
+                    sx={{
+                      fontWeight:
+                        score.points === lowestRamschScore ? "bold" : undefined,
+                    }}
+                  >
+                    {score.name}
+                    {score.points === lowestRamschScore ? " won" : ""}
+                  </TableCell>
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontWeight:
+                        score.points === lowestRamschScore ? "bold" : undefined,
+                    }}
+                  >
+                    {score.points}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+      {!result.is_forfeit &&
+        !game.isNull &&
+        !isRamsch &&
+        result.base_value > 0 && (
         <TableContainer component={Paper}>
           <Table size="small">
             <TableBody>

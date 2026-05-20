@@ -192,8 +192,7 @@ const Header = () => {
 const GamesTab = () => {
   const [gameCode, setGameCode] = useState<string>("");
   const [maxGames, setMaxGames] = useState<number>(10);
-  const [passPolicy, setPassPolicy] =
-    useState<PassPolicy>("force_listener");
+  const [passPolicy, setPassPolicy] = useState<PassPolicy>("reshuffle");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const navigate = useNavigate();
   const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
@@ -275,8 +274,8 @@ const GamesTab = () => {
               onChange={(e) => setPassPolicy(e.target.value as PassPolicy)}
               disabled={isLoading}
             >
-              <MenuItem value="force_listener">Force forehand</MenuItem>
               <MenuItem value="reshuffle">Re-shuffle</MenuItem>
+              <MenuItem value="force_listener">Force forehand</MenuItem>
               <MenuItem value="ramsch">Play Ramsch</MenuItem>
             </TextField>
           </Box>

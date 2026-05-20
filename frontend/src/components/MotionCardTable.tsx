@@ -1108,84 +1108,88 @@ export function MotionCardTable() {
           )}
         </AnimatePresence>
 
-        {/* Score Pile Labels - only show during playing phase when declarer is set and there are cards */}
-        <div
-          className="pile-points-bar"
-          title={`Player ${playerPileScore} - Opponent ${opponentPileScore} of ${totalCardPoints}`}
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            height: `${Math.max(
-              80,
-              Math.abs(
-                getPileAbsolutePosition(true).y -
-                  getPileAbsolutePosition(false).y,
-              ) -
-                CARD_HEIGHT -
-                72,
-            )}px`,
-            transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), -50%)`,
-          }}
-        >
-          <div
-            className="pile-points-marker schneider"
-            style={{ top: "25%" }}
-          />
-          <div className="pile-points-marker" style={{ top: "50%" }} />
-          <div
-            className="pile-points-marker schneider"
-            style={{ top: "75%" }}
-          />
-          <div
-            className="pile-points-segment opponent"
-            style={{ height: `${opponentScorePercent}%` }}
-          />
-          <div
-            className="pile-points-segment unclaimed"
-            style={{ height: `${unclaimedScorePercent}%` }}
-          />
-          <div
-            className="pile-points-segment player"
-            style={{ height: `${playerScorePercent}%` }}
-          />
-        </div>
+        {!isRamsch && (
+          <>
+            {/* Score Pile Labels - only show during playing phase when declarer is set and there are cards */}
+            <div
+              className="pile-points-bar"
+              title={`Player ${playerPileScore} - Opponent ${opponentPileScore} of ${totalCardPoints}`}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                height: `${Math.max(
+                  80,
+                  Math.abs(
+                    getPileAbsolutePosition(true).y -
+                      getPileAbsolutePosition(false).y,
+                  ) -
+                    CARD_HEIGHT -
+                    72,
+                )}px`,
+                transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), -50%)`,
+              }}
+            >
+              <div
+                className="pile-points-marker schneider"
+                style={{ top: "25%" }}
+              />
+              <div className="pile-points-marker" style={{ top: "50%" }} />
+              <div
+                className="pile-points-marker schneider"
+                style={{ top: "75%" }}
+              />
+              <div
+                className="pile-points-segment opponent"
+                style={{ height: `${opponentScorePercent}%` }}
+              />
+              <div
+                className="pile-points-segment unclaimed"
+                style={{ height: `${unclaimedScorePercent}%` }}
+              />
+              <div
+                className="pile-points-segment player"
+                style={{ height: `${playerScorePercent}%` }}
+              />
+            </div>
 
-        {/* Player's team Score Label - always bottom right */}
-        <div
-          className={`score-pile-label player-pile`}
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), calc(-50% + ${getPileAbsolutePosition(true).y}px))`,
-          }}
-        >
-          <span className="pile-label">Player</span>
-          <span className="pile-subtitle">
-            {playerIsDeclarer ? "DECLARER" : "DEFENDER"}
-          </span>
-          <span className="pile-score">{playerPileScore}</span>
-        </div>
+            {/* Player's team Score Label - always bottom right */}
+            <div
+              className={`score-pile-label player-pile`}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), calc(-50% + ${getPileAbsolutePosition(true).y}px))`,
+              }}
+            >
+              <span className="pile-label">Player</span>
+              <span className="pile-subtitle">
+                {playerIsDeclarer ? "DECLARER" : "DEFENDER"}
+              </span>
+              <span className="pile-score">{playerPileScore}</span>
+            </div>
 
-        {/* Opponent's team Score Label - always top right */}
-        <div
-          className={`score-pile-label opponent-pile`}
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            transform: `translate(calc(-50% + ${getPileAbsolutePosition(false).x}px), calc(-50% + ${getPileAbsolutePosition(false).y}px))`,
-          }}
-        >
-          <span className="pile-label">
-            {playerIsDeclarer ? "Opponents" : "Opponent"}
-          </span>
-          <span className="pile-subtitle">
-            {playerIsDeclarer ? "DEFENDERS" : "DECLARER"}
-          </span>
-          <span className="pile-score">{opponentPileScore}</span>
-        </div>
+            {/* Opponent's team Score Label - always top right */}
+            <div
+              className={`score-pile-label opponent-pile`}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                transform: `translate(calc(-50% + ${getPileAbsolutePosition(false).x}px), calc(-50% + ${getPileAbsolutePosition(false).y}px))`,
+              }}
+            >
+              <span className="pile-label">
+                {playerIsDeclarer ? "Opponents" : "Opponent"}
+              </span>
+              <span className="pile-subtitle">
+                {playerIsDeclarer ? "DEFENDERS" : "DECLARER"}
+              </span>
+              <span className="pile-score">{opponentPileScore}</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

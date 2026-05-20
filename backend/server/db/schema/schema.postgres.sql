@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     game_id VARCHAR(255) DEFAULT NULL,
     player_count INT DEFAULT 0,
     max_games INT NOT NULL DEFAULT 10,
-    pass_policy VARCHAR(50) NOT NULL DEFAULT 'force_listener',
+    pass_policy VARCHAR(50) NOT NULL DEFAULT 'reshuffle',
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMP
 );

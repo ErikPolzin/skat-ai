@@ -28,7 +28,7 @@ export function useGame(
       session_id: "",
       game_number: 0,
       max_games: 10,
-      pass_policy: "force_listener",
+      pass_policy: "reshuffle",
       players: [null, null, null],
       current_player: 0,
       phase: "waiting_for_players",
@@ -250,7 +250,7 @@ export function useGame(
         session_id: "",
         game_number: 0,
         max_games: 10,
-        pass_policy: "force_listener",
+        pass_policy: "reshuffle",
         players: [null, null, null],
         current_player: 0,
         phase: "waiting_for_players",
@@ -371,12 +371,17 @@ export function useGame(
         ? // In forfeit games, use forfeited_player to determine winner
           state.forfeited_player !== null &&
           playerPosition !== state.forfeited_player
-        : // In normal games, check if player was declarer and if declarer won
-          playerPosition !== null && state.declarer !== null
-          ? playerPosition === state.declarer
-            ? result.declarer_won
-            : !result.declarer_won
-          : false
+        : state.mode === "ramsch" && playerPosition !== null
+          ? state.player_scores[playerPosition] ===
+            Math.min(
+              ...state.player_scores.filter((_, index) => players[index]),
+            )
+          : // In normal games, check if player was declarer and if declarer won
+            playerPosition !== null && state.declarer !== null
+            ? playerPosition === state.declarer
+              ? result.declarer_won
+              : !result.declarer_won
+            : false
       : false,
     isSchneider: result?.is_schneider ?? false,
     isSchwarz: result?.is_schwarz ?? false,

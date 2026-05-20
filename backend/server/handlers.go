@@ -183,7 +183,7 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	}
 	passPolicy := game.PassPolicy(req.PassPolicy)
 	if passPolicy == "" {
-		passPolicy = game.PassPolicyForceListener
+		passPolicy = game.DefaultPassPolicy
 	}
 	if passPolicy != game.PassPolicyReshuffle && passPolicy != game.PassPolicyForceListener && passPolicy != game.PassPolicyRamsch {
 		http.Error(w, "invalid pass_policy", http.StatusBadRequest)

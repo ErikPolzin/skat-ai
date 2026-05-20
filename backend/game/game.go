@@ -26,7 +26,10 @@ const (
 	PassPolicyRamsch        PassPolicy = "ramsch"
 )
 
-const DefaultMaxGames = 10
+const (
+	DefaultMaxGames   = 10
+	DefaultPassPolicy = PassPolicyReshuffle
+)
 
 // ValidBidValues are the legal bid values in Skat (based on game values)
 var ValidBidValues = []int{
@@ -189,7 +192,7 @@ func NewGame() *GameState {
 		Code:            NewGameCode(),
 		Players:         [3]*PlayerState{},
 		MaxGames:        DefaultMaxGames,
-		PassPolicy:      PassPolicyForceListener,
+		PassPolicy:      DefaultPassPolicy,
 		Phase:           PhaseWaitingForPlayers, // Start waiting for players
 		Declarer:        nil,                    // Not determined yet
 		CurrentPlayer:   0,                      // Dealer starts as the current player

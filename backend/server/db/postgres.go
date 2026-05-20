@@ -104,7 +104,7 @@ func (d *PgDatabase) SaveGameSession(session game.GameSessionState) error {
 		session.MaxGames = game.DefaultMaxGames
 	}
 	if session.PassPolicy == "" {
-		session.PassPolicy = string(game.PassPolicyForceListener)
+		session.PassPolicy = string(game.DefaultPassPolicy)
 	}
 	_, err := d.DB.Exec(
 		`INSERT INTO game_sessions (id, code, game_id, player_count, max_games, pass_policy, ended_at)

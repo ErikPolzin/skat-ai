@@ -80,7 +80,7 @@ func (d *MemoryDatabase) SaveGameSession(session game.GameSessionState) error {
 		session.MaxGames = game.DefaultMaxGames
 	}
 	if session.PassPolicy == "" {
-		session.PassPolicy = string(game.PassPolicyForceListener)
+		session.PassPolicy = string(game.DefaultPassPolicy)
 	}
 	d.sessions[session.ID] = &session
 	return nil
@@ -114,7 +114,7 @@ func (d *MemoryDatabase) GetGameSession(sessionID string) (*game.GameSessionStat
 		ID:         sessionID,
 		Code:       sessionID[:8],
 		MaxGames:   game.DefaultMaxGames,
-		PassPolicy: string(game.PassPolicyForceListener),
+		PassPolicy: string(game.DefaultPassPolicy),
 	}, nil
 }
 

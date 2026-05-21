@@ -143,7 +143,7 @@ type PlayerSessionResultState struct {
 
 // SessionGameResult represents the results of a single game within a session
 type SessionGameResult struct {
-	GameID          string            `json:"game_id"`
+	GameID          string            `json:"-"`
 	GameNumber      int               `json:"game_number"`
 	DeclarerName    string            `json:"declarer_name"`
 	DeclarerWon     bool              `json:"declarer_won"`

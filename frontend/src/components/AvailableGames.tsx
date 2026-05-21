@@ -53,7 +53,7 @@ const AvailableGames = () => {
       // Join the game (either the newly created one or an existing one)
       const data = await joinGame(code);
       // Navigate to the game
-      navigate(`/game/${data.game_id}`);
+      navigate(`/${data.session_id}`);
     } catch (error) {
       console.error("Error in handleJoinOrCreate:", error);
       showSnackbar("Failed to join game", "error");

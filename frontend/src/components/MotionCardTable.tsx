@@ -26,7 +26,6 @@ import { GameLobbyWaiting } from "./GameLobbyWaiting";
 import { BiddingControls } from "./BiddingControls";
 import { SkatExchange } from "./SkatExchange";
 import { GameOverScreen } from "./GameOverScreen";
-import { TournamentResultsScreen } from "./TournamentResultsScreen";
 import {
   canPlayCard,
   compareCardsForHand,
@@ -54,8 +53,6 @@ export function MotionCardTable() {
   const [selectedPlayedCard, setSelectedPlayedCard] = useState<CardType | null>(
     null,
   );
-  const [showTournamentResults, setShowTournamentResults] = useState(false);
-  const defaultedToTournamentResultsRef = useRef(false);
   const reportedTimeoutDeadlineRef = useRef<string | null>(null);
 
   // Track window size for responsive positioning
@@ -74,20 +71,6 @@ export function MotionCardTable() {
     secondsRemaining !== null &&
     secondsRemaining > 0 &&
     secondsRemaining <= 30;
-  const isTournamentComplete = game.gameOver && !game.canPlayNext;
-
-  useEffect(() => {
-    if (isTournamentComplete && !defaultedToTournamentResultsRef.current) {
-      defaultedToTournamentResultsRef.current = true;
-      setShowTournamentResults(true);
-      return;
-    }
-
-    if (!isTournamentComplete) {
-      defaultedToTournamentResultsRef.current = false;
-    }
-  }, [isTournamentComplete]);
-
   // Handle timeout when deadline expires
   useEffect(() => {
     if (
@@ -520,11 +503,11 @@ export function MotionCardTable() {
   };
 
   const centerOverrideUI = useMemo(() => {
-    return showTournamentResults ? (
-      <TournamentResultsScreen onBack={() => setShowTournamentResults(false)} />
-    ) : game.gameOver ? (
+    return game.gameOver ? (
       <GameOverScreen
-        onShowTournamentResults={() => setShowTournamentResults(true)}
+        onShowTournamentResults={() =>
+          navigate(`/${game.sessionId}/results`)
+        }
       />
     ) : !game.controls.isConnected ? (
       <div
@@ -622,7 +605,6 @@ export function MotionCardTable() {
     game,
     handleDiscardCards,
     navigate,
-    showTournamentResults,
   ]);
 
   return (

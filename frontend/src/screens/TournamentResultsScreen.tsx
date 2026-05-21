@@ -18,15 +18,9 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getSessionResults, type SessionPlayerResult } from "../api/games";
-import { useGameContext } from "../context/GameContext";
+import { GameProvider, useGameContext } from "../context/GameContext";
 
-interface TournamentResultsScreenProps {
-  onBack: () => void;
-}
-
-export function TournamentResultsScreen({
-  onBack,
-}: TournamentResultsScreenProps) {
+function TournamentResultsScreenContent() {
   const game = useGameContext();
   const navigate = useNavigate();
   const [sessionPlayerResults, setSessionPlayerResults] = useState<
@@ -206,7 +200,7 @@ export function TournamentResultsScreen({
           </TableHead>
           <TableBody>
             {game.sessionResults.map((sessionGame, index) => (
-              <TableRow key={sessionGame.game_id}>
+              <TableRow key={sessionGame.game_number}>
                 <TableCell>{index + 1}</TableCell>
                 <TableCell>
                   {sessionGame.game_mode === "ramsch"
@@ -236,7 +230,7 @@ export function TournamentResultsScreen({
           variant="outlined"
           color="primary"
           size="large"
-          onClick={onBack}
+          onClick={() => navigate(`/${game.sessionId}`)}
         >
           Back to Game Summary
         </Button>
@@ -250,5 +244,13 @@ export function TournamentResultsScreen({
         </Button>
       </Stack>
     </Stack>
+  );
+}
+
+export default function TournamentResultsScreen() {
+  return (
+    <GameProvider>
+      <TournamentResultsScreenContent />
+    </GameProvider>
   );
 }

@@ -132,8 +132,8 @@ export interface ActiveGame {
   player_names: string[];
 }
 
-export async function fetchGameState(gameId: string): Promise<GameInfo> {
-  const url = `${getApiUrl()}/api/games/${gameId}`;
+export async function fetchGameState(sessionId: string): Promise<GameInfo> {
+  const url = `${getApiUrl()}/api/sessions/${sessionId}/game`;
 
   const response = await fetch(url, { headers: authHeaders() });
 
@@ -152,7 +152,7 @@ export interface CreateGameOptions {
 
 export async function createGame(
   options?: CreateGameOptions,
-): Promise<{ game_id: string; code: string }> {
+): Promise<{ game_id: string; session_id: string; code: string }> {
   const url = `${getApiUrl()}/api/games`;
 
   const response = await fetch(url, {
@@ -188,8 +188,10 @@ export async function createOrRetrieveProfile(
   return response.json();
 }
 
-export async function joinGame(gameId: string): Promise<{ game_id: string }> {
-  const response = await fetch(`${getApiUrl()}/api/games/${gameId}/join`, {
+export async function joinGame(
+  code: string,
+): Promise<{ game_id: string; session_id: string }> {
+  const response = await fetch(`${getApiUrl()}/api/games/${code}/join`, {
     method: "POST",
     headers: authHeaders(),
   });
@@ -332,7 +334,6 @@ export async function getPlayerGameHistory(
 export interface SessionResults {
   session_id: string;
   results: Array<{
-    game_id: string;
     game_number: number;
     declarer_name: string;
     declarer_won: boolean;

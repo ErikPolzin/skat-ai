@@ -48,8 +48,8 @@ export default function ActiveGames() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId]);
 
-  const handleRejoinGame = (gameId: string) => {
-    navigate(`/game/${gameId}`);
+  const handleRejoinGame = (sessionId: string) => {
+    navigate(`/${sessionId}`);
   };
 
   const handleLeaveGame = async (gameId: string, event: React.MouseEvent) => {
@@ -192,7 +192,7 @@ export default function ActiveGames() {
                   <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
                     <Button
                       variant="contained"
-                      onClick={() => handleRejoinGame(game.id)}
+                      onClick={() => handleRejoinGame(game.session_id)}
                       size="small"
                     >
                       Rejoin

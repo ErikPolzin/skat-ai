@@ -34,6 +34,7 @@ import { WebSocketProvider } from "./context/WebSocketContext";
 import LoginScreen from "./screens/LoginScreen";
 import LobbyScreen from "./screens/LobbyScreen";
 import GameScreen from "./screens/GameScreen";
+import TournamentResultsScreen from "./screens/TournamentResultsScreen";
 import HistoryScreen from "./screens/HistoryScreen";
 import { useSnackbarStore } from "./stores/snackbarStore";
 
@@ -169,7 +170,11 @@ function AppRoutes() {
         >
           <Route path="/" element={<LobbyScreen />} />
           <Route path="/history" element={<HistoryScreen />} />
-          <Route path="/game/:gameId" element={<GameScreen />} />
+          <Route path="/:sessionId" element={<GameScreen />} />
+          <Route
+            path="/:sessionId/results"
+            element={<TournamentResultsScreen />}
+          />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

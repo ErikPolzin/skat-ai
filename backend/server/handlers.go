@@ -54,6 +54,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	authAPI.HandleFunc("/games", s.handleListOpenSessions).Methods("GET")
 	authAPI.HandleFunc("/games", s.handleCreateGame).Methods("POST")
 	authAPI.HandleFunc("/games/{id}", s.handleGetGame).Methods("GET")
+	authAPI.HandleFunc("/sessions/{sessionId}/game", s.handleGetSessionGame).Methods("GET")
 	authAPI.HandleFunc("/games/{code}/join", s.handleJoinGame).Methods("POST")
 	authAPI.HandleFunc("/games/{id}/leave", s.handleLeaveGame).Methods("POST")
 	authAPI.HandleFunc("/games/{id}/agents", s.handleAddAgent).Methods("POST")
@@ -216,8 +217,9 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"game_id": gs.ID,
-		"code":    string(gs.Code),
+		"game_id":    gs.ID,
+		"session_id": gs.SessionID,
+		"code":       string(gs.Code),
 	})
 }
 
@@ -233,6 +235,27 @@ func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 	playerID := profile.ID
 
 	gs, err := s.cache.GetGameByID(gameID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(gs.SerializeForPlayer(playerID))
+}
+
+// handleGetSessionGame returns game information for a session's current game.
+func (s *Server) handleGetSessionGame(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sessionID := vars["sessionId"]
+	profile, err := currentProfile(r)
+	if err != nil {
+		writeAuthRequired(w)
+		return
+	}
+	playerID := profile.ID
+
+	gs, err := s.cache.GetGameBySessionID(sessionID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -369,7 +392,8 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"game_id": gs.ID,
+		"game_id":    gs.ID,
+		"session_id": gs.SessionID,
 	})
 
 	logger.Info("Player %s joined game %s via HTTP", profile.Name, gs.Code)
@@ -1128,7 +1152,10 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		// Send start_next_game message to trigger navigation
 		s.clients.BroadcastToPlayers(gs, &Message{
 			Type: "start_next_game",
-			Data: map[string]any{"game_id": newGameID},
+			Data: map[string]any{
+				"game_id":    newGameID,
+				"session_id": gs.SessionID,
+			},
 		})
 
 		// Also broadcast the state change

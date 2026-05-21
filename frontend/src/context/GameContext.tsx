@@ -33,10 +33,10 @@ const GameContext = createContext<
 >(null);
 
 export function GameProvider({ children }: { children: ReactNode }) {
-  const { gameId } = useParams<{ gameId: string }>();
+  const { sessionId } = useParams<{ sessionId: string }>();
   const playerId = useProfileStore((state) => state.playerId);
 
-  const game = useGame(gameId, playerId || undefined);
+  const game = useGame(sessionId, playerId || undefined);
   const socket = useWebSocketContext();
   const controls = useControls(game, socket);
   const navigate = useNavigate();
@@ -115,7 +115,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       case "start_next_game":
         {
           const data = (message as StartNextGameMessage).data;
-          navigate(`/game/${data.game_id}`, { replace: true });
+          navigate(`/${data.session_id || game.sessionId}`, { replace: true });
         }
         break;
       case "player_offline":
@@ -166,15 +166,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   // Set up WebSocket message handler for game updates
   useEffect(() => {
-    if (!gameId || !playerId) return;
+    if (!sessionId || !playerId) return;
 
     // Add handler for game messages
     const cleanup = socket.addMessageHandler("game", handleGameMessage);
 
     return cleanup;
-    // Only re-run when gameId or playerId changes, not when game state changes
+    // Only re-run when sessionId or playerId changes, not when game state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, playerId, socket.addMessageHandler]);
+  }, [sessionId, playerId, socket.addMessageHandler]);
 
   return (
     <GameContext.Provider

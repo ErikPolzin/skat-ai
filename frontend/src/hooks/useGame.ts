@@ -18,7 +18,7 @@ interface GameMessage {
 }
 
 export function useGame(
-  gameId: string | undefined,
+  sessionId: string | undefined,
   playerId: string | undefined,
 ) {
   // Server state - matches API response
@@ -162,15 +162,15 @@ export function useGame(
   );
 
   const loadGameState = async () => {
-    if (!gameId) {
+    if (!sessionId) {
       setIsLoading(false);
-      setError("No game ID provided");
+      setError("No session ID provided");
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchGameState(gameId);
+      const data = await fetchGameState(sessionId);
       setGameInfo(data);
 
       // Fetch session results if we have a session ID
@@ -200,13 +200,13 @@ export function useGame(
     }
   };
 
-  // Fetch game state from server only when gameId changes
+  // Fetch game state from server only when sessionId changes
   useEffect(() => {
     // Skip if we've already fetched this game
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadGameState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, playerId]);
+  }, [sessionId, playerId]);
 
   const optimisticallyPlayCard = useCallback((card: Card) => {
     setGameInfo((prev) => ({

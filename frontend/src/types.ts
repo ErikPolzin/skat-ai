@@ -19,7 +19,6 @@ export interface GameState {
 }
 
 export interface SessionGameResult {
-  game_id: string;
   game_number: number;
   declarer_name: string;
   declarer_won: boolean;
@@ -48,6 +47,7 @@ export interface StateUpdateMessage extends Message<{
 
 export interface StartNextGameMessage extends Message<{
   game_id: string;
+  session_id?: string;
 }> {
   type: "start_next_game";
 }

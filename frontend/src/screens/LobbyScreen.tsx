@@ -224,7 +224,7 @@ const GamesTab = () => {
       const data = await joinGame(currentGameCode);
 
       // Navigate to the game
-      navigate(`/game/${data.game_id}`);
+      navigate(`/${data.session_id}`);
     } catch (error) {
       console.error("Error in handleJoinOrCreate:", error);
       showSnackbar(

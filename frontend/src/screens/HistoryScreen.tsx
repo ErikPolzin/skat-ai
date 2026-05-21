@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import {
   Box,
+  Button,
   Container,
   IconButton,
   List,
@@ -18,6 +19,7 @@ import { useEffect, useState } from "react";
 import { getPlayerHistory, type PlayerResult } from "../api/games";
 import { selectPlayerId, useProfileStore } from "../stores/profileStore";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 
 export default function HistoryScreen() {
   const navigate = useNavigate();
@@ -131,7 +133,22 @@ export default function HistoryScreen() {
           ) : (
             <List dense>
               {history.map((result, index) => (
-                <ListItem key={result.session_id}>
+                <ListItem
+                  key={result.session_id}
+                  secondaryAction={
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<EmojiEventsIcon />}
+                      onClick={() =>
+                        navigate(`/${result.session_id}/results`)
+                      }
+                    >
+                      Results
+                    </Button>
+                  }
+                  sx={{ pr: 14 }}
+                >
                   <ListItemText
                     primary={
                       <Box

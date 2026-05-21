@@ -411,6 +411,30 @@ func (d *MemoryDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameSta
 	return games, nil
 }
 
+func (d *MemoryDatabase) GetSpectatableGames(excludePlayerID string) ([]game.GameState, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var games []game.GameState
+	for _, gameState := range d.games {
+		if gameState.Phase == game.PhaseComplete || gameState.Phase == game.PhaseWaitingForPlayers {
+			continue
+		}
+
+		isPlayerInGame := false
+		for _, player := range gameState.Players {
+			if player != nil && player.ID == excludePlayerID {
+				isPlayerInGame = true
+				break
+			}
+		}
+		if !isPlayerInGame {
+			games = append(games, *gameState)
+		}
+	}
+	return games, nil
+}
+
 func (d *MemoryDatabase) GetAllExpiredGames() ([]game.GameState, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()

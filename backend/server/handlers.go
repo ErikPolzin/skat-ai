@@ -51,7 +51,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	authAPI := api.PathPrefix("").Subrouter()
 	authAPI.Use(s.basicAuthMiddleware)
 	authAPI.HandleFunc("/profile", s.handleCurrentProfile).Methods("GET")
-	authAPI.HandleFunc("/games", s.handleListOpenSessions).Methods("GET")
+	authAPI.HandleFunc("/game-lists", s.handleGetGameLists).Methods("GET")
 	authAPI.HandleFunc("/games", s.handleCreateGame).Methods("POST")
 	authAPI.HandleFunc("/games/{id}", s.handleGetGame).Methods("GET")
 	authAPI.HandleFunc("/sessions/{sessionId}/game", s.handleGetSessionGame).Methods("GET")
@@ -70,7 +70,6 @@ func (s *Server) SetupRoutes() http.Handler {
 	authAPI.HandleFunc("/games/{id}/timeout", s.handleTimeout).Methods("POST")
 	authAPI.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
 	authAPI.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
-	authAPI.HandleFunc("/players/{id}/active_games", s.handleGetActiveGames).Methods("GET")
 	authAPI.HandleFunc("/players/{id}/rating", s.handleGetPlayerRating).Methods("GET")
 	authAPI.HandleFunc("/leaderboard", s.handleGetLeaderboard).Methods("GET")
 	authAPI.HandleFunc("/agents", s.handleListAgents).Methods("GET")
@@ -104,9 +103,99 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
 }
 
-// handleListOpenSessions returns all open games (accepting players)
-// Optionally filters out games where the specified player is already playing
-func (s *Server) handleListOpenSessions(w http.ResponseWriter, r *http.Request) {
+type pageInfo struct {
+	Limit   int  `json:"limit"`
+	Offset  int  `json:"offset"`
+	Total   int  `json:"total"`
+	HasMore bool `json:"has_more"`
+}
+
+type paginatedResponse[T any] struct {
+	Items []T      `json:"items"`
+	Page  pageInfo `json:"page"`
+}
+
+type activeGameResponse struct {
+	ID          string   `json:"id"`
+	Code        string   `json:"code"`
+	SessionID   string   `json:"session_id"`
+	GameNumber  int      `json:"game_number"`
+	PlayerCount int      `json:"player_count"`
+	Phase       string   `json:"phase"`
+	PlayerNames []string `json:"player_names"`
+}
+
+func parsePagination(r *http.Request, prefix string) (int, int) {
+	query := r.URL.Query()
+	limit := parsePositiveInt(query.Get(prefix+"_limit"), 10)
+	offset := parsePositiveInt(query.Get(prefix+"_offset"), 0)
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	return limit, offset
+}
+
+func parsePositiveInt(raw string, fallback int) int {
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return fallback
+	}
+	return value
+}
+
+func paginate[T any](items []T, limit int, offset int) paginatedResponse[T] {
+	total := len(items)
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+
+	return paginatedResponse[T]{
+		Items: items[offset:end],
+		Page: pageInfo{
+			Limit:   limit,
+			Offset:  offset,
+			Total:   total,
+			HasMore: end < total,
+		},
+	}
+}
+
+func activeGameResponses(games []game.GameState) []activeGameResponse {
+	response := make([]activeGameResponse, len(games))
+	for i, gs := range games {
+		playerCount := 0
+		playerNames := []string{}
+		for _, p := range gs.Players {
+			if p != nil {
+				playerCount++
+				playerNames = append(playerNames, p.Name)
+			}
+		}
+		response[i] = activeGameResponse{
+			ID:          gs.ID,
+			Code:        string(gs.Code),
+			SessionID:   gs.SessionID,
+			GameNumber:  gs.GameNumber,
+			PlayerCount: playerCount,
+			Phase:       string(gs.Phase),
+			PlayerNames: playerNames,
+		}
+	}
+	return response
+}
+
+// handleGetGameLists returns the lobby's game lists in a single request.
+func (s *Server) handleGetGameLists(w http.ResponseWriter, r *http.Request) {
 	profile, err := currentProfile(r)
 	if err != nil {
 		writeAuthRequired(w)
@@ -114,35 +203,52 @@ func (s *Server) handleListOpenSessions(w http.ResponseWriter, r *http.Request) 
 	}
 	playerID := profile.ID
 
-	games, err := s.db.ListOpenSessions()
+	availableGames, err := s.db.ListOpenSessions()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Filter out games where the player is already playing
-	if playerID != "" {
-		activeGames, err := s.db.GetActiveGamesByPlayer(playerID)
-		if err == nil {
-			// Create a map of active game IDs for quick lookup
-			activeGameIDs := make(map[string]bool)
-			for _, ag := range activeGames {
-				activeGameIDs[ag.ID] = true
-			}
+	activeGames, err := s.db.GetActiveGamesByPlayer(playerID)
+	if err != nil {
+		logger.Warning("Failed to get active games: %e", err)
+		activeGames = []game.GameState{}
+	}
 
-			// Filter out games where player is already playing
-			filteredGames := []game.GameSessionState{}
-			for _, g := range games {
-				if !activeGameIDs[g.GameID] {
-					filteredGames = append(filteredGames, g)
-				}
-			}
-			games = filteredGames
+	activeGameIDs := make(map[string]bool)
+	for _, ag := range activeGames {
+		activeGameIDs[ag.ID] = true
+	}
+
+	filteredAvailableGames := []game.GameSessionState{}
+	for _, availableGame := range availableGames {
+		if !activeGameIDs[availableGame.GameID] {
+			filteredAvailableGames = append(filteredAvailableGames, availableGame)
 		}
 	}
 
+	spectatableGames, err := s.db.GetSpectatableGames(playerID)
+	if err != nil {
+		logger.Warning("Failed to get spectatable games: %e", err)
+		spectatableGames = []game.GameState{}
+	}
+
+	activeLimit, activeOffset := parsePagination(r, "active")
+	availableLimit, availableOffset := parsePagination(r, "available")
+	spectatableLimit, spectatableOffset := parsePagination(r, "spectatable")
+
+	response := struct {
+		Active      paginatedResponse[activeGameResponse]    `json:"active"`
+		Available   paginatedResponse[game.GameSessionState] `json:"available"`
+		Spectatable paginatedResponse[activeGameResponse]    `json:"spectatable"`
+	}{
+		Active:      paginate(activeGameResponses(activeGames), activeLimit, activeOffset),
+		Available:   paginate(filteredAvailableGames, availableLimit, availableOffset),
+		Spectatable: paginate(activeGameResponses(spectatableGames), spectatableLimit, spectatableOffset),
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(games)
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleCreateGame creates a new game session
@@ -611,61 +717,6 @@ func (s *Server) handleGetPlayerHistory(w http.ResponseWriter, r *http.Request) 
 	// Rating changes are now included in player results
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
-}
-
-// handleGetActiveGames returns active games for a player
-func (s *Server) handleGetActiveGames(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	playerID := vars["id"]
-	if authPlayerID, err := currentProfileID(r); err != nil {
-		writeAuthRequired(w)
-		return
-	} else if playerID != authPlayerID {
-		http.Error(w, "cannot access another player's active games", http.StatusForbidden)
-		return
-	}
-
-	games, err := s.db.GetActiveGamesByPlayer(playerID)
-	if err != nil {
-		logger.Warning("Failed to get active games: %e", err)
-		// Return empty array on error rather than failing
-		games = []game.GameState{}
-	}
-
-	// Transform to session-like response for consistency
-	type ActiveGameResponse struct {
-		ID          string   `json:"id"`
-		Code        string   `json:"code"`
-		SessionID   string   `json:"session_id"`
-		GameNumber  int      `json:"game_number"`
-		PlayerCount int      `json:"player_count"`
-		Phase       string   `json:"phase"`
-		PlayerNames []string `json:"player_names"`
-	}
-
-	response := make([]ActiveGameResponse, len(games))
-	for i, gs := range games {
-		playerCount := 0
-		playerNames := []string{}
-		for _, p := range gs.Players {
-			if p != nil {
-				playerCount++
-				playerNames = append(playerNames, p.Name)
-			}
-		}
-		response[i] = ActiveGameResponse{
-			ID:          gs.ID,
-			Code:        string(gs.Code),
-			SessionID:   gs.SessionID,
-			GameNumber:  gs.GameNumber,
-			PlayerCount: playerCount,
-			Phase:       string(gs.Phase),
-			PlayerNames: playerNames,
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
 }
 
 // handleGetSessionResults returns all game results for a session

@@ -132,6 +132,33 @@ export interface ActiveGame {
   player_names: string[];
 }
 
+export interface PageInfo {
+  limit: number;
+  offset: number;
+  total: number;
+  has_more: boolean;
+}
+
+export interface PaginatedList<T> {
+  items: T[];
+  page: PageInfo;
+}
+
+export interface GameLists {
+  active: PaginatedList<ActiveGame>;
+  available: PaginatedList<GameSession>;
+  spectatable: PaginatedList<ActiveGame>;
+}
+
+export interface GameListsOptions {
+  activeLimit?: number;
+  activeOffset?: number;
+  availableLimit?: number;
+  availableOffset?: number;
+  spectatableLimit?: number;
+  spectatableOffset?: number;
+}
+
 export async function fetchGameState(sessionId: string): Promise<GameInfo> {
   const url = `${getApiUrl()}/api/sessions/${sessionId}/game`;
 
@@ -218,30 +245,34 @@ export async function addAIAgent(
   }
 }
 
-export async function getGames(
-  excludePlayerId?: string,
-): Promise<GameSession[]> {
-  const url = excludePlayerId
-    ? `${getApiUrl()}/api/games?exclude_player_id=${excludePlayerId}`
-    : `${getApiUrl()}/api/games`;
-  const response = await fetch(url, { headers: authHeaders() });
-  const data = await response.json();
-  return data || [];
-}
+export async function getGameLists(
+  options: GameListsOptions = {},
+): Promise<GameLists> {
+  const params = new URLSearchParams();
+  const addParam = (key: string, value?: number) => {
+    if (value !== undefined) {
+      params.set(key, String(value));
+    }
+  };
 
-export async function getActiveGames(playerId: string): Promise<ActiveGame[]> {
+  addParam("active_limit", options.activeLimit);
+  addParam("active_offset", options.activeOffset);
+  addParam("available_limit", options.availableLimit);
+  addParam("available_offset", options.availableOffset);
+  addParam("spectatable_limit", options.spectatableLimit);
+  addParam("spectatable_offset", options.spectatableOffset);
+
+  const query = params.toString();
   const response = await fetch(
-    `${getApiUrl()}/api/players/${playerId}/active_games`,
+    `${getApiUrl()}/api/game-lists${query ? `?${query}` : ""}`,
     { headers: authHeaders() },
   );
 
   if (!response.ok) {
-    console.error("Failed to fetch active games");
-    return [];
+    throw new Error("Failed to fetch game lists");
   }
 
-  const data = await response.json();
-  return data || [];
+  return response.json();
 }
 
 export interface PlayerResult {

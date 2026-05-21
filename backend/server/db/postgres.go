@@ -794,6 +794,7 @@ func (d *PgDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameState, 
 		FROM games g
 		JOIN players p ON g.id = p.game_id
 		WHERE p.profile_id = $1 AND g.phase != $2
+		ORDER BY g.id
 	`, playerID, game.PhaseComplete)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active games by player: %w", err)
@@ -814,6 +815,40 @@ func (d *PgDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameState, 
 		games = append(games, *gs)
 	}
 
+	return games, nil
+}
+
+func (d *PgDatabase) GetSpectatableGames(excludePlayerID string) ([]game.GameState, error) {
+	rows, err := d.DB.Query(`
+		SELECT DISTINCT g.id
+		FROM games g
+		WHERE g.phase != $1
+			AND g.phase != $2
+			AND NOT EXISTS (
+				SELECT 1
+				FROM players p
+				WHERE p.game_id = g.id AND p.profile_id = $3
+			)
+		ORDER BY g.id
+	`, game.PhaseComplete, game.PhaseWaitingForPlayers, excludePlayerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query spectatable games: %w", err)
+	}
+	defer rows.Close()
+
+	var games []game.GameState
+	for rows.Next() {
+		var gameID string
+		if err := rows.Scan(&gameID); err != nil {
+			return nil, fmt.Errorf("failed to scan game ID: %w", err)
+		}
+
+		gs, err := d.GetGameByID(gameID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get game %s: %w", gameID, err)
+		}
+		games = append(games, *gs)
+	}
 	return games, nil
 }
 

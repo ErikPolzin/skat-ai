@@ -39,10 +39,9 @@ import {
   useProfileStore,
 } from "../stores/profileStore";
 import { useSnackbarStore } from "../stores/snackbarStore";
-import ActiveGames from "../components/ActiveGames";
 import Leaderboard from "../components/Leaderboard";
 import { getPlayerRating } from "../api/games";
-import AvailableGames from "../components/AvailableGames";
+import GameLists from "../components/GameLists";
 
 const Header = () => {
   const navigate = useNavigate();
@@ -317,8 +316,7 @@ const GamesTab = () => {
           {isLoading ? "Loading..." : gameCode ? "Join Game" : "Create Game"}
         </Button>
       </Box>
-      <ActiveGames />
-      <AvailableGames />
+      <GameLists />
     </Box>
   );
 };

@@ -166,7 +166,7 @@ export function GameOverScreen({
       <div className="game-over-buttons">
         {game.canPlayNext && (
           <>
-            {game.player?.ready_for_next ? (
+            {!game.player?.ready_for_next ? (
               <Button
                 variant="contained"
                 color="primary"
@@ -200,9 +200,21 @@ export function GameOverScreen({
           color="primary"
           size="large"
           fullWidth
-          onClick={() => navigate("/")}
+          onClick={
+            game.canPlayNext
+              ? async () => {
+                  await game.controls.endTournament();
+                  onShowTournamentResults();
+                }
+              : () => navigate("/")
+          }
+          loading={game.canPlayNext && game.controls.isLoading}
+          disabled={
+            game.canPlayNext &&
+            (!game.controls.isConnected || game.controls.isLoading)
+          }
         >
-          Back to Lobby
+          {game.canPlayNext ? "End Tournament" : "Back to Lobby"}
         </Button>
         {isTournamentComplete && (
           <Button

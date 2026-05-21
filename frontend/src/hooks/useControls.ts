@@ -184,6 +184,24 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
     }
   }, [game.gameId, isLoading, playerId, showSnackbar]);
 
+  const endTournament = useCallback(async () => {
+    if (!isLoading && playerId) {
+      setIsLoading(true);
+      try {
+        const sessionData = await api.endTournament(game.gameId);
+        game.setSessionResults(sessionData.results || []);
+        game.setSessionPlayerResults(sessionData.player_results || []);
+        game.setGamesPlayed(sessionData.results?.length || 0);
+      } catch (error) {
+        console.error("End tournament action failed:", error);
+        showSnackbar("Failed to end tournament", "error");
+        throw error;
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  }, [game, isLoading, playerId, showSnackbar]);
+
   return {
     playCard,
     pickUpSkat,
@@ -193,6 +211,7 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
     deal,
     declareGame,
     playNextGame,
+    endTournament,
     isLoading,
     isConnected: websocket.isConnected,
     reconnectCountdown: websocket.reconnectCountdown,

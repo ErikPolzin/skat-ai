@@ -468,6 +468,23 @@ export async function readyForNextGame(
   return gameAction(gameId, "ready_for_next", playerId);
 }
 
+export async function endTournament(gameId: string): Promise<SessionResults> {
+  const response = await fetch(
+    `${getApiUrl()}/api/games/${gameId}/end_tournament`,
+    {
+      method: "POST",
+      headers: jsonHeaders(),
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function reportTimeout(
   gameId: string,
   playerId: string,

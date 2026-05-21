@@ -55,6 +55,7 @@ export function MotionCardTable() {
     null,
   );
   const [showTournamentResults, setShowTournamentResults] = useState(false);
+  const defaultedToTournamentResultsRef = useRef(false);
   const reportedTimeoutDeadlineRef = useRef<string | null>(null);
 
   // Track window size for responsive positioning
@@ -73,6 +74,19 @@ export function MotionCardTable() {
     secondsRemaining !== null &&
     secondsRemaining > 0 &&
     secondsRemaining <= 30;
+  const isTournamentComplete = game.gameOver && !game.canPlayNext;
+
+  useEffect(() => {
+    if (isTournamentComplete && !defaultedToTournamentResultsRef.current) {
+      defaultedToTournamentResultsRef.current = true;
+      setShowTournamentResults(true);
+      return;
+    }
+
+    if (!isTournamentComplete) {
+      defaultedToTournamentResultsRef.current = false;
+    }
+  }, [isTournamentComplete]);
 
   // Handle timeout when deadline expires
   useEffect(() => {

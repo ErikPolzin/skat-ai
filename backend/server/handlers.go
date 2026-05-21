@@ -65,6 +65,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	authAPI.HandleFunc("/games/{id}/skat_decision", s.handleSkatDecision).Methods("POST")
 	authAPI.HandleFunc("/games/{id}/discard_cards", s.handleDiscardCards).Methods("POST")
 	authAPI.HandleFunc("/games/{id}/ready_for_next", s.handleReadyForNext).Methods("POST")
+	authAPI.HandleFunc("/games/{id}/end_tournament", s.handleEndTournament).Methods("POST")
 	authAPI.HandleFunc("/games/{id}/timeout", s.handleTimeout).Methods("POST")
 	authAPI.HandleFunc("/profiles/{id}/avatar", s.handleUploadAvatar).Methods("POST")
 	authAPI.HandleFunc("/players/{id}/history", s.handleGetPlayerHistory).Methods("GET")
@@ -1144,6 +1145,71 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func (s *Server) handleEndTournament(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	gameID := vars["id"]
+
+	playerID, err := getAuthenticatedPlayerID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	gs, err := s.cache.GetGameByID(gameID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if gs.GetPositionForPlayer(playerID) == -1 {
+		http.Error(w, "player not in this game", http.StatusBadRequest)
+		return
+	}
+	if gs.Phase != game.PhaseComplete {
+		http.Error(w, "current game is not complete", http.StatusBadRequest)
+		return
+	}
+
+	finalGameCount := gs.GameNumber + 1
+	if finalGameCount <= 0 {
+		finalGameCount = 1
+	}
+	if gs.MaxGames <= 0 || gs.MaxGames > finalGameCount {
+		gs.MaxGames = finalGameCount
+	}
+
+	if err := s.cache.SaveGame(*gs); err != nil {
+		logger.Warning("Failed to save game before ending tournament: %e", err)
+		http.Error(w, "failed to save game", http.StatusInternalServerError)
+		return
+	}
+	if err := s.maybeSaveGameResults(gs); err != nil {
+		logger.Warning("Failed to finalize tournament early: %e", err)
+		http.Error(w, "failed to finalize tournament", http.StatusInternalServerError)
+		return
+	}
+
+	s.clients.BroadcastStateChange(gs, "Tournament ended", gs.CurrentPlayer)
+
+	results, err := s.db.GetFormattedSessionResults(gs.SessionID)
+	if err != nil {
+		logger.Warning("Failed to get finalized session results: %e", err)
+		http.Error(w, "failed to load tournament results", http.StatusInternalServerError)
+		return
+	}
+	playerResults, err := s.db.GetSessionPlayerResults(gs.SessionID)
+	if err != nil {
+		logger.Warning("Failed to get finalized player session results: %e", err)
+		playerResults = []game.PlayerSessionResultState{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"session_id":     gs.SessionID,
+		"results":        results,
+		"player_results": playerResults,
+	})
 }
 
 func (s *Server) handleTimeout(w http.ResponseWriter, r *http.Request) {

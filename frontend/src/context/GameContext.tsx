@@ -86,6 +86,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
           if (data.session_results) {
             setSessionResults(data.session_results);
           }
+          if (data.session_player_results) {
+            game.setSessionPlayerResults(data.session_player_results);
+          }
           if (data.games_played !== undefined) {
             setGamesPlayed(data.games_played);
           }

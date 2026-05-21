@@ -26,6 +26,7 @@ import { GameLobbyWaiting } from "./GameLobbyWaiting";
 import { BiddingControls } from "./BiddingControls";
 import { SkatExchange } from "./SkatExchange";
 import { GameOverScreen } from "./GameOverScreen";
+import { TournamentResultsScreen } from "./TournamentResultsScreen";
 import {
   canPlayCard,
   compareCardsForHand,
@@ -53,6 +54,7 @@ export function MotionCardTable() {
   const [selectedPlayedCard, setSelectedPlayedCard] = useState<CardType | null>(
     null,
   );
+  const [showTournamentResults, setShowTournamentResults] = useState(false);
   const reportedTimeoutDeadlineRef = useRef<string | null>(null);
 
   // Track window size for responsive positioning
@@ -504,7 +506,13 @@ export function MotionCardTable() {
   };
 
   const centerOverrideUI = useMemo(() => {
-    return !game.controls.isConnected ? (
+    return showTournamentResults ? (
+      <TournamentResultsScreen onBack={() => setShowTournamentResults(false)} />
+    ) : game.gameOver ? (
+      <GameOverScreen
+        onShowTournamentResults={() => setShowTournamentResults(true)}
+      />
+    ) : !game.controls.isConnected ? (
       <div
         style={{
           position: "absolute",
@@ -594,10 +602,14 @@ export function MotionCardTable() {
       <div className="waiting-for-declarer">
         <span>Waiting for declarer to choose game mode...</span>
       </div>
-    ) : game.gameOver ? (
-      <GameOverScreen />
     ) : null;
-  }, [activeSelectedCards, game, handleDiscardCards, navigate]);
+  }, [
+    activeSelectedCards,
+    game,
+    handleDiscardCards,
+    navigate,
+    showTournamentResults,
+  ]);
 
   return (
     <div className="motion-card-table" style={cardTableStyle}>

@@ -6,6 +6,7 @@ import {
   getSessionResults,
   type GameInfo,
   type Player,
+  type SessionPlayerResult,
   type ServerPlayer,
 } from "../api/games";
 
@@ -97,6 +98,9 @@ export function useGame(
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionResults, setSessionResults] = useState<SessionGameResult[]>([]);
+  const [sessionPlayerResults, setSessionPlayerResults] = useState<
+    SessionPlayerResult[]
+  >([]);
   const [gamesPlayed, setGamesPlayed] = useState(0);
   const messageIdCounter = useRef(0);
 
@@ -177,6 +181,7 @@ export function useGame(
             setSessionResults(sessionData.results);
             setGamesPlayed(sessionData.results.length);
           }
+          setSessionPlayerResults(sessionData.player_results || []);
         } catch (error) {
           console.error("Failed to fetch session results:", error);
           // Don't fail the whole load if session results fail
@@ -280,6 +285,9 @@ export function useGame(
       can_play_next: false,
     });
     setMessages([]);
+    setSessionResults([]);
+    setSessionPlayerResults([]);
+    setGamesPlayed(0);
   }, []);
 
   const addAgent = async (agentId?: string) => {
@@ -401,9 +409,11 @@ export function useGame(
     updatePlayerOnlineStatus,
     // Session state
     sessionResults,
+    sessionPlayerResults,
     gamesPlayed,
     canPlayNext: canPlayNextFromState,
     setSessionResults,
+    setSessionPlayerResults,
     setGamesPlayed,
     // Game result (when game is complete)
     result,

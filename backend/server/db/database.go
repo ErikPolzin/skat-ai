@@ -22,6 +22,7 @@ type Database interface {
 	SavePlayerResults(result []game.PlayerResultState) error
 	SavePlayerSessionResults(result []game.PlayerSessionResultState) error
 	GetPlayerSessionResults(playerID string, limit int) ([]game.PlayerSessionResultState, error)
+	GetSessionPlayerResults(sessionID string) ([]game.PlayerSessionResultState, error)
 	CountGamesInSession(sessionID string) (int, error)
 	GetPlayerResultsForSession(sessionID string) ([]game.PlayerResultState, error)
 	GetFormattedSessionResults(sessionID string) ([]game.SessionGameResult, error)

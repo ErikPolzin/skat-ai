@@ -11,7 +11,13 @@ import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
 import "./GameOverScreen.css";
 
-export function GameOverScreen() {
+interface GameOverScreenProps {
+  onShowTournamentResults: () => void;
+}
+
+export function GameOverScreen({
+  onShowTournamentResults,
+}: GameOverScreenProps) {
   const game = useGameContext();
   const navigate = useNavigate();
 
@@ -45,6 +51,7 @@ export function GameOverScreen() {
     "♥": "Hearts",
     "♦": "Diamonds",
   };
+  const isTournamentComplete = !game.canPlayNext;
 
   return (
     <div className="game-over-screen">
@@ -109,74 +116,71 @@ export function GameOverScreen() {
         !game.isNull &&
         !isRamsch &&
         result.base_value > 0 && (
-        <TableContainer component={Paper}>
-          <Table size="small">
-            <TableBody>
-              <TableRow>
-                <TableCell>
-                  Game, {result.matadors > 0 ? "With" : "Without"} {absMatadors}
-                </TableCell>
-                <TableCell align="right">
-                  {1 + absMatadors} (+{1 + absMatadors})
-                </TableCell>
-              </TableRow>
-              {result.is_schneider && (
+          <TableContainer component={Paper}>
+            <Table size="small">
+              <TableBody>
                 <TableRow>
                   <TableCell>
-                    {result.is_schwarz ? "Schwarz Made" : "Schneider Made"}
+                    Game, {result.matadors > 0 ? "With" : "Without"}{" "}
+                    {absMatadors}
                   </TableCell>
                   <TableCell align="right">
-                    {result.is_schwarz ? 2 : 1} (
-                    {result.declarer_won ? "+" : "-"}
-                    {result.is_schwarz ? 2 : 1})
+                    {1 + absMatadors} (+{1 + absMatadors})
                   </TableCell>
                 </TableRow>
-              )}
-              <TableRow>
-                <TableCell>
-                  {game.gameMode === "grand"
-                    ? "Grand"
-                    : `${suitNames[game.trumpSuit]} contract`}
-                  {result.declarer_won ? ", Won" : ", Lost"}
-                </TableCell>
-                <TableCell align="right">
-                  {!result.declarer_won && `-2×(`}
-                  {result.multiplier}×{result.base_value}
-                  {!result.declarer_won && `)`}
-                </TableCell>
-              </TableRow>
-              <TableRow className="breakdown-total">
-                <TableCell sx={{ fontWeight: "bold" }}>Total</TableCell>
-                <TableCell align="right" sx={{ fontWeight: "bold" }}>
-                  {result.value}
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+                {result.is_schneider && (
+                  <TableRow>
+                    <TableCell>
+                      {result.is_schwarz ? "Schwarz Made" : "Schneider Made"}
+                    </TableCell>
+                    <TableCell align="right">
+                      {result.is_schwarz ? 2 : 1} (
+                      {result.declarer_won ? "+" : "-"}
+                      {result.is_schwarz ? 2 : 1})
+                    </TableCell>
+                  </TableRow>
+                )}
+                <TableRow>
+                  <TableCell>
+                    {game.gameMode === "grand"
+                      ? "Grand"
+                      : `${suitNames[game.trumpSuit]} contract`}
+                    {result.declarer_won ? ", Won" : ", Lost"}
+                  </TableCell>
+                  <TableCell align="right">
+                    {!result.declarer_won && `-2×(`}
+                    {result.multiplier}×{result.base_value}
+                    {!result.declarer_won && `)`}
+                  </TableCell>
+                </TableRow>
+                <TableRow className="breakdown-total">
+                  <TableCell sx={{ fontWeight: "bold" }}>Total</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                    {result.value}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       <div className="game-over-buttons">
         {game.canPlayNext && (
           <>
-            <Button
-              variant="contained"
-              color="primary"
-              size="large"
-              fullWidth
-              onClick={() => game.controls.playNextGame()}
-              disabled={
-                !game.controls.isConnected ||
-                game.controls.isLoading ||
-                game.player?.ready_for_next
-              }
-            >
-              {game.player?.ready_for_next
-                ? "Waiting for other players..."
-                : game.controls.isLoading
-                  ? "Loading..."
-                  : `Play Next (${game.gamesPlayed + 1}/${game.maxGames})`}
-            </Button>
-            {game.player?.ready_for_next && (
+            {game.player?.ready_for_next ? (
+              <Button
+                variant="contained"
+                color="primary"
+                size="large"
+                fullWidth
+                onClick={() => game.controls.playNextGame()}
+                loading={game.controls.isLoading}
+                disabled={
+                  !game.controls.isConnected || game.player?.ready_for_next
+                }
+              >
+                {`Play Next (${game.gamesPlayed + 1}/${game.maxGames})`}
+              </Button>
+            ) : (
               <span
                 style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}
               >
@@ -200,6 +204,17 @@ export function GameOverScreen() {
         >
           Back to Lobby
         </Button>
+        {isTournamentComplete && (
+          <Button
+            variant="outlined"
+            color="primary"
+            size="large"
+            fullWidth
+            onClick={onShowTournamentResults}
+          >
+            Show Tournament Results
+          </Button>
+        )}
       </div>
     </div>
   );

@@ -254,6 +254,8 @@ export interface PlayerResult {
   rating_change?: number;
 }
 
+export type SessionPlayerResult = PlayerResult;
+
 export interface PlayerRating {
   profile_id: string;
   name: string;
@@ -341,6 +343,7 @@ export interface SessionResults {
     player_winners: { [playerId: string]: boolean };
     forfeited_player: GamePosition | null;
   }>;
+  player_results?: SessionPlayerResult[];
 }
 
 export async function getSessionResults(

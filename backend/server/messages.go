@@ -40,6 +40,7 @@ func (cm *ClientManager) BroadcastToPlayers(gs *game.GameState, msg *Message) {
 func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fromPlayer game.GamePosition) {
 	// Fetch formatted session results if game just completed
 	var sessionResults []game.SessionGameResult
+	var sessionPlayerResults []game.PlayerSessionResultState
 	var gamesPlayed int
 	if gs.Phase == game.PhaseComplete && gs.SessionID != "" {
 		results, err := cm.db.GetFormattedSessionResults(gs.SessionID)
@@ -48,6 +49,12 @@ func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fr
 		} else {
 			sessionResults = results
 			gamesPlayed = len(results)
+		}
+		playerResults, err := cm.db.GetSessionPlayerResults(gs.SessionID)
+		if err != nil {
+			logger.Warning("Failed to fetch session player results for broadcast: %e", err)
+		} else {
+			sessionPlayerResults = playerResults
 		}
 	}
 
@@ -63,6 +70,9 @@ func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fr
 			if sessionResults != nil {
 				msgData["session_results"] = sessionResults
 				msgData["games_played"] = gamesPlayed
+			}
+			if sessionPlayerResults != nil {
+				msgData["session_player_results"] = sessionPlayerResults
 			}
 
 			stateMsg := &Message{
@@ -93,7 +103,13 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
 
 	session, err := s.db.GetGameSession(gs.SessionID)
 	if err == nil && session.EndedAt != nil {
-		return nil
+		existingResults, err := s.db.GetSessionPlayerResults(gs.SessionID)
+		if err != nil {
+			return fmt.Errorf("failed to check existing session results: %w", err)
+		}
+		if len(existingResults) > 0 {
+			return nil
+		}
 	}
 
 	if results != nil {
@@ -236,7 +252,9 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 			return
 		}
 		s.cache.SaveGame(*gs)
-		s.maybeSaveGameResults(gs)
+		if err := s.maybeSaveGameResults(gs); err != nil {
+			logger.Warning("Failed to save game results after AI action: %e", err)
+		}
 		s.clients.BroadcastStateChange(gs, response, currentPlayer)
 	}
 }

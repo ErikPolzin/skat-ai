@@ -150,6 +150,9 @@ func (d *MemoryDatabase) SaveGame(gameState game.GameState) error {
 
 	// Store by session ID since that's what we look up by
 	d.games[gameState.SessionID] = &gameState
+	if session, ok := d.sessions[gameState.SessionID]; ok && session.EndedAt == nil {
+		session.GameID = gameState.ID
+	}
 	return nil
 }
 
@@ -261,6 +264,22 @@ func (d *MemoryDatabase) GetPlayerSessionResults(playerID string, limit int) ([]
 		}
 	}
 	return reversed, nil
+}
+
+func (d *MemoryDatabase) GetSessionPlayerResults(sessionID string) ([]game.PlayerSessionResultState, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var results []game.PlayerSessionResultState
+	for _, playerResults := range d.sessionResults {
+		for _, result := range playerResults {
+			if result.SessionID == sessionID {
+				results = append(results, result)
+				break
+			}
+		}
+	}
+	return results, nil
 }
 
 func (d *MemoryDatabase) CountGamesInSession(sessionID string) (int, error) {

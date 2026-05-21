@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"skat/game"
+	"skat/game/rating"
 	"skat/logger"
 	"skat/server/db"
 	"strconv"
@@ -653,12 +654,129 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 		http.Error(w, fmt.Sprintf("Failed to get session results: %v", err), http.StatusInternalServerError)
 		return
 	}
+	playerResults, err := s.db.GetSessionPlayerResults(sessionID)
+	if err != nil {
+		logger.Warning("Failed to get session player results: %e", err)
+		playerResults = []game.PlayerSessionResultState{}
+	}
+	if len(playerResults) == 0 {
+		playerResults = s.ensureSessionPlayerResults(sessionID)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"session_id": sessionID,
-		"results":    results,
+		"session_id":     sessionID,
+		"results":        results,
+		"player_results": playerResults,
 	})
+}
+
+func (s *Server) ensureSessionPlayerResults(sessionID string) []game.PlayerSessionResultState {
+	session, err := s.db.GetGameSession(sessionID)
+	if err != nil || session.GameID == "" {
+		if err != nil {
+			logger.Warning("Failed to load session for final result check: %e", err)
+		}
+		return []game.PlayerSessionResultState{}
+	}
+
+	gs, err := s.db.GetGameByID(session.GameID)
+	if err != nil {
+		logger.Warning("Failed to load current session game for final result check: %e", err)
+		return []game.PlayerSessionResultState{}
+	}
+	if gs.Phase != game.PhaseComplete {
+		return []game.PlayerSessionResultState{}
+	}
+	if err := s.maybeSaveGameResults(gs); err != nil {
+		logger.Warning("Failed to finalize session results on demand: %e", err)
+	}
+
+	playerResults, err := s.db.GetSessionPlayerResults(sessionID)
+	if err != nil {
+		logger.Warning("Failed to reload finalized session player results: %e", err)
+		return []game.PlayerSessionResultState{}
+	}
+	if len(playerResults) == 0 {
+		return s.rebuildSessionPlayerResults(sessionID)
+	}
+	return playerResults
+}
+
+func (s *Server) rebuildSessionPlayerResults(sessionID string) []game.PlayerSessionResultState {
+	gameResults, err := s.db.GetPlayerResultsForSession(sessionID)
+	if err != nil {
+		logger.Warning("Failed to load saved game results for session rebuild: %e", err)
+		return []game.PlayerSessionResultState{}
+	}
+
+	type gamePlayerKey struct {
+		gameID   string
+		playerID string
+	}
+	deduped := make(map[gamePlayerKey]game.PlayerResultState)
+	for _, result := range gameResults {
+		deduped[gamePlayerKey{gameID: result.GameID, playerID: result.PlayerID}] = result
+	}
+
+	totals := make(map[string]int)
+	for _, result := range deduped {
+		totals[result.PlayerID] += result.PlayerPoints
+	}
+	if len(totals) < 2 {
+		return []game.PlayerSessionResultState{}
+	}
+
+	topScore := 0
+	hasScore := false
+	for _, points := range totals {
+		if !hasScore || points > topScore {
+			topScore = points
+			hasScore = true
+		}
+	}
+
+	sessionResults := make([]game.PlayerSessionResultState, 0, len(totals))
+	playerRatings := make(map[string]*rating.PlayerRating)
+	aiCount := 0
+	for playerID, points := range totals {
+		profile, err := s.db.GetProfile(playerID)
+		if err != nil {
+			logger.Warning("Failed to load profile for session rebuild: %e", err)
+			return []game.PlayerSessionResultState{}
+		}
+		playerRating, err := s.db.GetPlayerRating(playerID)
+		if err != nil {
+			logger.Warning("Failed to load rating for session rebuild: %e", err)
+			return []game.PlayerSessionResultState{}
+		}
+		if profile.IsAgent {
+			aiCount++
+		}
+		playerRatings[playerID] = playerRating.ToGamePlayerRating()
+		sessionResults = append(sessionResults, game.PlayerSessionResultState{
+			SessionID:    sessionID,
+			PlayerID:     playerID,
+			PlayerPoints: points,
+			IsWinner:     hasScore && points == topScore,
+		})
+	}
+
+	if err := rating.UpdateRatings(sessionResults, playerRatings, aiCount); err != nil {
+		logger.Warning("Failed to update ratings during session rebuild: %e", err)
+		return []game.PlayerSessionResultState{}
+	}
+	for _, rat := range playerRatings {
+		if err := s.db.SavePlayerRating(db.NewPlayerRating(rat)); err != nil {
+			logger.Warning("Failed to save rating during session rebuild: %e", err)
+			return []game.PlayerSessionResultState{}
+		}
+	}
+	if err := s.db.SavePlayerSessionResults(sessionResults); err != nil {
+		logger.Warning("Failed to save rebuilt session player results: %e", err)
+		return []game.PlayerSessionResultState{}
+	}
+	return sessionResults
 }
 
 // handleUploadAvatar handles avatar image upload for a player profile
@@ -870,7 +988,9 @@ func (s *Server) handlePlayCard(w http.ResponseWriter, r *http.Request) {
 
 		response, err := gs.PlayCard(card)
 		if err == nil {
-			s.maybeSaveGameResults(gs)
+			if err := s.maybeSaveGameResults(gs); err != nil {
+				logger.Warning("Failed to save game results: %e", err)
+			}
 		}
 		return response, err
 	})

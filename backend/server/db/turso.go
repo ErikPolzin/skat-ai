@@ -341,6 +341,12 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 	if err != nil {
 		return fmt.Errorf("failed to save game: %w", err)
 	}
+	if _, err := d.DB.Exec(
+		`UPDATE game_sessions SET game_id = ? WHERE id = ? AND ended_at IS NULL`,
+		gs.ID, gs.SessionID,
+	); err != nil {
+		return fmt.Errorf("failed to update game session current game: %w", err)
+	}
 
 	// Save players
 	for pos, player := range gs.Players {
@@ -548,6 +554,36 @@ func (d *TursoDatabase) GetPlayerSessionResults(playerID string, limit int) ([]g
 		if otherPlayersStr != nil && *otherPlayersStr != "" {
 			result.OtherPlayers = strings.Split(*otherPlayersStr, ",")
 		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func (d *TursoDatabase) GetSessionPlayerResults(sessionID string) ([]game.PlayerSessionResultState, error) {
+	rows, err := d.DB.Query(`
+		SELECT session_id, player_id, player_points, is_winner, is_forfeit,
+		       rating_before, rating_after, rating_change
+		FROM player_session_results
+		WHERE session_id = ?
+		ORDER BY player_points DESC, rating_change DESC
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session player results: %w", err)
+	}
+	defer rows.Close()
+
+	var results []game.PlayerSessionResultState
+	for rows.Next() {
+		var result game.PlayerSessionResultState
+		var isWinner, isForfeit int
+		if err := rows.Scan(
+			&result.SessionID, &result.PlayerID, &result.PlayerPoints, &isWinner, &isForfeit,
+			&result.RatingBefore, &result.RatingAfter, &result.RatingChange,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan session player result: %w", err)
+		}
+		result.IsWinner = isWinner != 0
+		result.IsForfeit = isForfeit != 0
 		results = append(results, result)
 	}
 	return results, nil

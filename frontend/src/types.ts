@@ -1,4 +1,5 @@
 import type { GameInfo } from "./api/games";
+import type { SessionPlayerResult } from "./api/games";
 
 export interface Card {
   suit: string;
@@ -38,6 +39,7 @@ export interface StateUpdateMessage extends Message<{
   description?: string;
   action_type: string;
   session_results: SessionGameResult[];
+  session_player_results?: SessionPlayerResult[];
   games_played?: number;
   from_player?: number;
 }> {

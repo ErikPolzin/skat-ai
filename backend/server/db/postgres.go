@@ -344,6 +344,12 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 	if err != nil {
 		return fmt.Errorf("failed to save game: %w", err)
 	}
+	if _, err := d.DB.Exec(
+		`UPDATE game_sessions SET game_id = $1 WHERE id = $2 AND ended_at IS NULL`,
+		gs.ID, gs.SessionID,
+	); err != nil {
+		return fmt.Errorf("failed to update game session current game: %w", err)
+	}
 
 	// Save players
 	for pos, player := range gs.Players {
@@ -528,6 +534,33 @@ func (d *PgDatabase) GetPlayerSessionResults(playerID string, limit int) ([]game
 		}
 		if len(otherPlayers) > 0 {
 			result.OtherPlayers = []string(otherPlayers)
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func (d *PgDatabase) GetSessionPlayerResults(sessionID string) ([]game.PlayerSessionResultState, error) {
+	rows, err := d.DB.Query(`
+		SELECT session_id, player_id, player_points, is_winner, is_forfeit,
+		       rating_before, rating_after, rating_change
+		FROM player_session_results
+		WHERE session_id = $1
+		ORDER BY player_points DESC, rating_change DESC
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session player results: %w", err)
+	}
+	defer rows.Close()
+
+	var results []game.PlayerSessionResultState
+	for rows.Next() {
+		var result game.PlayerSessionResultState
+		if err := rows.Scan(
+			&result.SessionID, &result.PlayerID, &result.PlayerPoints, &result.IsWinner, &result.IsForfeit,
+			&result.RatingBefore, &result.RatingAfter, &result.RatingChange,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan session player result: %w", err)
 		}
 		results = append(results, result)
 	}

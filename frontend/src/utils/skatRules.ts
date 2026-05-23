@@ -100,12 +100,17 @@ export function getSuitName(suitEmoji?: string): string {
   }
 }
 
-export function getGameModeDisplay(gameMode: string, trumpSuit?: string): string {
+export function getGameModeDisplay(
+  gameMode: string,
+  trumpSuit?: string,
+): string {
   switch (gameMode.toLowerCase()) {
     case "null":
       return "Null";
     case "grand":
       return "Grand";
+    case "ramsch":
+      return "Ramsch";
     case "suit":
       return trumpSuit ? getSuitName(trumpSuit) : "Suit";
     default:
@@ -198,7 +203,10 @@ export function countMatadorsWithSign(
   return -matadors;
 }
 
-export function canAnnounceSchneider(mode: string, playedHand: boolean): boolean {
+export function canAnnounceSchneider(
+  mode: string,
+  playedHand: boolean,
+): boolean {
   return playedHand && mode !== "null";
 }
 
@@ -249,7 +257,10 @@ export function calculatePotentialGameValue({
   if (canAnnounceSchneider(mode, playedHand) && announcedSchneider) {
     multiplier += 1;
   }
-  if (canAnnounceSchwarz(mode, playedHand, announcedSchneider) && announcedSchwarz) {
+  if (
+    canAnnounceSchwarz(mode, playedHand, announcedSchneider) &&
+    announcedSchwarz
+  ) {
     multiplier += 1;
   }
 

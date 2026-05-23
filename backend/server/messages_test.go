@@ -1,9 +1,15 @@
 package server
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/gorilla/mux"
+
 	"skat/game"
+	"skat/server/db"
 )
 
 func TestAggregateSessionResultsMarksForfeitAsLossWithoutSyntheticPoints(t *testing.T) {
@@ -60,5 +66,63 @@ func TestDeclarerStatsCountsOnlyDeclarerResults(t *testing.T) {
 	}
 	if stats["bob"].GamesPlayed != 1 || stats["bob"].Wins != 0 || stats["bob"].Losses != 1 {
 		t.Fatalf("expected bob to have 1 declarer loss; got %+v", stats["bob"])
+	}
+}
+
+func TestLeaveInProgressGamePersistsCompleteForfeit(t *testing.T) {
+	database := db.NewMemoryDatabase()
+	server := NewServer(database)
+	gs := game.NewGame()
+	gs.Phase = game.PhasePlaying
+	gs.Players = [3]*game.PlayerState{
+		{ID: "alice", Name: "Alice"},
+		{ID: "bob", Name: "Bob"},
+		{ID: "cara", Name: "Cara"},
+	}
+	if err := database.SaveGameSession(game.GameSessionState{
+		ID:           gs.SessionID,
+		Code:         string(gs.Code),
+		GameID:       gs.ID,
+		PlayerCount:  gs.PlayerCount(),
+		MaxGames:     gs.MaxGames,
+		PassPolicy:   string(gs.PassPolicy),
+		TimerEnabled: gs.TimerEnabled,
+	}); err != nil {
+		t.Fatalf("failed to save session: %v", err)
+	}
+	if err := database.SaveGame(*gs); err != nil {
+		t.Fatalf("failed to save game: %v", err)
+	}
+	server.cache.games[gs.ID] = gs
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+gs.ID+"/leave", nil)
+	req = mux.SetURLVars(req, map[string]string{"id": gs.ID})
+	req = req.WithContext(context.WithValue(req.Context(), profileContextKey{}, &db.ProfileEntry{
+		ID:   "alice",
+		Name: "Alice",
+	}))
+	rec := httptest.NewRecorder()
+
+	server.handleLeaveGame(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	saved, err := database.GetGameByID(gs.SessionID)
+	if err != nil {
+		t.Fatalf("failed to reload game: %v", err)
+	}
+	if saved.Phase != game.PhaseComplete {
+		t.Fatalf("expected saved game phase complete, got %s", saved.Phase)
+	}
+	if saved.ForfeitedPlayer == nil || *saved.ForfeitedPlayer != game.Dealer {
+		t.Fatalf("expected dealer to be persisted as forfeited, got %v", saved.ForfeitedPlayer)
+	}
+	activeGames, err := database.GetActiveGamesByPlayer("alice")
+	if err != nil {
+		t.Fatalf("failed to get active games: %v", err)
+	}
+	if len(activeGames) != 0 {
+		t.Fatalf("expected no active games after leaving, got %d", len(activeGames))
 	}
 }

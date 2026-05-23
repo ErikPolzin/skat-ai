@@ -352,25 +352,25 @@ export function MotionCardTable() {
     };
   };
 
-	// Determine who is partnered with whom
-	const playerIsDeclarer = game.isDeclarer;
-	const isRamsch = game.gameMode === "ramsch";
-	const playerPileScore =
-		isRamsch && game.playerPosition !== null
-			? game.playerScores[game.playerPosition]
-			: playerIsDeclarer
-				? game.declarerScore
-				: game.opponentScore;
-	const opponentPileScore =
-		isRamsch && game.playerPosition !== null
-			? game.playerScores.reduce(
-					(sum, score, index) =>
-						index === game.playerPosition ? sum : sum + score,
-					0,
-				)
-			: playerIsDeclarer
-				? game.opponentScore
-				: game.declarerScore;
+  // Determine who is partnered with whom
+  const playerIsDeclarer = game.isDeclarer;
+  const isRamsch = game.gameMode === "ramsch";
+  const playerPileScore =
+    isRamsch && game.playerPosition !== null
+      ? game.playerScores[game.playerPosition]
+      : playerIsDeclarer
+        ? game.declarerScore
+        : game.opponentScore;
+  const opponentPileScore =
+    isRamsch && game.playerPosition !== null
+      ? game.playerScores.reduce(
+          (sum, score, index) =>
+            index === game.playerPosition ? sum : sum + score,
+          0,
+        )
+      : playerIsDeclarer
+        ? game.opponentScore
+        : game.declarerScore;
   const totalCardPoints = 120;
   const clampedPlayerScore = Math.max(
     0,
@@ -386,6 +386,7 @@ export function MotionCardTable() {
     0,
     100 - playerScorePercent - opponentScorePercent,
   );
+  const showScorePiles = !isRamsch && game.phase !== "waiting_for_players";
 
   // Get position for player's score pile - always bottom right
   const getPlayerPilePosition = () => {
@@ -510,11 +511,7 @@ export function MotionCardTable() {
 
   const centerOverrideUI = useMemo(() => {
     return game.gameOver ? (
-      <GameOverScreen
-        onShowTournamentResults={() =>
-          navigate(`/${game.sessionId}/results`)
-        }
-      />
+      <GameOverScreen />
     ) : !game.controls.isConnected ? (
       <div
         style={{
@@ -606,12 +603,7 @@ export function MotionCardTable() {
     ) : game.isDeclarerChoice && !game.isDeclarer ? (
       <WaitingNotice subtitle="Waiting for the declarer to choose a game" />
     ) : null;
-  }, [
-    activeSelectedCards,
-    game,
-    handleDiscardCards,
-    navigate,
-  ]);
+  }, [activeSelectedCards, game, handleDiscardCards, navigate]);
 
   return (
     <div className="motion-card-table" style={cardTableStyle}>
@@ -1128,7 +1120,7 @@ export function MotionCardTable() {
           )}
         </AnimatePresence>
 
-        {!isRamsch && (
+        {showScorePiles && (
           <>
             {/* Score Pile Labels - only show during playing phase when declarer is set and there are cards */}
             <div

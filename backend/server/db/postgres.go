@@ -793,8 +793,9 @@ func (d *PgDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameState, 
 	rows, err := d.DB.Query(`
 		SELECT DISTINCT g.id
 		FROM games g
+		JOIN game_sessions gs ON g.session_id = gs.id
 		JOIN players p ON g.id = p.game_id
-		WHERE p.profile_id = $1 AND g.phase != $2
+		WHERE p.profile_id = $1 AND g.phase != $2 AND gs.ended_at IS NULL
 		ORDER BY g.id
 	`, playerID, game.PhaseComplete)
 	if err != nil {
@@ -823,8 +824,10 @@ func (d *PgDatabase) GetSpectatableGames(excludePlayerID string) ([]game.GameSta
 	rows, err := d.DB.Query(`
 		SELECT DISTINCT g.id
 		FROM games g
+		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE g.phase != $1
 			AND g.phase != $2
+			AND gs.ended_at IS NULL
 			AND NOT EXISTS (
 				SELECT 1
 				FROM players p

@@ -831,8 +831,9 @@ func (d *TursoDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameStat
 	rows, err := d.DB.Query(`
 		SELECT DISTINCT g.id
 		FROM games g
+		JOIN game_sessions gs ON g.session_id = gs.id
 		JOIN players p ON g.id = p.game_id
-		WHERE p.profile_id = ? AND g.phase != ?
+		WHERE p.profile_id = ? AND g.phase != ? AND gs.ended_at IS NULL
 		ORDER BY g.id
 	`, playerID, game.PhaseComplete)
 	if err != nil {
@@ -861,8 +862,10 @@ func (d *TursoDatabase) GetSpectatableGames(excludePlayerID string) ([]game.Game
 	rows, err := d.DB.Query(`
 		SELECT DISTINCT g.id
 		FROM games g
+		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE g.phase != ?
 			AND g.phase != ?
+			AND gs.ended_at IS NULL
 			AND NOT EXISTS (
 				SELECT 1
 				FROM players p

@@ -9,6 +9,7 @@ export function GameLobbyWaiting() {
   const game = useGameContext();
   const navigate = useNavigate();
   const [isLeaving, setIsLeaving] = useState(false);
+  const [isAddingAgent, setIsAddingAgent] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const playersNeeded = 3 - game.playerCount;
@@ -35,6 +36,7 @@ export function GameLobbyWaiting() {
   };
 
   const handleOpenDialog = () => {
+    if (isAddingAgent) return;
     setDialogOpen(true);
   };
 
@@ -42,9 +44,17 @@ export function GameLobbyWaiting() {
     setDialogOpen(false);
   };
 
-  const handleSelectAgent = (agentId: string) => {
-    game.addAgent(agentId);
+  const handleSelectAgent = async (agentId: string) => {
+    if (isAddingAgent) return;
+
+    setIsAddingAgent(true);
     handleCloseDialog();
+
+    try {
+      await game.addAgent(agentId);
+    } finally {
+      setIsAddingAgent(false);
+    }
   };
 
   // Get agent IDs that are already in the game
@@ -137,8 +147,12 @@ export function GameLobbyWaiting() {
             spacing={2}
             sx={{ justifyContent: "center" }}
           >
-            <Button variant="contained" onClick={handleOpenDialog}>
-              Add AI Player
+            <Button
+              variant="contained"
+              onClick={handleOpenDialog}
+              loading={isAddingAgent}
+            >
+              {isAddingAgent ? "Adding AI..." : "Add AI Player"}
             </Button>
             <Button
               variant="outlined"

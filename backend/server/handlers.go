@@ -540,8 +540,16 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 		gs.Phase = game.PhaseComplete
 		gs.ForfeitedPlayer = &position
 
-		go s.cache.SaveGame(*gs)
-		s.maybeSaveGameResults(gs)
+		if err := s.cache.SaveGame(*gs); err != nil {
+			logger.Warning("Failed to save forfeited game: %e", err)
+			http.Error(w, "failed to save game", http.StatusInternalServerError)
+			return
+		}
+		if err := s.maybeSaveGameResults(gs); err != nil {
+			logger.Warning("Failed to save forfeit results: %e", err)
+			http.Error(w, "failed to save game results", http.StatusInternalServerError)
+			return
+		}
 
 		// Broadcast forfeit to other players
 		s.clients.BroadcastToPlayers(gs, &Message{

@@ -140,9 +140,7 @@ export default function HistoryScreen() {
                       size="small"
                       variant="outlined"
                       startIcon={<EmojiEventsIcon />}
-                      onClick={() =>
-                        navigate(`/${result.session_id}/results`)
-                      }
+                      onClick={() => navigate(`/${result.session_id}/results`)}
                     >
                       Results
                     </Button>
@@ -198,7 +196,7 @@ export default function HistoryScreen() {
                               }}
                             >
                               {result.rating_change > 0 && "+"}
-                              {result.rating_change} rating
+                              {result.rating_change} ELO
                             </Typography>
                           )}
                       </Box>

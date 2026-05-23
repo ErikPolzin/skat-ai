@@ -16,13 +16,7 @@ import HomeIcon from "@mui/icons-material/Home";
 import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
 
-interface GameOverScreenProps {
-  onShowTournamentResults: () => void;
-}
-
-export function GameOverScreen({
-  onShowTournamentResults,
-}: GameOverScreenProps) {
+export function GameOverScreen() {
   const game = useGameContext();
   const navigate = useNavigate();
 
@@ -315,7 +309,7 @@ export function GameOverScreen({
             size="large"
             onClick={async () => {
               await game.controls.endTournament();
-              onShowTournamentResults();
+              navigate(`/${game.sessionId}/results`);
             }}
             loading={game.controls.isLoading}
             disabled={!game.controls.isConnected || game.controls.isLoading}
@@ -328,7 +322,7 @@ export function GameOverScreen({
             variant="contained"
             color="primary"
             size="large"
-            onClick={onShowTournamentResults}
+            onClick={() => navigate(`/${game.sessionId}/results`)}
           >
             Tournament Results
           </Button>

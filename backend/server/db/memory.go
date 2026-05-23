@@ -399,6 +399,9 @@ func (d *MemoryDatabase) GetActiveGamesByPlayer(playerID string) ([]game.GameSta
 
 	var games []game.GameState
 	for _, gameState := range d.games {
+		if session, ok := d.sessions[gameState.SessionID]; ok && session.EndedAt != nil {
+			continue
+		}
 		// Check if player is in this game and game is not complete
 		if gameState.Phase != game.PhaseComplete {
 			for _, player := range gameState.Players {
@@ -418,6 +421,9 @@ func (d *MemoryDatabase) GetSpectatableGames(excludePlayerID string) ([]game.Gam
 
 	var games []game.GameState
 	for _, gameState := range d.games {
+		if session, ok := d.sessions[gameState.SessionID]; ok && session.EndedAt != nil {
+			continue
+		}
 		if gameState.Phase == game.PhaseComplete || gameState.Phase == game.PhaseWaitingForPlayers {
 			continue
 		}

@@ -18,11 +18,16 @@ import {
   MenuItem,
   FormControlLabel,
   Checkbox,
+  Card,
+  CardContent,
+  CardActions,
+  Stack,
 } from "@mui/material";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 import { lineClasses } from "@mui/x-charts/LineChart";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import HistoryIcon from "@mui/icons-material/History";
+import LoginIcon from "@mui/icons-material/Login";
 import {
   createGame,
   joinGame,
@@ -42,6 +47,7 @@ import { useSnackbarStore } from "../stores/snackbarStore";
 import Leaderboard from "../components/Leaderboard";
 import { getPlayerRating } from "../api/games";
 import GameLists from "../components/GameLists";
+import JoinGameDialog from "../components/JoinGameDialog";
 
 const Header = () => {
   const navigate = useNavigate();
@@ -196,40 +202,27 @@ const Header = () => {
 };
 
 const GamesTab = () => {
-  const [gameCode, setGameCode] = useState<string>("");
   const [maxGames, setMaxGames] = useState<number>(10);
   const [passPolicy, setPassPolicy] = useState<PassPolicy>("reshuffle");
   const [timerEnabled, setTimerEnabled] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isJoinDialogOpen, setIsJoinDialogOpen] = useState<boolean>(false);
   const navigate = useNavigate();
   const showSnackbar = useSnackbarStore((state) => state.showSnackbar);
 
-  const handleJoinOrCreate = async () => {
-    let currentGameCode = gameCode.trim();
+  const handleCreateGame = async () => {
     try {
       setIsLoading(true);
-
-      if (!currentGameCode) {
-        // Create a new game and get the code
-        const createData = await createGame({
-          max_games: maxGames,
-          pass_policy: passPolicy,
-          timer_enabled: timerEnabled,
-        });
-        currentGameCode = createData.code;
-      }
-
-      // Join the game (either the newly created one or an existing one)
-      const data = await joinGame(currentGameCode);
-
-      // Navigate to the game
+      const createData = await createGame({
+        max_games: maxGames,
+        pass_policy: passPolicy,
+        timer_enabled: timerEnabled,
+      });
+      const data = await joinGame(createData.code);
       navigate(`/${data.session_id}`);
     } catch (error) {
-      console.error("Error in handleJoinOrCreate:", error);
-      showSnackbar(
-        `Failed to ${currentGameCode ? "join" : "create"} game`,
-        "error",
-      );
+      console.error("Error creating game:", error);
+      showSnackbar("Failed to create game", "error");
     } finally {
       setIsLoading(false);
     }
@@ -237,31 +230,8 @@ const GamesTab = () => {
 
   return (
     <Box sx={{ mx: 1 }}>
-      <Typography variant="subtitle1" gutterBottom>
-        Join or Create Game
-      </Typography>
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 2,
-        }}
-      >
-        <TextField
-          placeholder="Enter game code"
-          value={gameCode}
-          onChange={(e) => setGameCode(e.target.value.toUpperCase())}
-          disabled={isLoading}
-          sx={{
-            "& input": {
-              textTransform: "uppercase",
-              textAlign: "center",
-              letterSpacing: "2px",
-            },
-          }}
-          fullWidth
-        />
-        {!gameCode && (
+      <Card variant="outlined" elevation={0}>
+        <CardContent>
           <Box
             sx={{
               display: "grid",
@@ -303,19 +273,33 @@ const GamesTab = () => {
               label="Two minute move timeout"
             />
           </Box>
-        )}
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleJoinOrCreate}
-          disabled={isLoading}
-          size="large"
-          fullWidth={!gameCode}
-          startIcon={isLoading ? <CircularProgress size={20} /> : null}
-        >
-          {isLoading ? "Loading..." : gameCode ? "Join Game" : "Create Game"}
-        </Button>
-      </Box>
+        </CardContent>
+        <CardActions>
+          <Stack direction="column" sx={{ flexGrow: 1 }} spacing={1}>
+            <Button
+              color="primary"
+              startIcon={<LoginIcon />}
+              onClick={() => setIsJoinDialogOpen(true)}
+              disabled={isLoading}
+            >
+              Join with Code
+            </Button>
+            <Button
+              sx={{ flexGrow: 1 }}
+              variant="contained"
+              color="primary"
+              onClick={handleCreateGame}
+              loading={isLoading}
+            >
+              Create Game
+            </Button>
+          </Stack>
+        </CardActions>
+      </Card>
+      <JoinGameDialog
+        open={isJoinDialogOpen}
+        onClose={() => setIsJoinDialogOpen(false)}
+      />
       <GameLists />
     </Box>
   );

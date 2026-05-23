@@ -130,7 +130,6 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
 	sessionResults := aggregateSessionResults(gs, gameResults)
 
 	playerRatings := make(map[string]*rating.PlayerRating)
-	aiCount := 0
 	for _, player := range gs.Players {
 		if player != nil {
 			rating, err := s.db.GetPlayerRating(player.ID)
@@ -138,13 +137,10 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
 				return fmt.Errorf("failed to get player rating: %w", err)
 			}
 			playerRatings[player.ID] = rating.ToGamePlayerRating()
-			if player.IsAgent {
-				aiCount++
-			}
 		}
 	}
 
-	if err := rating.UpdateRatings(sessionResults, playerRatings, aiCount); err != nil {
+	if err := rating.UpdateRatings(sessionResults, playerRatings, completedHandsForRating(gs, results != nil), declarerStats(gameResults)); err != nil {
 		logger.Warning("Failed to update player ratings: %e", err)
 	}
 
@@ -218,6 +214,39 @@ func aggregateSessionResults(gs *game.GameState, gameResults []game.PlayerResult
 		})
 	}
 	return sessionResults
+}
+
+func completedHandsForRating(gs *game.GameState, currentGameCompleted bool) int {
+	if currentGameCompleted {
+		return gs.GameNumber + 1
+	}
+	return gs.GameNumber
+}
+
+func countSessionGames(gameResults []game.PlayerResultState) int {
+	gameIDs := make(map[string]struct{})
+	for _, result := range gameResults {
+		gameIDs[result.GameID] = struct{}{}
+	}
+	return len(gameIDs)
+}
+
+func declarerStats(gameResults []game.PlayerResultState) map[string]rating.PlayerStats {
+	stats := make(map[string]rating.PlayerStats)
+	for _, result := range gameResults {
+		if !result.IsDeclarer {
+			continue
+		}
+		playerStats := stats[result.PlayerID]
+		playerStats.GamesPlayed++
+		if result.IsWinner {
+			playerStats.Wins++
+		} else {
+			playerStats.Losses++
+		}
+		stats[result.PlayerID] = playerStats
+	}
+	return stats
 }
 
 func forfeitedPlayerID(gs *game.GameState) string {

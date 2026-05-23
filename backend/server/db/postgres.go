@@ -10,6 +10,7 @@ import (
 	"github.com/lib/pq"
 
 	"skat/game"
+	gameRating "skat/game/rating"
 )
 
 //go:embed schema/schema.postgres.sql
@@ -901,11 +902,11 @@ func (d *PgDatabase) GetPlayerRating(profileID string) (*PlayerRating, error) {
 		// Return default rating for new player
 		return &PlayerRating{
 			ProfileID:   profileID,
-			Rating:      1500,
+			Rating:      gameRating.InitialRating,
 			GamesPlayed: 0,
 			Wins:        0,
 			Losses:      0,
-			PeakRating:  1500,
+			PeakRating:  gameRating.InitialRating,
 			LastUpdated: time.Time{},
 		}, nil
 	}

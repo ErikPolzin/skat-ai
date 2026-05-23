@@ -100,8 +100,8 @@ CREATE TABLE IF NOT EXISTS player_session_results (
     player_points INT DEFAULT 0,
     is_winner BOOLEAN DEFAULT FALSE,
     is_forfeit BOOLEAN DEFAULT FALSE,
-    rating_before INT DEFAULT 1500,
-    rating_after INT DEFAULT 1500,
+    rating_before INT DEFAULT 20,
+    rating_after INT DEFAULT 20,
     rating_change INT DEFAULT 0,
     UNIQUE(session_id, player_id),
     FOREIGN KEY (session_id) REFERENCES game_sessions(id) ON DELETE CASCADE,
@@ -117,11 +117,11 @@ CREATE INDEX IF NOT EXISTS idx_player_session_results_session_id ON player_sessi
 
 CREATE TABLE IF NOT EXISTS player_ratings (
     profile_id VARCHAR(255) PRIMARY KEY,
-    rating INT NOT NULL DEFAULT 1500,
+    rating INT NOT NULL DEFAULT 20,
     games_played INT NOT NULL DEFAULT 0,
     wins INT NOT NULL DEFAULT 0,
     losses INT NOT NULL DEFAULT 0,
-    peak_rating INT NOT NULL DEFAULT 1500,
+    peak_rating INT NOT NULL DEFAULT 20,
     last_updated TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );

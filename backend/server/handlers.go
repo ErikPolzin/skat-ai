@@ -814,20 +814,11 @@ func (s *Server) rebuildSessionPlayerResults(sessionID string) []game.PlayerSess
 
 	sessionResults := make([]game.PlayerSessionResultState, 0, len(totals))
 	playerRatings := make(map[string]*rating.PlayerRating)
-	aiCount := 0
 	for playerID, points := range totals {
-		profile, err := s.db.GetProfile(playerID)
-		if err != nil {
-			logger.Warning("Failed to load profile for session rebuild: %e", err)
-			return []game.PlayerSessionResultState{}
-		}
 		playerRating, err := s.db.GetPlayerRating(playerID)
 		if err != nil {
 			logger.Warning("Failed to load rating for session rebuild: %e", err)
 			return []game.PlayerSessionResultState{}
-		}
-		if profile.IsAgent {
-			aiCount++
 		}
 		playerRatings[playerID] = playerRating.ToGamePlayerRating()
 		sessionResults = append(sessionResults, game.PlayerSessionResultState{
@@ -838,7 +829,12 @@ func (s *Server) rebuildSessionPlayerResults(sessionID string) []game.PlayerSess
 		})
 	}
 
-	if err := rating.UpdateRatings(sessionResults, playerRatings, aiCount); err != nil {
+	handsPlayed, err := s.db.CountGamesInSession(sessionID)
+	if err != nil {
+		logger.Warning("Failed to count games for rating rebuild: %e", err)
+		return []game.PlayerSessionResultState{}
+	}
+	if err := rating.UpdateRatings(sessionResults, playerRatings, handsPlayed, declarerStats(gameResults)); err != nil {
 		logger.Warning("Failed to update ratings during session rebuild: %e", err)
 		return []game.PlayerSessionResultState{}
 	}

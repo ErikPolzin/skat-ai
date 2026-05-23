@@ -36,9 +36,9 @@ export default function Leaderboard() {
   }, []);
 
   const getRatingColor = (rating: number) => {
-    if (rating >= 2000) return "#FFD700"; // Gold
-    if (rating >= 1800) return "#C0C0C0"; // Silver
-    if (rating >= 1600) return "#CD7F32"; // Bronze
+    if (rating >= 70) return "#FFD700"; // Gold
+    if (rating >= 50) return "#C0C0C0"; // Silver
+    if (rating >= 30) return "#CD7F32"; // Bronze
     return "#90A4AE"; // Gray
   };
 

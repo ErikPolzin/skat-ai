@@ -198,7 +198,7 @@ export default function HistoryScreen() {
                               }}
                             >
                               {result.rating_change > 0 && "+"}
-                              {result.rating_change} ELO
+                              {result.rating_change} rating
                             </Typography>
                           )}
                       </Box>

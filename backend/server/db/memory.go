@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"skat/game"
+	gameRating "skat/game/rating"
 	"sync"
 )
 
@@ -459,11 +460,11 @@ func (d *MemoryDatabase) GetPlayerRating(profileID string) (*PlayerRating, error
 		// Return default rating for new player
 		return &PlayerRating{
 			ProfileID:   profileID,
-			Rating:      1500,
+			Rating:      gameRating.InitialRating,
 			GamesPlayed: 0,
 			Wins:        0,
 			Losses:      0,
-			PeakRating:  1500,
+			PeakRating:  gameRating.InitialRating,
 		}, nil
 	}
 	return rating, nil

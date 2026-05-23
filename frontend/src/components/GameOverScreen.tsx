@@ -1,15 +1,20 @@
 import {
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  IconButton,
   Paper,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableRow,
+  Typography,
 } from "@mui/material";
+import HomeIcon from "@mui/icons-material/Home";
 import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
-import "./GameOverScreen.css";
 
 interface GameOverScreenProps {
   onShowTournamentResults: () => void;
@@ -52,118 +57,255 @@ export function GameOverScreen({
     "♦": "Diamonds",
   };
   const isTournamentComplete = !game.canPlayNext;
+  const readyPlayerCount = game.players.filter(
+    (p) => p && !p.is_agent && p.ready_for_next,
+  ).length;
+  const humanPlayerCount = game.players.filter((p) => p && !p.is_agent).length;
 
   return (
-    <div className="game-over-screen">
-      <span
-        className="game-over-title"
-        style={{ color: game.playerWon ? "#4caf50" : "#f44336" }}
-      >
-        {game.playerWon ? "YOU WON" : "YOU LOST"}
-      </span>
-      {result.is_forfeit ? (
-        <span
-          className="game-over-score"
-          style={{ fontSize: "18px", marginTop: "12px" }}
+    <Dialog
+      open
+      maxWidth={false}
+      sx={{
+        "& .MuiDialog-container": {
+          alignItems: "center",
+          justifyContent: "center",
+        },
+      }}
+      slotProps={{
+        paper: {
+          elevation: 4,
+          sx: {
+            width: {
+              xs: "calc(100vw - 12px)",
+              sm: "min(560px, calc(100vw - 180px))",
+            },
+            height: { xs: "auto", sm: "min(450px, calc(100vh - 180px))" },
+            maxHeight: { xs: "calc(100vh - 96px)", sm: "none" },
+            minWidth: { xs: 0, sm: 280 },
+            minHeight: { xs: 0, sm: 320 },
+            m: 0,
+            bgcolor: "background.paper",
+            borderRadius: { xs: 1.5, sm: 2 },
+            position: "relative",
+          },
+        },
+      }}
+    >
+      {isTournamentComplete && (
+        <IconButton
+          aria-label="Back to lobby"
+          onClick={() => navigate("/")}
+          sx={{
+            height: 40,
+            left: { xs: 8, sm: 12 },
+            position: "absolute",
+            top: { xs: 8, sm: 12 },
+            width: 40,
+          }}
         >
-          Game forfeited due to inactivity
-        </span>
-      ) : (
-        <span className="game-over-score">
-          {isRamsch
-            ? "Lowest score wins"
-            : `${game.declarer?.name}: ${
-                game.playerWon === game.isDeclarer ? "+" : ""
-              }${result.value}`}
-        </span>
+          <HomeIcon />
+        </IconButton>
       )}
-      {!result.is_forfeit && isRamsch && (
-        <TableContainer component={Paper}>
-          <Table size="small">
-            <TableBody>
-              {ramschScores.map((score) => (
-                <TableRow
-                  key={score.id}
-                  className={
-                    score.points === lowestRamschScore ? "breakdown-total" : ""
-                  }
-                >
-                  <TableCell
-                    sx={{
-                      fontWeight:
-                        score.points === lowestRamschScore ? "bold" : undefined,
-                    }}
-                  >
-                    {score.name}
-                    {score.points === lowestRamschScore ? " won" : ""}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      fontWeight:
-                        score.points === lowestRamschScore ? "bold" : undefined,
-                    }}
-                  >
-                    {score.points}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-      {!result.is_forfeit &&
-        !game.isNull &&
-        !isRamsch &&
-        result.base_value > 0 && (
-          <TableContainer component={Paper}>
+      <DialogContent
+        sx={{
+          display: "flex",
+          flex: 1,
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: { xs: "flex-start", sm: "center" },
+          gap: { xs: 1.25, sm: 1.5 },
+          overflowY: "auto",
+          p: { xs: 1.25, sm: 2.25 },
+          pb: { xs: 1, sm: 1.5 },
+          textAlign: "center",
+        }}
+      >
+        <Typography
+          component="span"
+          sx={{
+            color: game.playerWon ? "#4caf50" : "#f44336",
+            fontSize: { xs: 24, sm: 42 },
+            fontWeight: 700,
+            lineHeight: 1.1,
+            textShadow: "0 2px 4px rgba(0, 0, 0, 0.3)",
+          }}
+        >
+          {game.playerWon ? "YOU WON" : "YOU LOST"}
+        </Typography>
+        {result.is_forfeit ? (
+          <Typography
+            component="span"
+            sx={{
+              color: "#fdd835",
+              fontSize: { xs: 16, sm: 18 },
+              fontWeight: 700,
+              mt: 1.5,
+            }}
+          >
+            Game forfeited due to inactivity
+          </Typography>
+        ) : (
+          <Typography
+            component="span"
+            sx={{
+              color: "#fdd835",
+              fontSize: { xs: 16, sm: 20 },
+              fontWeight: 700,
+            }}
+          >
+            {isRamsch
+              ? "Lowest score wins"
+              : `${game.declarer?.name}: ${
+                  game.playerWon === game.isDeclarer ? "+" : ""
+                }${result.value}`}
+          </Typography>
+        )}
+        {!result.is_forfeit && isRamsch && (
+          <TableContainer
+            component={Paper}
+            sx={{
+              width: "100%",
+              bgcolor: "background.paper",
+              border: "1px solid rgba(255, 255, 255, 0.14)",
+            }}
+          >
             <Table size="small">
               <TableBody>
-                <TableRow>
-                  <TableCell>
-                    Game, {result.matadors > 0 ? "With" : "Without"}{" "}
-                    {absMatadors}
-                  </TableCell>
-                  <TableCell align="right">
-                    {1 + absMatadors} (+{1 + absMatadors})
-                  </TableCell>
-                </TableRow>
-                {result.is_schneider && (
-                  <TableRow>
-                    <TableCell>
-                      {result.is_schwarz ? "Schwarz Made" : "Schneider Made"}
+                {ramschScores.map((score) => (
+                  <TableRow key={score.id}>
+                    <TableCell
+                      sx={{
+                        fontWeight:
+                          score.points === lowestRamschScore
+                            ? "bold"
+                            : undefined,
+                      }}
+                    >
+                      {score.name}
+                      {score.points === lowestRamschScore ? " won" : ""}
                     </TableCell>
-                    <TableCell align="right">
-                      {result.is_schwarz ? 2 : 1} (
-                      {result.declarer_won ? "+" : "-"}
-                      {result.is_schwarz ? 2 : 1})
+                    <TableCell
+                      align="right"
+                      sx={{
+                        fontWeight:
+                          score.points === lowestRamschScore
+                            ? "bold"
+                            : undefined,
+                      }}
+                    >
+                      {score.points}
                     </TableCell>
                   </TableRow>
-                )}
-                <TableRow>
-                  <TableCell>
-                    {game.gameMode === "grand"
-                      ? "Grand"
-                      : `${suitNames[game.trumpSuit]} contract`}
-                    {result.declarer_won ? ", Won" : ", Lost"}
-                  </TableCell>
-                  <TableCell align="right">
-                    {!result.declarer_won && `-2×(`}
-                    {result.multiplier}×{result.base_value}
-                    {!result.declarer_won && `)`}
-                  </TableCell>
-                </TableRow>
-                <TableRow className="breakdown-total">
-                  <TableCell sx={{ fontWeight: "bold" }}>Total</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: "bold" }}>
-                    {result.value}
-                  </TableCell>
-                </TableRow>
+                ))}
               </TableBody>
             </Table>
           </TableContainer>
         )}
-      <div className="game-over-buttons">
+        {!result.is_forfeit &&
+          !game.isNull &&
+          !isRamsch &&
+          result.base_value > 0 && (
+            <TableContainer
+              component={Paper}
+              sx={{
+                width: "100%",
+                bgcolor: "background.paper",
+                border: "1px solid rgba(255, 255, 255, 0.14)",
+              }}
+            >
+              <Table size="small">
+                <TableBody>
+                  <TableRow>
+                    <TableCell>
+                      Game, {result.matadors > 0 ? "With" : "Without"}{" "}
+                      {absMatadors}
+                    </TableCell>
+                    <TableCell align="right">
+                      {1 + absMatadors} (+{1 + absMatadors})
+                    </TableCell>
+                  </TableRow>
+                  {result.is_schneider && (
+                    <TableRow>
+                      <TableCell>
+                        {result.is_schwarz ? "Schwarz Made" : "Schneider Made"}
+                      </TableCell>
+                      <TableCell align="right">
+                        {result.is_schwarz ? 2 : 1} (
+                        {result.declarer_won ? "+" : "-"}
+                        {result.is_schwarz ? 2 : 1})
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  <TableRow>
+                    <TableCell>
+                      {game.gameMode === "grand"
+                        ? "Grand"
+                        : `${suitNames[game.trumpSuit]} contract`}
+                      {result.declarer_won ? ", Won" : ", Lost"}
+                    </TableCell>
+                    <TableCell align="right">
+                      {!result.declarer_won && `-2×(`}
+                      {result.multiplier}×{result.base_value}
+                      {!result.declarer_won && `)`}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: "bold" }}>Total</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                      {result.value}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+      </DialogContent>
+      <DialogActions
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          flexWrap: "wrap",
+          justifyContent: "flex-end",
+          gap: 1,
+          p: { xs: 1.25, sm: 2 },
+          pt: 0,
+          width: "100%",
+          "& > :not(style) ~ :not(style)": {
+            ml: 0,
+          },
+          "& .MuiButton-root": {
+            flex: { xs: "1 1 auto", sm: "1 1 220px" },
+            maxWidth: { xs: "none", sm: 260 },
+          },
+        }}
+      >
+        {game.canPlayNext && (
+          <Button
+            variant="outlined"
+            color="primary"
+            size="large"
+            onClick={async () => {
+              await game.controls.endTournament();
+              onShowTournamentResults();
+            }}
+            loading={game.controls.isLoading}
+            disabled={!game.controls.isConnected || game.controls.isLoading}
+          >
+            End Tournament
+          </Button>
+        )}
+        {!game.canPlayNext && (
+          <Button
+            variant="contained"
+            color="primary"
+            size="large"
+            onClick={onShowTournamentResults}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
+          >
+            Tournament Results
+          </Button>
+        )}
         {game.canPlayNext && (
           <>
             {!game.player?.ready_for_next ? (
@@ -171,7 +313,6 @@ export function GameOverScreen({
                 variant="contained"
                 color="primary"
                 size="large"
-                fullWidth
                 onClick={() => game.controls.playNextGame()}
                 loading={game.controls.isLoading}
                 disabled={
@@ -181,53 +322,23 @@ export function GameOverScreen({
                 {`Play Next (${game.gamesPlayed + 1}/${game.maxGames})`}
               </Button>
             ) : (
-              <span
-                style={{ fontSize: "14px", color: "#666", marginTop: "8px" }}
+              <Typography
+                component="span"
+                sx={{
+                  alignSelf: "center",
+                  color: "text.secondary",
+                  flex: { xs: "1 1 auto", sm: "1 1 220px" },
+                  fontSize: 14,
+                  order: 2,
+                  textAlign: "center",
+                }}
               >
-                {
-                  game.players.filter(
-                    (p) => p && !p.is_agent && p.ready_for_next,
-                  ).length
-                }{" "}
-                / {game.players.filter((p) => p && !p.is_agent).length} players
-                ready
-              </span>
+                {readyPlayerCount} / {humanPlayerCount} players ready
+              </Typography>
             )}
           </>
         )}
-        <Button
-          variant={game.canPlayNext ? "outlined" : "contained"}
-          color="primary"
-          size="large"
-          fullWidth
-          onClick={
-            game.canPlayNext
-              ? async () => {
-                  await game.controls.endTournament();
-                  onShowTournamentResults();
-                }
-              : () => navigate("/")
-          }
-          loading={game.canPlayNext && game.controls.isLoading}
-          disabled={
-            game.canPlayNext &&
-            (!game.controls.isConnected || game.controls.isLoading)
-          }
-        >
-          {game.canPlayNext ? "End Tournament" : "Back to Lobby"}
-        </Button>
-        {isTournamentComplete && (
-          <Button
-            variant="outlined"
-            color="primary"
-            size="large"
-            fullWidth
-            onClick={onShowTournamentResults}
-          >
-            Show Tournament Results
-          </Button>
-        )}
-      </div>
-    </div>
+      </DialogActions>
+    </Dialog>
   );
 }

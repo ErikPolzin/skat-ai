@@ -30,38 +30,41 @@ func (c *Cache) GetGameByID(gameID string) (*game.GameState, error) {
 }
 
 func (c *Cache) GetGameBySessionID(sessionID string) (*game.GameState, error) {
-	for _, gs := range c.games {
-		if gs.SessionID == sessionID {
-			return gs, nil
+	var gs *game.GameState
+	for _, g := range c.games {
+		if g.SessionID == sessionID {
+			// Fetch the latest game
+			if gs == nil || g.GameNumber > gs.GameNumber {
+				gs = g
+			}
 		}
+	}
+
+	if gs != nil {
+		return gs, nil
 	}
 
 	session, err := c.db.GetGameSession(sessionID)
 	if err != nil {
 		return nil, err
 	}
-	gs, err := c.db.GetGameByID(session.GameID)
-	if err == nil {
-		c.games[gs.ID] = gs
-	}
-	return gs, err
+	return c.GetGameByID(session.GameID)
 }
 
 func (c *Cache) GetGameBySessionCode(sessionCode string) (*game.GameState, error) {
 	var gs *game.GameState
 	for _, g := range c.games {
 		if g.Code == game.GameCode(sessionCode) {
-			gs = g
+			// Fetch the latest game
+			if gs == nil || g.GameNumber > gs.GameNumber {
+				gs = g
+			}
 		}
 	}
 	if gs != nil {
 		return gs, nil
 	}
-	gs, err := c.db.GetGameBySessionCode(sessionCode)
-	if err == nil {
-		c.games[gs.ID] = gs
-	}
-	return gs, err
+	return c.db.GetGameBySessionCode(sessionCode)
 }
 
 func (c *Cache) SaveGame(gs game.GameState) error {

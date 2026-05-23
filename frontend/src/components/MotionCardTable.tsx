@@ -25,6 +25,7 @@ import { GameModeSelector } from "./GameModeSelector";
 import { GameLobbyWaiting } from "./GameLobbyWaiting";
 import { BiddingControls } from "./BiddingControls";
 import { SkatExchange } from "./SkatExchange";
+import { WaitingNotice } from "./WaitingNotice";
 import { GameOverScreen } from "./GameOverScreen";
 import {
   canPlayCard,
@@ -44,6 +45,7 @@ export function MotionCardTable() {
   const navigate = useNavigate();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isTablet = useMediaQuery(theme.breakpoints.down("md"));
+  const hasSessionResultsOverlay = useMediaQuery(theme.breakpoints.down("lg"));
 
   const [selectedCards, setSelectedCards] = useState<CardType[]>([]);
 
@@ -100,10 +102,14 @@ export function MotionCardTable() {
 
   // Calculate table size based on window size
   // This matches the CSS table-surface dimensions
-  const showSessionResults = isMobile && game.playerCount === 3;
+  const showSessionResults = hasSessionResultsOverlay && game.playerCount === 3;
   const tableSize = {
     width: isMobile ? windowSize.width : Math.min(1000, windowSize.width - 24),
-    height: isMobile ? windowSize.height - 30 : windowSize.height - 16,
+    height: showSessionResults
+      ? windowSize.height - 64
+      : isMobile
+        ? windowSize.height - 30
+        : windowSize.height - 16,
   };
 
   const showDeck = game.phase === "dealing";
@@ -593,12 +599,12 @@ export function MotionCardTable() {
         selectedCards={activeSelectedCards}
         onDiscardCards={handleDiscardCards}
       />
+    ) : game.isSkatExchange ? (
+      <WaitingNotice subtitle="Waiting for the declarer to handle the skat" />
     ) : game.isDeclarerChoice && game.isDeclarer ? (
       <GameModeSelector />
     ) : game.isDeclarerChoice && !game.isDeclarer ? (
-      <div className="waiting-for-declarer">
-        <span>Waiting for declarer to choose game mode...</span>
-      </div>
+      <WaitingNotice subtitle="Waiting for the declarer to choose a game" />
     ) : null;
   }, [
     activeSelectedCards,

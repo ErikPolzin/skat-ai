@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Box, Button, Stack, Typography } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
+import { WaitingNotice } from "./WaitingNotice";
 
 // Legal named bid values in Skat. The backend uses 0 as the "no bid yet"
 // sentinel, but players never accept a bid value of 0.
@@ -50,11 +51,7 @@ export function BiddingControls() {
     isDisabled || (namesNextBid && nextBidValue === 0);
 
   if (!game.isMyTurn) {
-    return (
-      <div className="bidding-controls waiting">
-        <span>Waiting for bid...</span>
-      </div>
-    );
+    return <WaitingNotice subtitle="Waiting for the next bid" />;
   }
 
   return (

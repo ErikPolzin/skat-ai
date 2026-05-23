@@ -202,6 +202,33 @@ export function GameOverScreen({
             </Table>
           </TableContainer>
         )}
+        {!result.is_forfeit && game.isNull && result.base_value > 0 && (
+          <TableContainer
+            component={Paper}
+            sx={{
+              width: "100%",
+              bgcolor: "background.paper",
+              border: "1px solid rgba(255, 255, 255, 0.14)",
+            }}
+          >
+            <Table size="small">
+              <TableBody>
+                <TableRow>
+                  <TableCell>Null contract</TableCell>
+                  <TableCell align="right">
+                    {result.declarer_won ? "Won" : "Lost"}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: "bold" }}>Total</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                    {result.value}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
         {!result.is_forfeit &&
           !game.isNull &&
           !isRamsch &&
@@ -265,8 +292,8 @@ export function GameOverScreen({
         sx={{
           display: "flex",
           flexDirection: { xs: "column", sm: "row" },
-          flexWrap: "wrap",
-          justifyContent: "flex-end",
+          flexWrap: { xs: "nowrap", sm: "nowrap" },
+          justifyContent: "center",
           gap: 1,
           p: { xs: 1.25, sm: 2 },
           pt: 0,
@@ -275,8 +302,9 @@ export function GameOverScreen({
             ml: 0,
           },
           "& .MuiButton-root": {
-            flex: { xs: "1 1 auto", sm: "1 1 220px" },
-            maxWidth: { xs: "none", sm: 260 },
+            flex: { xs: "1 1 auto", sm: "1 1 0" },
+            minWidth: 0,
+            width: { xs: "100%", sm: "auto" },
           },
         }}
       >
@@ -301,7 +329,6 @@ export function GameOverScreen({
             color="primary"
             size="large"
             onClick={onShowTournamentResults}
-            sx={{ width: { xs: "100%", sm: "auto" } }}
           >
             Tournament Results
           </Button>
@@ -327,10 +354,11 @@ export function GameOverScreen({
                 sx={{
                   alignSelf: "center",
                   color: "text.secondary",
-                  flex: { xs: "1 1 auto", sm: "1 1 220px" },
+                  flex: { xs: "1 1 auto", sm: "1 1 0" },
                   fontSize: 14,
                   order: 2,
                   textAlign: "center",
+                  width: { xs: "100%", sm: "auto" },
                 }}
               >
                 {readyPlayerCount} / {humanPlayerCount} players ready

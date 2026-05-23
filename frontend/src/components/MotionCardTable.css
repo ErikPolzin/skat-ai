@@ -23,6 +23,13 @@
 }
 
 /* Add responsive padding */
+@media (max-width: 1199px) {
+  .table-surface.with-session-bar {
+    height: calc(100% - 64px);
+    top: 32px;
+  }
+}
+
 @media (max-width: 600px) {
   .table-surface {
     width: 100%;

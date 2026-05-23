@@ -17,7 +17,7 @@ import {
 import { ExpandMore, ExpandLess, ExitToApp } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import type { SessionGameResult } from "../types";
-import type { Player } from "../api/games";
+import type { PassPolicy, Player } from "../api/games";
 import { leaveGame } from "../api/games";
 
 interface SessionResultsProps {
@@ -27,6 +27,7 @@ interface SessionResultsProps {
   gamesPlayed: number;
   maxGames: number;
   players?: (Player | null)[];
+  passPolicy?: PassPolicy;
 }
 
 export function SessionResults({
@@ -36,6 +37,7 @@ export function SessionResults({
   gamesPlayed,
   maxGames,
   players,
+  passPolicy,
 }: SessionResultsProps) {
   const theme = useTheme();
   const navigate = useNavigate();
@@ -75,21 +77,24 @@ export function SessionResults({
     );
   }
 
+  const passPolicyLabel = {
+    reshuffle: "All pass: Re-shuffle",
+    force_listener: "All pass: Force forehand",
+    ramsch: "All pass: Play Ramsch",
+  }[passPolicy || "reshuffle"];
+
   if (playerIds.length === 0) {
     return null;
   }
 
-  // Calculate cumulative scores for each game
-  const cumulativeData: Array<{ [id: string]: number }> = [];
-  const runningTotals: { [id: string]: number } = {};
-  playerIds.forEach((id) => (runningTotals[id] = 0));
+  const totals: { [id: string]: number } = {};
+  playerIds.forEach((id) => (totals[id] = 0));
 
   if (results && results.length > 0) {
     results.forEach((result) => {
       playerIds.forEach((id) => {
-        runningTotals[id] += result.player_results[id] || 0;
+        totals[id] += result.player_results[id] || 0;
       });
-      cumulativeData.push({ ...runningTotals });
     });
   }
 
@@ -105,15 +110,29 @@ export function SessionResults({
           bgcolor: theme.palette.primary.main,
         }}
       >
-        <Typography variant="subtitle1" sx={{ color: "white" }}>
-          Session Results ({gamesPlayed}/{maxGames})
-        </Typography>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography
+            variant="subtitle1"
+            sx={{ color: "white", lineHeight: 1.2 }}
+          >
+            Session Results ({gamesPlayed}/{maxGames})
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              color: "rgba(255, 255, 255, 0.75)",
+              display: "block",
+              lineHeight: 1.2,
+            }}
+          >
+            {passPolicyLabel}
+          </Typography>
+        </Box>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
           <IconButton
             onClick={handleLeaveSession}
             loading={isLeaving}
             size="small"
-            sx={{ color: "rgba(255, 255, 255, 0.7)" }}
           >
             <ExitToApp />
           </IconButton>
@@ -132,12 +151,12 @@ export function SessionResults({
         </Box>
       </Box>
 
-      {/* Player Cumulative Scores Table */}
-      <TableContainer sx={{ flexGrow: 1, overflowY: "auto" }}>
+      {/* Player Scores Table */}
+      <TableContainer sx={{ flexGrow: 1, minHeight: 0, overflowY: "auto" }}>
         <Table
           size="small"
           stickyHeader
-          sx={{ height: cumulativeData.length === 0 ? "100%" : "auto" }}
+          sx={{ height: "100%", tableLayout: "fixed" }}
         >
           <TableHead>
             <TableRow>
@@ -168,42 +187,93 @@ export function SessionResults({
             </TableRow>
           </TableHead>
           <TableBody>
-            {cumulativeData.length > 0 ? (
-              cumulativeData.map((scores, index) => (
-                <TableRow
-                  key={index}
-                  hover
-                  sx={{ "&:hover": { bgcolor: "rgba(255, 255, 255, 0.05)" } }}
-                >
-                  <TableCell
+            {results.length > 0 ? (
+              <>
+                {results.map((result, index) => (
+                  <TableRow
+                    key={result.game_number || index}
+                    hover
                     sx={{
-                      color: "rgba(255, 255, 255, 0.7)",
-                      borderBottom: "1px solid rgba(255,255,255,0.05)",
+                      "&:hover": { bgcolor: "rgba(255, 255, 255, 0.05)" },
                     }}
                   >
-                    {index + 1}
-                  </TableCell>
-                  {playerIds.map((id) => (
                     <TableCell
-                      key={id}
-                      align="center"
                       sx={{
-                        color:
-                          scores[id] > 0
-                            ? "#4caf50"
-                            : scores[id] < 0
-                              ? "#f44336"
-                              : "rgba(255, 255, 255, 0.7)",
-                        fontWeight: id === playerId ? "bold" : "normal",
+                        color: "rgba(255, 255, 255, 0.7)",
                         borderBottom: "1px solid rgba(255,255,255,0.05)",
                       }}
                     >
-                      {scores[id] > 0 && "+"}
-                      {scores[id]}
+                      {index + 1}
                     </TableCell>
-                  ))}
+                    {playerIds.map((id) => {
+                      const points = result.player_results[id] || 0;
+                      return (
+                        <TableCell
+                          key={id}
+                          align="center"
+                          sx={{
+                            color:
+                              points > 0
+                                ? "#4caf50"
+                                : points < 0
+                                  ? "#f44336"
+                                  : "rgba(255, 255, 255, 0.7)",
+                            fontWeight: id === playerId ? "bold" : "normal",
+                            borderBottom: "1px solid rgba(255,255,255,0.05)",
+                          }}
+                        >
+                          {points > 0 && "+"}
+                          {points}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                ))}
+                <TableRow sx={{ height: "100%" }}>
+                  <TableCell
+                    colSpan={playerIds.length + 1}
+                    sx={{ borderBottom: 0, p: 0 }}
+                  />
                 </TableRow>
-              ))
+                <TableRow
+                  sx={{
+                    bgcolor: "rgba(255, 255, 255, 0.04)",
+                    "&:last-child td": { borderBottom: 0 },
+                  }}
+                >
+                  <TableCell
+                    sx={{
+                      color: "rgba(255, 255, 255, 0.9)",
+                      fontWeight: "bold",
+                      borderTop: "2px solid rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    Total
+                  </TableCell>
+                  {playerIds.map((id) => {
+                    const total = totals[id];
+                    return (
+                      <TableCell
+                        key={id}
+                        align="center"
+                        sx={{
+                          color:
+                            total > 0
+                              ? "#4caf50"
+                              : total < 0
+                                ? "#f44336"
+                                : "rgba(255, 255, 255, 0.7)",
+                          fontWeight: "bold",
+                          borderTop: "2px solid rgba(255,255,255,0.12)",
+                        }}
+                      >
+                        {total > 0 && "+"}
+                        {total}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              </>
             ) : (
               <TableRow sx={{ height: "100%" }}>
                 <TableCell

@@ -55,6 +55,7 @@ export function GameOverScreen() {
     (p) => p && !p.is_agent && p.ready_for_next,
   ).length;
   const humanPlayerCount = game.players.filter((p) => p && !p.is_agent).length;
+  const maxGamesLabel = game.maxGames === 0 ? "∞" : game.maxGames;
 
   return (
     <Dialog
@@ -302,7 +303,7 @@ export function GameOverScreen() {
           },
         }}
       >
-        {game.canPlayNext && (
+        {game.canPlayNext && game.completionPolicy !== "strict" && (
           <Button
             variant="outlined"
             color="primary"
@@ -340,7 +341,7 @@ export function GameOverScreen() {
                   !game.controls.isConnected || game.player?.ready_for_next
                 }
               >
-                {`Play Next (${game.gamesPlayed + 1}/${game.maxGames})`}
+                {`Play Next (${game.gamesPlayed + 1}/${maxGamesLabel})`}
               </Button>
             ) : (
               <Typography

@@ -274,9 +274,10 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	// Create empty session
 	gs := game.NewGame()
 	var req struct {
-		MaxGames     int    `json:"max_games"`
-		PassPolicy   string `json:"pass_policy"`
-		TimerEnabled *bool  `json:"timer_enabled"`
+		MaxGames         *int   `json:"max_games"`
+		PassPolicy       string `json:"pass_policy"`
+		TimerEnabled     *bool  `json:"timer_enabled"`
+		CompletionPolicy string `json:"completion_policy"`
 	}
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
@@ -284,11 +285,12 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.MaxGames == 0 {
-		req.MaxGames = game.DefaultMaxGames
+	maxGames := game.DefaultMaxGames
+	if req.MaxGames != nil {
+		maxGames = *req.MaxGames
 	}
-	if req.MaxGames < 1 || req.MaxGames > 100 {
-		http.Error(w, "max_games must be between 1 and 100", http.StatusBadRequest)
+	if maxGames < 0 || maxGames > 100 {
+		http.Error(w, "max_games must be between 0 and 100", http.StatusBadRequest)
 		return
 	}
 	passPolicy := game.PassPolicy(req.PassPolicy)
@@ -299,20 +301,34 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid pass_policy", http.StatusBadRequest)
 		return
 	}
-	gs.MaxGames = req.MaxGames
+	completionPolicy := game.CompletionPolicy(req.CompletionPolicy)
+	if completionPolicy == "" {
+		completionPolicy = game.DefaultCompletionPolicy
+	}
+	if completionPolicy != game.CompletionPolicyFlexible && completionPolicy != game.CompletionPolicyStrict {
+		http.Error(w, "invalid completion_policy", http.StatusBadRequest)
+		return
+	}
+	if completionPolicy == game.CompletionPolicyStrict && maxGames == 0 {
+		http.Error(w, "strict tournaments require a fixed max_games value", http.StatusBadRequest)
+		return
+	}
+	gs.MaxGames = maxGames
 	gs.PassPolicy = passPolicy
+	gs.CompletionPolicy = completionPolicy
 	if req.TimerEnabled != nil {
 		gs.TimerEnabled = *req.TimerEnabled
 	}
 
 	// Save the session to the database
 	if err := s.db.SaveGameSession(game.GameSessionState{
-		ID:           gs.SessionID,
-		Code:         string(gs.Code),
-		GameID:       gs.ID,
-		MaxGames:     gs.MaxGames,
-		PassPolicy:   string(gs.PassPolicy),
-		TimerEnabled: gs.TimerEnabled,
+		ID:               gs.SessionID,
+		Code:             string(gs.Code),
+		GameID:           gs.ID,
+		MaxGames:         gs.MaxGames,
+		PassPolicy:       string(gs.PassPolicy),
+		TimerEnabled:     gs.TimerEnabled,
+		CompletionPolicy: string(gs.CompletionPolicy),
 	}); err != nil {
 		http.Error(w, fmt.Sprintf("failed to save game session: %v", err), http.StatusInternalServerError)
 		return
@@ -562,8 +578,33 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 		})
 
 		logger.Info("Player %s forfeited game %s", playerID, gs.Code)
+	} else if gs.Phase == game.PhaseComplete && gs.CompletionPolicy == game.CompletionPolicyStrict && gs.MaxGames > 0 && gs.GameNumber+1 < gs.MaxGames {
+		gs.ForfeitedPlayer = &position
+
+		if err := s.cache.SaveGame(*gs); err != nil {
+			logger.Warning("Failed to save strict tournament forfeit: %e", err)
+			http.Error(w, "failed to save game", http.StatusInternalServerError)
+			return
+		}
+		if err := s.maybeSaveGameResults(gs); err != nil {
+			logger.Warning("Failed to save strict tournament forfeit results: %e", err)
+			http.Error(w, "failed to save game results", http.StatusInternalServerError)
+			return
+		}
+
+		s.clients.BroadcastToPlayers(gs, &Message{
+			Type: "player_forfeit",
+			Data: map[string]any{
+				"player_id":   playerID,
+				"player_name": playerName,
+				"game_id":     gs.ID,
+			},
+		})
+		s.clients.BroadcastStateChange(gs, fmt.Sprintf("%s left before all games were played", playerName), gs.CurrentPlayer)
+
+		logger.Info("Player %s forfeited strict tournament %s", playerID, gs.Code)
 	} else {
-		// Game hasn't started yet - just remove the player
+		// Waiting games and flexible completed games let players leave without a tournament forfeit.
 		gs.Players[position] = nil
 
 		// Remove player from database
@@ -846,6 +887,7 @@ func (s *Server) rebuildSessionPlayerResults(sessionID string) []game.PlayerSess
 		logger.Warning("Failed to update ratings during session rebuild: %e", err)
 		return []game.PlayerSessionResultState{}
 	}
+	assignSessionPositions(sessionResults)
 	for _, rat := range playerRatings {
 		if err := s.db.SavePlayerRating(db.NewPlayerRating(rat)); err != nil {
 			logger.Warning("Failed to save rating during session rebuild: %e", err)
@@ -1171,10 +1213,10 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 	player := gs.Players[position]
 	player.ReadyForNext = true
 	maxGames := gs.MaxGames
-	if maxGames <= 0 {
+	if maxGames < 0 {
 		maxGames = game.DefaultMaxGames
 	}
-	if gs.GameNumber+1 >= maxGames {
+	if maxGames > 0 && gs.GameNumber+1 >= maxGames {
 		http.Error(w, "session is complete", http.StatusBadRequest)
 		return
 	}
@@ -1250,6 +1292,10 @@ func (s *Server) handleEndTournament(w http.ResponseWriter, r *http.Request) {
 	}
 	if gs.Phase != game.PhaseComplete {
 		http.Error(w, "current game is not complete", http.StatusBadRequest)
+		return
+	}
+	if gs.CompletionPolicy == game.CompletionPolicyStrict && gs.MaxGames > 0 && gs.GameNumber+1 < gs.MaxGames {
+		http.Error(w, "strict tournaments must play all configured games", http.StatusBadRequest)
 		return
 	}
 

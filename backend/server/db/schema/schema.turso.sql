@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     max_games INTEGER NOT NULL DEFAULT 10,
     pass_policy TEXT NOT NULL DEFAULT 'reshuffle',
     timer_enabled INTEGER NOT NULL DEFAULT 1,
+    completion_policy TEXT NOT NULL DEFAULT 'flexible',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     ended_at DATETIME
 );
@@ -99,6 +100,7 @@ CREATE TABLE IF NOT EXISTS player_session_results (
     player_points INTEGER DEFAULT 0,
     is_winner INTEGER DEFAULT 0,
     is_forfeit INTEGER DEFAULT 0,
+    position INTEGER DEFAULT 0,
     rating_before INTEGER DEFAULT 20,
     rating_after INTEGER DEFAULT 20,
     rating_change INTEGER DEFAULT 0,

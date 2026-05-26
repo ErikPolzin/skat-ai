@@ -185,10 +185,10 @@ func (gs *GameState) SerializeForPlayer(playerID string) *GameInfo {
 	}
 
 	maxGames := gs.MaxGames
-	if maxGames <= 0 {
+	if maxGames < 0 {
 		maxGames = DefaultMaxGames
 	}
-	canPlayNext := gs.Phase == PhaseComplete && gs.GameNumber+1 < maxGames
+	canPlayNext := gs.Phase == PhaseComplete && (maxGames == 0 || gs.GameNumber+1 < maxGames)
 
 	info := &GameInfo{
 		State:       gs,

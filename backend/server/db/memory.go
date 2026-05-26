@@ -77,11 +77,14 @@ func (d *MemoryDatabase) SaveProfile(profile ProfileEntry) error {
 func (d *MemoryDatabase) SaveGameSession(session game.GameSessionState) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if session.MaxGames <= 0 {
+	if session.MaxGames < 0 {
 		session.MaxGames = game.DefaultMaxGames
 	}
 	if session.PassPolicy == "" {
 		session.PassPolicy = string(game.DefaultPassPolicy)
+	}
+	if session.CompletionPolicy == "" {
+		session.CompletionPolicy = string(game.DefaultCompletionPolicy)
 	}
 	d.sessions[session.ID] = &session
 	return nil
@@ -100,24 +103,26 @@ func (d *MemoryDatabase) GetGameSession(sessionID string) (*game.GameSessionStat
 		for _, gameState := range d.games {
 			if gameState.SessionID == sessionID {
 				return &game.GameSessionState{
-					ID:           sessionID,
-					Code:         string(gameState.Code),
-					GameID:       gameState.ID,
-					PlayerCount:  gameState.PlayerCount(),
-					MaxGames:     gameState.MaxGames,
-					PassPolicy:   string(gameState.PassPolicy),
-					TimerEnabled: gameState.TimerEnabled,
+					ID:               sessionID,
+					Code:             string(gameState.Code),
+					GameID:           gameState.ID,
+					PlayerCount:      gameState.PlayerCount(),
+					MaxGames:         gameState.MaxGames,
+					PassPolicy:       string(gameState.PassPolicy),
+					TimerEnabled:     gameState.TimerEnabled,
+					CompletionPolicy: string(gameState.CompletionPolicy),
 				}, nil
 			}
 		}
 		return nil, fmt.Errorf("game session not found")
 	}
 	return &game.GameSessionState{
-		ID:           sessionID,
-		Code:         sessionID[:8],
-		MaxGames:     game.DefaultMaxGames,
-		PassPolicy:   string(game.DefaultPassPolicy),
-		TimerEnabled: game.DefaultTimerEnabled,
+		ID:               sessionID,
+		Code:             sessionID[:8],
+		MaxGames:         game.DefaultMaxGames,
+		PassPolicy:       string(game.DefaultPassPolicy),
+		TimerEnabled:     game.DefaultTimerEnabled,
+		CompletionPolicy: string(game.DefaultCompletionPolicy),
 	}, nil
 }
 
@@ -179,13 +184,14 @@ func (d *MemoryDatabase) ListOpenSessions() ([]game.GameSessionState, error) {
 	for sessionID, gameState := range d.games {
 		if gameState.PlayerCount() < 3 && gameState.Phase == game.PhaseWaitingForPlayers {
 			sessions = append(sessions, game.GameSessionState{
-				ID:           sessionID,
-				Code:         string(gameState.Code),
-				GameID:       gameState.ID,
-				PlayerCount:  gameState.PlayerCount(),
-				MaxGames:     gameState.MaxGames,
-				PassPolicy:   string(gameState.PassPolicy),
-				TimerEnabled: gameState.TimerEnabled,
+				ID:               sessionID,
+				Code:             string(gameState.Code),
+				GameID:           gameState.ID,
+				PlayerCount:      gameState.PlayerCount(),
+				MaxGames:         gameState.MaxGames,
+				PassPolicy:       string(gameState.PassPolicy),
+				TimerEnabled:     gameState.TimerEnabled,
+				CompletionPolicy: string(gameState.CompletionPolicy),
 			})
 		}
 	}
@@ -259,7 +265,15 @@ func (d *MemoryDatabase) GetPlayerSessionResults(playerID string, limit int) ([]
 
 	reversed := make([]game.PlayerSessionResultState, 0, len(results))
 	for i := len(results) - 1; i >= 0; i-- {
-		reversed = append(reversed, results[i])
+		result := results[i]
+		if session, ok := d.sessions[result.SessionID]; ok {
+			if session.EndedAt != nil {
+				result.FinishedAt = *session.EndedAt
+			} else {
+				result.FinishedAt = session.CreatedAt
+			}
+		}
+		reversed = append(reversed, result)
 		if limit > 0 && len(reversed) >= limit {
 			break
 		}
@@ -301,6 +315,16 @@ func (d *MemoryDatabase) GetPlayerResultsForSession(sessionID string) ([]game.Pl
 	defer d.mu.RUnlock()
 
 	var results []game.PlayerResultState
+	seen := make(map[string]struct{})
+
+	for _, playerResults := range d.playerResults {
+		for _, result := range playerResults {
+			if result.SessionID == sessionID {
+				results = append(results, result)
+				seen[result.GameID+"|"+result.PlayerID] = struct{}{}
+			}
+		}
+	}
 
 	// Find all completed games for this session
 	for _, gameState := range d.games {
@@ -308,6 +332,9 @@ func (d *MemoryDatabase) GetPlayerResultsForSession(sessionID string) ([]game.Pl
 			playerResults := gameState.PlayerResults()
 			if playerResults != nil {
 				for _, r := range playerResults {
+					if _, ok := seen[r.GameID+"|"+r.PlayerID]; ok {
+						continue
+					}
 					results = append(results, r)
 				}
 			}

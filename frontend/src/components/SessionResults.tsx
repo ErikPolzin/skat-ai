@@ -17,7 +17,7 @@ import {
 import { ExpandMore, ExpandLess, ExitToApp } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import type { SessionGameResult } from "../types";
-import type { PassPolicy, Player } from "../api/games";
+import type { CompletionPolicy, PassPolicy, Player } from "../api/games";
 import { leaveGame } from "../api/games";
 
 interface SessionResultsProps {
@@ -28,6 +28,7 @@ interface SessionResultsProps {
   maxGames: number;
   players?: (Player | null)[];
   passPolicy?: PassPolicy;
+  completionPolicy?: CompletionPolicy;
 }
 
 export function SessionResults({
@@ -38,6 +39,7 @@ export function SessionResults({
   maxGames,
   players,
   passPolicy,
+  completionPolicy,
 }: SessionResultsProps) {
   const theme = useTheme();
   const navigate = useNavigate();
@@ -82,6 +84,11 @@ export function SessionResults({
     force_listener: "All pass: Force forehand",
     ramsch: "All pass: Play Ramsch",
   }[passPolicy || "reshuffle"];
+  const commitmentLabel =
+    completionPolicy === "strict"
+      ? "Play all games; early leave forfeits"
+      : "Flexible tournament";
+  const maxGamesLabel = maxGames === 0 ? "∞" : maxGames;
 
   if (playerIds.length === 0) {
     return null;
@@ -115,7 +122,7 @@ export function SessionResults({
             variant="subtitle1"
             sx={{ color: "white", lineHeight: 1.2 }}
           >
-            Session Results ({gamesPlayed}/{maxGames})
+            Session Results ({gamesPlayed}/{maxGamesLabel})
           </Typography>
           <Typography
             variant="caption"
@@ -125,7 +132,7 @@ export function SessionResults({
               lineHeight: 1.2,
             }}
           >
-            {passPolicyLabel}
+            {passPolicyLabel} · {commitmentLabel}
           </Typography>
         </Box>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>

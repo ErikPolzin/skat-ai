@@ -32,6 +32,7 @@ import {
   createGame,
   joinGame,
   uploadAvatar,
+  type CompletionPolicy,
   type PassPolicy,
 } from "../api/games";
 import {
@@ -205,6 +206,8 @@ const GamesTab = () => {
   const [maxGames, setMaxGames] = useState<number>(10);
   const [passPolicy, setPassPolicy] = useState<PassPolicy>("reshuffle");
   const [timerEnabled, setTimerEnabled] = useState<boolean>(true);
+  const [completionPolicy, setCompletionPolicy] =
+    useState<CompletionPolicy>("flexible");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isJoinDialogOpen, setIsJoinDialogOpen] = useState<boolean>(false);
   const navigate = useNavigate();
@@ -217,6 +220,7 @@ const GamesTab = () => {
         max_games: maxGames,
         pass_policy: passPolicy,
         timer_enabled: timerEnabled,
+        completion_policy: maxGames === 0 ? "flexible" : completionPolicy,
       });
       const data = await joinGame(createData.code);
       navigate(`/${data.session_id}`);
@@ -245,11 +249,12 @@ const GamesTab = () => {
               value={maxGames}
               onChange={(e) =>
                 setMaxGames(
-                  Math.max(1, Math.min(100, Number(e.target.value) || 1)),
+                  Math.max(0, Math.min(100, Number(e.target.value) || 0)),
                 )
               }
               disabled={isLoading}
-              slotProps={{ htmlInput: { min: 1, max: 100 } }}
+              helperText="0 means unlimited"
+              slotProps={{ htmlInput: { min: 0, max: 100 } }}
             />
             <TextField
               select
@@ -262,7 +267,22 @@ const GamesTab = () => {
               <MenuItem value="force_listener">Force forehand</MenuItem>
               <MenuItem value="ramsch">Play Ramsch</MenuItem>
             </TextField>
+            <TextField
+              select
+              label="Tournament commitment"
+              value={maxGames === 0 ? "flexible" : completionPolicy}
+              onChange={(e) =>
+                setCompletionPolicy(e.target.value as CompletionPolicy)
+              }
+              disabled={isLoading}
+            >
+              <MenuItem value="flexible">Can end or leave between games</MenuItem>
+              <MenuItem value="strict" disabled={maxGames === 0}>
+                Play all games; early leave forfeits
+              </MenuItem>
+            </TextField>
             <FormControlLabel
+              sx={{ gridColumn: { xs: "auto", sm: "1 / -1" } }}
               control={
                 <Checkbox
                   checked={timerEnabled}

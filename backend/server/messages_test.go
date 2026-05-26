@@ -93,6 +93,13 @@ func TestLeaveInProgressGamePersistsCompleteForfeit(t *testing.T) {
 	if err := database.SaveGame(*gs); err != nil {
 		t.Fatalf("failed to save game: %v", err)
 	}
+	if err := database.SavePlayerResults([]game.PlayerResultState{
+		{GameID: gs.ID, SessionID: gs.SessionID, PlayerID: "alice", PlayerPoints: 50},
+		{GameID: gs.ID, SessionID: gs.SessionID, PlayerID: "bob", PlayerPoints: 40},
+		{GameID: gs.ID, SessionID: gs.SessionID, PlayerID: "cara", PlayerPoints: 30},
+	}); err != nil {
+		t.Fatalf("failed to save player results: %v", err)
+	}
 	server.cache.games[gs.ID] = gs
 
 	req := httptest.NewRequest(http.MethodPost, "/api/games/"+gs.ID+"/leave", nil)
@@ -124,5 +131,64 @@ func TestLeaveInProgressGamePersistsCompleteForfeit(t *testing.T) {
 	}
 	if len(activeGames) != 0 {
 		t.Fatalf("expected no active games after leaving, got %d", len(activeGames))
+	}
+}
+
+func TestStrictTournamentLeaveAfterCompletedGameCountsAsForfeit(t *testing.T) {
+	database := db.NewMemoryDatabase()
+	server := NewServer(database)
+	gs := game.NewGame()
+	gs.Phase = game.PhaseComplete
+	gs.GameNumber = 0
+	gs.MaxGames = 3
+	gs.CompletionPolicy = game.CompletionPolicyStrict
+	gs.Players = [3]*game.PlayerState{
+		{ID: "alice", Name: "Alice"},
+		{ID: "bob", Name: "Bob"},
+		{ID: "cara", Name: "Cara"},
+	}
+	if err := database.SaveGameSession(game.GameSessionState{
+		ID:               gs.SessionID,
+		Code:             string(gs.Code),
+		GameID:           gs.ID,
+		PlayerCount:      gs.PlayerCount(),
+		MaxGames:         gs.MaxGames,
+		PassPolicy:       string(gs.PassPolicy),
+		TimerEnabled:     gs.TimerEnabled,
+		CompletionPolicy: string(gs.CompletionPolicy),
+	}); err != nil {
+		t.Fatalf("failed to save session: %v", err)
+	}
+	if err := database.SaveGame(*gs); err != nil {
+		t.Fatalf("failed to save game: %v", err)
+	}
+	server.cache.games[gs.ID] = gs
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+gs.ID+"/leave", nil)
+	req = mux.SetURLVars(req, map[string]string{"id": gs.ID})
+	req = req.WithContext(context.WithValue(req.Context(), profileContextKey{}, &db.ProfileEntry{
+		ID:   "alice",
+		Name: "Alice",
+	}))
+	rec := httptest.NewRecorder()
+
+	server.handleLeaveGame(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	saved, err := database.GetGameByID(gs.SessionID)
+	if err != nil {
+		t.Fatalf("failed to reload game: %v", err)
+	}
+	if saved.ForfeitedPlayer == nil || *saved.ForfeitedPlayer != game.Dealer {
+		t.Fatalf("expected dealer to be persisted as forfeited, got %v", saved.ForfeitedPlayer)
+	}
+	sessionResults, err := database.GetSessionPlayerResults(gs.SessionID)
+	if err != nil {
+		t.Fatalf("failed to load session results: %v", err)
+	}
+	if len(sessionResults) != 3 {
+		t.Fatalf("expected finalized session results, got %d", len(sessionResults))
 	}
 }

@@ -110,7 +110,6 @@ function TournamentResultsScreenContent() {
         ratingBefore: finalResultsByPlayer[id]?.rating_before,
         ratingAfter: finalResultsByPlayer[id]?.rating_after,
         ratingChange: finalResultsByPlayer[id]?.rating_change ?? 0,
-        isWinner: finalResultsByPlayer[id]?.is_winner ?? false,
         isForfeit: finalResultsByPlayer[id]?.is_forfeit ?? false,
       }))
       .sort((a, b) => {
@@ -174,20 +173,20 @@ function TournamentResultsScreenContent() {
         >
           {featuredStandings.map((standing) => {
             const rank = rankByPlayer.get(standing.id) ?? 0;
-            const isWinner = rank === 1;
+            const isFirstPlace = rank === 1;
             const isCurrentPlayer = standing.id === game.player?.id;
             return (
               <Card
                 key={standing.id}
-                elevation={isWinner ? 8 : 2}
+                elevation={isFirstPlace ? 8 : 2}
                 variant="outlined"
                 sx={{
                   flex: {
                     xs: "0 0 auto",
-                    sm: isWinner ? "1.2 1 0" : "0.82 1 0",
+                    sm: isFirstPlace ? "1.2 1 0" : "0.82 1 0",
                   },
                   minWidth: { xs: "100%", sm: 0 },
-                  opacity: isWinner ? 1 : 0.9,
+                  opacity: isFirstPlace ? 1 : 0.9,
                   position: "relative",
                 }}
               >
@@ -198,14 +197,14 @@ function TournamentResultsScreenContent() {
                     borderRadius: "50%",
                     color: "#111827",
                     display: "flex",
-                    fontSize: isWinner ? { xs: 14, sm: 18 } : 13,
+                    fontSize: isFirstPlace ? { xs: 14, sm: 18 } : 13,
                     fontWeight: 900,
-                    height: isWinner ? { xs: 30, sm: 38 } : 28,
+                    height: isFirstPlace ? { xs: 30, sm: 38 } : 28,
                     justifyContent: "center",
                     position: "absolute",
                     right: { xs: 10, sm: 12 },
                     top: { xs: 10, sm: 12 },
-                    width: isWinner ? { xs: 30, sm: 38 } : 28,
+                    width: isFirstPlace ? { xs: 30, sm: 38 } : 28,
                     zIndex: 1,
                   }}
                 >
@@ -215,10 +214,10 @@ function TournamentResultsScreenContent() {
                   direction={{ xs: "row", sm: "column" }}
                   sx={{
                     alignItems: "center",
-                    gap: isWinner ? { xs: 1.5, sm: 1.5 } : 1,
+                    gap: isFirstPlace ? { xs: 1.5, sm: 1.5 } : 1,
                     justifyContent: { xs: "space-between", sm: "center" },
-                    minHeight: { xs: "auto", sm: isWinner ? 300 : 230 },
-                    p: isWinner ? { xs: 1.25, sm: 3 } : { xs: 1, sm: 2 },
+                    minHeight: { xs: "auto", sm: isFirstPlace ? 300 : 230 },
+                    p: isFirstPlace ? { xs: 1.25, sm: 3 } : { xs: 1, sm: 2 },
                     position: "relative",
                     textAlign: { xs: "left", sm: "center" },
                   }}
@@ -233,13 +232,13 @@ function TournamentResultsScreenContent() {
                       src={standing.profileIcon}
                       alt={standing.name}
                       sx={{
-                        width: isWinner
+                        width: isFirstPlace
                           ? { xs: 64, sm: 140 }
                           : { xs: 48, sm: 76 },
-                        height: isWinner
+                        height: isFirstPlace
                           ? { xs: 64, sm: 140 }
                           : { xs: 48, sm: 76 },
-                        fontSize: isWinner
+                        fontSize: isFirstPlace
                           ? { xs: 28, sm: 56 }
                           : { xs: 20, sm: 30 },
                       }}
@@ -252,7 +251,7 @@ function TournamentResultsScreenContent() {
                     sx={{ flex: 1, minWidth: 0, alignItems: { sm: "center" } }}
                   >
                     <Typography
-                      variant={isWinner ? "h6" : "body1"}
+                      variant={isFirstPlace ? "h6" : "body1"}
                       sx={{ fontWeight: 700 }}
                       noWrap
                     >
@@ -268,12 +267,12 @@ function TournamentResultsScreenContent() {
                     </Typography>
                   </Stack>
                   <Typography
-                    variant={isWinner ? (isMobile ? "h3" : "h2") : "h4"}
+                    variant={isFirstPlace ? (isMobile ? "h3" : "h2") : "h4"}
                     sx={{
                       color: ratingColor(standing.ratingChange),
                       fontWeight: 900,
                       lineHeight: 1,
-                      minWidth: { xs: isWinner ? 112 : 92, sm: "auto" },
+                      minWidth: { xs: isFirstPlace ? 112 : 92, sm: "auto" },
                       pr: { xs: 3.5, sm: 0 },
                       textAlign: { xs: "right", sm: "center" },
                     }}
@@ -284,7 +283,7 @@ function TournamentResultsScreenContent() {
                       component="span"
                       sx={{
                         color: "inherit",
-                        fontSize: isWinner
+                        fontSize: isFirstPlace
                           ? { xs: 18, sm: 34 }
                           : { xs: 14, sm: 22 },
                         fontWeight: 700,

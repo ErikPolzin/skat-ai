@@ -53,6 +53,7 @@ function GameScreenContent() {
             maxGames={game.maxGames}
             players={game.players}
             passPolicy={game.passPolicy}
+            completionPolicy={game.completionPolicy}
           />
         </Box>
       )}
@@ -67,6 +68,7 @@ function GameScreenContent() {
           maxGames={game.maxGames}
           players={game.players}
           passPolicy={game.passPolicy}
+          completionPolicy={game.completionPolicy}
         />
       )}
 

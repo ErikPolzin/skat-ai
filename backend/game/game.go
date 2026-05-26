@@ -32,6 +32,15 @@ const (
 	DefaultTimerEnabled = true
 )
 
+type CompletionPolicy string
+
+const (
+	CompletionPolicyFlexible CompletionPolicy = "flexible"
+	CompletionPolicyStrict   CompletionPolicy = "strict"
+)
+
+const DefaultCompletionPolicy = CompletionPolicyFlexible
+
 // ValidBidValues are the legal bid values in Skat (based on game values)
 var ValidBidValues = []int{
 	0, 18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50,
@@ -53,26 +62,27 @@ var AllPositions = [3]GamePosition{Dealer, Listener, Speaker}
 
 // GameState represents the current state of a Skat game
 type GameState struct {
-	ID            string          `json:"id"`
-	Code          GameCode        `json:"code"`
-	SessionID     string          `json:"session_id"` // Session ID for mutiple games
-	GameNumber    int             `json:"game_number"`
-	MaxGames      int             `json:"max_games"`
-	PassPolicy    PassPolicy      `json:"pass_policy"`
-	TimerEnabled  bool            `json:"timer_enabled"`
-	Players       [3]*PlayerState `json:"players"`        // Players in the game
-	Skat          SkatCards       `json:"-"`              // Ommitted in JSON, not public knowledge
-	CurrentPlayer GamePosition    `json:"current_player"` // Current player position
-	Declarer      *GamePosition   `json:"declarer"`       // Declarer position (nil if not determined yet)
-	Mode          GameMode        `json:"mode"`           // Game mode (Suit, Null, Grand)
-	TrumpSuit     Suit            `json:"trump_suit"`     // Trump suite (D, H, A, C)
-	Trick         Cards           `json:"trick"`          // Current trick being played
-	TrickWinner   *GamePosition   `json:"trick_winner"`   // Who won the last trick
-	TrickStarter  GamePosition    `json:"trick_starter"`  // Who started the current trick
-	CardsPlayed   [][]Card        `json:"-"`              // History of all tricks
-	Phase         GamePhase       `json:"phase"`          // Current phase of the game
-	PlayerScores  [3]int          `json:"player_scores"`  // Card points taken by each player
-	Matadors      int             `json:"matadors"`       // Matadors count (positive=with, negative=without)
+	ID               string           `json:"id"`
+	Code             GameCode         `json:"code"`
+	SessionID        string           `json:"session_id"` // Session ID for mutiple games
+	GameNumber       int              `json:"game_number"`
+	MaxGames         int              `json:"max_games"`
+	PassPolicy       PassPolicy       `json:"pass_policy"`
+	TimerEnabled     bool             `json:"timer_enabled"`
+	CompletionPolicy CompletionPolicy `json:"completion_policy"`
+	Players          [3]*PlayerState  `json:"players"`        // Players in the game
+	Skat             SkatCards        `json:"-"`              // Ommitted in JSON, not public knowledge
+	CurrentPlayer    GamePosition     `json:"current_player"` // Current player position
+	Declarer         *GamePosition    `json:"declarer"`       // Declarer position (nil if not determined yet)
+	Mode             GameMode         `json:"mode"`           // Game mode (Suit, Null, Grand)
+	TrumpSuit        Suit             `json:"trump_suit"`     // Trump suite (D, H, A, C)
+	Trick            Cards            `json:"trick"`          // Current trick being played
+	TrickWinner      *GamePosition    `json:"trick_winner"`   // Who won the last trick
+	TrickStarter     GamePosition     `json:"trick_starter"`  // Who started the current trick
+	CardsPlayed      [][]Card         `json:"-"`              // History of all tricks
+	Phase            GamePhase        `json:"phase"`          // Current phase of the game
+	PlayerScores     [3]int           `json:"player_scores"`  // Card points taken by each player
+	Matadors         int              `json:"matadors"`       // Matadors count (positive=with, negative=without)
 
 	// Hand and announcements
 	PlayedHand         bool `json:"played_hand"`         // Declarer played without picking up skat
@@ -106,15 +116,16 @@ type GameResult struct {
 }
 
 type GameSessionState struct {
-	ID           string  `json:"id"`
-	Code         string  `json:"code"`
-	GameID       string  `json:"game_id"`
-	PlayerCount  int     `json:"player_count"`
-	MaxGames     int     `json:"max_games"`
-	PassPolicy   string  `json:"pass_policy"`
-	TimerEnabled bool    `json:"timer_enabled"`
-	CreatedAt    string  `json:"created_at"`
-	EndedAt      *string `json:"ended_at"`
+	ID               string  `json:"id"`
+	Code             string  `json:"code"`
+	GameID           string  `json:"game_id"`
+	PlayerCount      int     `json:"player_count"`
+	MaxGames         int     `json:"max_games"`
+	PassPolicy       string  `json:"pass_policy"`
+	TimerEnabled     bool    `json:"timer_enabled"`
+	CompletionPolicy string  `json:"completion_policy"`
+	CreatedAt        string  `json:"created_at"`
+	EndedAt          *string `json:"ended_at"`
 }
 
 type PlayerResultState struct {
@@ -135,9 +146,11 @@ type PlayerSessionResultState struct {
 	PlayerPoints int      `json:"player_points"`
 	IsWinner     bool     `json:"is_winner"`
 	IsForfeit    bool     `json:"is_forfeit"`
+	Position     int      `json:"position"`
 	RatingBefore int      `json:"rating_before"`
 	RatingAfter  int      `json:"rating_after"`
 	RatingChange int      `json:"rating_change"`
+	FinishedAt   string   `json:"finished_at,omitempty"`
 	OtherPlayers []string `json:"other_players,omitempty"`
 }
 
@@ -190,21 +203,22 @@ type PlayerState struct {
 // NewGame creates a new Skat game
 func NewGame() *GameState {
 	gs := &GameState{
-		ID:              uuid.New().String(),
-		SessionID:       uuid.New().String(),
-		Code:            NewGameCode(),
-		Players:         [3]*PlayerState{},
-		MaxGames:        DefaultMaxGames,
-		PassPolicy:      DefaultPassPolicy,
-		TimerEnabled:    DefaultTimerEnabled,
-		Phase:           PhaseWaitingForPlayers, // Start waiting for players
-		Declarer:        nil,                    // Not determined yet
-		CurrentPlayer:   0,                      // Dealer starts as the current player
-		BidValue:        0,                      // Bidding starts at 0
-		ListenerPassed:  false,
-		SpeakerPassed:   false,
-		DealerPassed:    false,
-		ForfeitedPlayer: nil, // No forfeit
+		ID:               uuid.New().String(),
+		SessionID:        uuid.New().String(),
+		Code:             NewGameCode(),
+		Players:          [3]*PlayerState{},
+		MaxGames:         DefaultMaxGames,
+		PassPolicy:       DefaultPassPolicy,
+		TimerEnabled:     DefaultTimerEnabled,
+		CompletionPolicy: DefaultCompletionPolicy,
+		Phase:            PhaseWaitingForPlayers, // Start waiting for players
+		Declarer:         nil,                    // Not determined yet
+		CurrentPlayer:    0,                      // Dealer starts as the current player
+		BidValue:         0,                      // Bidding starts at 0
+		ListenerPassed:   false,
+		SpeakerPassed:    false,
+		DealerPassed:     false,
+		ForfeitedPlayer:  nil, // No forfeit
 	}
 	return gs
 }
@@ -383,6 +397,7 @@ func (gs *GameState) Clone() *GameState {
 		MaxGames:              gs.MaxGames,
 		PassPolicy:            gs.PassPolicy,
 		TimerEnabled:          gs.TimerEnabled,
+		CompletionPolicy:      gs.CompletionPolicy,
 		CurrentPlayer:         gs.CurrentPlayer,
 		Declarer:              declarer,
 		Mode:                  gs.Mode,

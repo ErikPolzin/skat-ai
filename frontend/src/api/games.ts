@@ -54,6 +54,7 @@ function jsonHeaders(
 
 export type GameMode = "grand" | "suit" | "null" | "ramsch";
 export type PassPolicy = "reshuffle" | "force_listener" | "ramsch";
+export type CompletionPolicy = "flexible" | "strict";
 export type TrumpSuit = "♣" | "♠" | "♥" | "♦";
 export type GamePosition = 0 | 1 | 2;
 
@@ -65,6 +66,7 @@ export interface GameState {
   max_games: number;
   pass_policy: PassPolicy;
   timer_enabled: boolean;
+  completion_policy: CompletionPolicy;
   players: [ServerPlayer | null, ServerPlayer | null, ServerPlayer | null];
   current_player: GamePosition;
   declarer: GamePosition | null;
@@ -118,6 +120,7 @@ export interface GameSession {
   max_games: number;
   pass_policy: PassPolicy;
   timer_enabled: boolean;
+  completion_policy: CompletionPolicy;
   created_at: string;
   ended_at?: string;
 }
@@ -175,6 +178,7 @@ export interface CreateGameOptions {
   max_games: number;
   pass_policy: PassPolicy;
   timer_enabled: boolean;
+  completion_policy: CompletionPolicy;
 }
 
 export async function createGame(
@@ -281,10 +285,12 @@ export interface PlayerResult {
   player_points: number;
   is_winner: boolean;
   is_forfeit?: boolean;
+  position?: number;
   other_players?: string[];
   rating_before?: number;
   rating_after?: number;
   rating_change?: number;
+  finished_at?: string;
 }
 
 export type SessionPlayerResult = PlayerResult;

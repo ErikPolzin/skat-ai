@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     max_games INT NOT NULL DEFAULT 10,
     pass_policy VARCHAR(50) NOT NULL DEFAULT 'reshuffle',
     timer_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    completion_policy VARCHAR(50) NOT NULL DEFAULT 'flexible',
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMP
 );
@@ -100,6 +101,7 @@ CREATE TABLE IF NOT EXISTS player_session_results (
     player_points INT DEFAULT 0,
     is_winner BOOLEAN DEFAULT FALSE,
     is_forfeit BOOLEAN DEFAULT FALSE,
+    position INT DEFAULT 0,
     rating_before INT DEFAULT 20,
     rating_after INT DEFAULT 20,
     rating_change INT DEFAULT 0,

@@ -7,6 +7,7 @@ import (
 	"skat/game/rating"
 	"skat/logger"
 	"skat/server/db"
+	"sort"
 	"time"
 )
 
@@ -96,10 +97,10 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
 	}
 
 	maxGames := gs.MaxGames
-	if maxGames <= 0 {
+	if maxGames < 0 {
 		maxGames = game.DefaultMaxGames
 	}
-	isFinalGame := gs.GameNumber+1 >= maxGames || gs.ForfeitedPlayer != nil
+	isFinalGame := (maxGames > 0 && gs.GameNumber+1 >= maxGames) || gs.ForfeitedPlayer != nil
 
 	session, err := s.db.GetGameSession(gs.SessionID)
 	if err == nil && session.EndedAt != nil {
@@ -156,14 +157,15 @@ func (s *Server) maybeSaveGameResults(gs *game.GameState) error {
 
 	endedAt := time.Now().UTC().Format(time.RFC3339)
 	if err := s.db.SaveGameSession(game.GameSessionState{
-		ID:           gs.SessionID,
-		Code:         string(gs.Code),
-		GameID:       gs.ID,
-		PlayerCount:  gs.PlayerCount(),
-		MaxGames:     maxGames,
-		PassPolicy:   string(gs.PassPolicy),
-		TimerEnabled: gs.TimerEnabled,
-		EndedAt:      &endedAt,
+		ID:               gs.SessionID,
+		Code:             string(gs.Code),
+		GameID:           gs.ID,
+		PlayerCount:      gs.PlayerCount(),
+		MaxGames:         maxGames,
+		PassPolicy:       string(gs.PassPolicy),
+		TimerEnabled:     gs.TimerEnabled,
+		CompletionPolicy: string(gs.CompletionPolicy),
+		EndedAt:          &endedAt,
 	}); err != nil {
 		logger.Warning("Failed to mark session ended: %e", err)
 	}
@@ -213,7 +215,23 @@ func aggregateSessionResults(gs *game.GameState, gameResults []game.PlayerResult
 			IsForfeit:    isForfeit,
 		})
 	}
+	assignSessionPositions(sessionResults)
 	return sessionResults
+}
+
+func assignSessionPositions(results []game.PlayerSessionResultState) {
+	sort.SliceStable(results, func(i, j int) bool {
+		if results[i].IsForfeit != results[j].IsForfeit {
+			return !results[i].IsForfeit
+		}
+		if results[i].PlayerPoints != results[j].PlayerPoints {
+			return results[i].PlayerPoints > results[j].PlayerPoints
+		}
+		return results[i].RatingChange > results[j].RatingChange
+	})
+	for i := range results {
+		results[i].Position = i + 1
+	}
 }
 
 func completedHandsForRating(gs *game.GameState, currentGameCompleted bool) int {

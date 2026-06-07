@@ -99,6 +99,7 @@ type GameState struct {
 	// Inactivity timeout tracking
 	CurrentPlayerDeadline string        `json:"current_player_deadline"` // RFC3339 timestamp when current player times out
 	ForfeitedPlayer       *GamePosition `json:"forfeited_player"`        // Position of player who forfeited (nil if no forfeit)
+	CacheRevision         int64         `json:"-"`                       // Monotonic cache revision used to order async DB syncs
 }
 
 type GameResult struct {
@@ -417,15 +418,23 @@ func (gs *GameState) Clone() *GameState {
 		Overbid:               gs.Overbid,
 		CurrentPlayerDeadline: gs.CurrentPlayerDeadline,
 		ForfeitedPlayer:       forfeitedPlayer,
+		CacheRevision:         gs.CacheRevision,
 	}
 
 	// Deep copy players
 	for i := 0; i < 3; i++ {
+		if gs.Players[i] == nil {
+			continue
+		}
 		clone.Players[i] = &PlayerState{
-			Hand:    append([]Card{}, gs.Players[i].Hand...),
-			ID:      gs.Players[i].ID,
-			Name:    gs.Players[i].Name,
-			IsAgent: gs.Players[i].IsAgent,
+			ID:           gs.Players[i].ID,
+			Name:         gs.Players[i].Name,
+			Hand:         append([]Card{}, gs.Players[i].Hand...),
+			CardCount:    gs.Players[i].CardCount,
+			IsAgent:      gs.Players[i].IsAgent,
+			ProfileIcon:  gs.Players[i].ProfileIcon,
+			IsOnline:     gs.Players[i].IsOnline,
+			ReadyForNext: gs.Players[i].ReadyForNext,
 		}
 	}
 

@@ -625,7 +625,10 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 			logger.Info("All players left game %s, deleted", gs.Code)
 		} else {
 			// Save the updated game
-			go s.cache.SaveGame(*gs)
+			if err := s.cache.SaveGame(*gs); err != nil {
+				http.Error(w, "failed to save game", http.StatusInternalServerError)
+				return
+			}
 
 			// Broadcast to other players that someone left
 			s.clients.BroadcastToPlayers(gs, &Message{
@@ -730,7 +733,10 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go s.cache.SaveGame(*gs)
+	if err := s.cache.SaveGame(*gs); err != nil {
+		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
+		return
+	}
 	s.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(agentProfile.ID))
 	go s.BroadcastAIActions(gs)
 
@@ -1238,10 +1244,12 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if err := s.cache.SaveGame(*gs); err != nil {
+		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
+		return
+	}
 	// Broadcast the updated state to all players BEFORE checking if all are ready
 	s.BroadcastStateChange(gs, fmt.Sprintf("%s is ready for the next game", player.Name), gs.CurrentPlayer)
-
-	go s.cache.SaveGame(*gs)
 
 	// If all human players are ready, automatically start the next game
 	if allReady {
@@ -1252,7 +1260,10 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		}
 
 		newGameID := gs.ID
-		go s.cache.SaveGame(*gs)
+		if err := s.cache.SaveGame(*gs); err != nil {
+			http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
+			return
+		}
 
 		// Send start_next_game message to trigger navigation
 		s.clients.BroadcastToPlayers(gs, &Message{

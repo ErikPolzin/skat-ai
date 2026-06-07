@@ -42,6 +42,11 @@ func (r *RedisBackend) Set(ctx context.Context, key string, value []byte, ttl ti
 	return r.client.Set(ctx, "skat:cache:"+key, value, ttl).Err()
 }
 
+func (r *RedisBackend) NextRevision(ctx context.Context, gameID string, ttl time.Duration) (int64, error) {
+	key := "skat:cache-revision:game:" + gameID
+	return r.client.Incr(ctx, key).Result()
+}
+
 func (r *RedisBackend) EnqueueGameSave(ctx context.Context, gs game.GameState) error {
 	data, err := encodeGameState(gs)
 	if err != nil {

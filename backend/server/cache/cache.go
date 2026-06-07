@@ -31,6 +31,10 @@ type Store interface {
 	Close() error
 }
 
+type RevisionStore interface {
+	NextRevision(ctx context.Context, gameID string, ttl time.Duration) (int64, error)
+}
+
 type ClientPresenceStore interface {
 	MarkOnline(ctx context.Context, profileID, nodeID string, ttl time.Duration) error
 	MarkOffline(ctx context.Context, profileID, nodeID string) error
@@ -118,16 +122,31 @@ func (c *DistributedCache) GetGameBySessionCode(sessionCode string) (*game.GameS
 }
 
 func (c *DistributedCache) SaveGame(gs game.GameState) error {
-	if err := c.writeGameToCache(gs); err != nil {
-		return c.db.SaveGame(gs)
+	snapshot := *gs.Clone()
+	revision, err := c.nextRevision(snapshot.ID)
+	if err != nil {
+		return c.db.SaveGame(snapshot)
+	}
+	snapshot.CacheRevision = revision
+
+	if err := c.writeGameToCache(snapshot); err != nil {
+		return c.db.SaveGame(snapshot)
 	}
 	if c.queue == nil {
-		return c.db.SaveGame(gs)
+		return c.db.SaveGame(snapshot)
 	}
-	if err := c.queue.EnqueueGameSave(context.Background(), gs); err != nil {
-		return c.db.SaveGame(gs)
+	if err := c.queue.EnqueueGameSave(context.Background(), snapshot); err != nil {
+		return c.db.SaveGame(snapshot)
 	}
 	return nil
+}
+
+func (c *DistributedCache) nextRevision(gameID string) (int64, error) {
+	revisionStore, ok := c.store.(RevisionStore)
+	if !ok {
+		return time.Now().UnixNano(), nil
+	}
+	return revisionStore.NextRevision(context.Background(), gameID, c.ttl)
 }
 
 func (c *DistributedCache) writeGameToCache(gs game.GameState) error {
@@ -164,7 +183,7 @@ func (c *DistributedCache) getString(key string) (string, error) {
 	return string(data), nil
 }
 
-func StartSyncWorker(ctx context.Context, database db.Database, queue SyncQueue) {
+func StartSyncWorker(ctx context.Context, database db.Database, queue SyncQueue, store ...Store) {
 	if queue == nil {
 		return
 	}
@@ -189,6 +208,13 @@ func StartSyncWorker(ctx context.Context, database db.Database, queue SyncQueue)
 				continue
 			}
 
+			if len(store) > 0 && store[0] != nil {
+				latest, err := latestCachedGame(ctx, store[0], gs.ID)
+				if err == nil && latest.CacheRevision > 0 && latest.CacheRevision > gs.CacheRevision {
+					continue
+				}
+			}
+
 			if err := database.SaveGame(*gs); err != nil {
 				_ = queue.EnqueueGameSave(context.Background(), *gs)
 				time.Sleep(backoff)
@@ -197,6 +223,14 @@ func StartSyncWorker(ctx context.Context, database db.Database, queue SyncQueue)
 			backoff = 500 * time.Millisecond
 		}
 	}()
+}
+
+func latestCachedGame(ctx context.Context, store Store, gameID string) (*game.GameState, error) {
+	data, err := store.Get(ctx, "game:"+gameID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeGameState(data)
 }
 
 func encodeGameState(gs game.GameState) ([]byte, error) {

@@ -11,6 +11,7 @@ import (
 type MemoryBackend struct {
 	mu          sync.RWMutex
 	items       map[string]memoryItem
+	revisions   map[string]int64
 	presence    map[string]memoryPresence
 	queue       chan game.GameState
 	subscribers map[int]chan []byte
@@ -34,6 +35,7 @@ func NewMemoryBackend(queueSize int) *MemoryBackend {
 	}
 	return &MemoryBackend{
 		items:       make(map[string]memoryItem),
+		revisions:   make(map[string]int64),
 		presence:    make(map[string]memoryPresence),
 		queue:       make(chan game.GameState, queueSize),
 		subscribers: make(map[int]chan []byte),
@@ -67,6 +69,13 @@ func (m *MemoryBackend) Set(ctx context.Context, key string, value []byte, ttl t
 	m.items[key] = item
 	m.mu.Unlock()
 	return nil
+}
+
+func (m *MemoryBackend) NextRevision(ctx context.Context, gameID string, ttl time.Duration) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.revisions[gameID]++
+	return m.revisions[gameID], nil
 }
 
 func (m *MemoryBackend) EnqueueGameSave(ctx context.Context, gs game.GameState) error {

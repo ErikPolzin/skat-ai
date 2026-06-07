@@ -113,7 +113,7 @@ func newConfiguredServer(database db.Database) *server.Server {
 		)
 		clients.StartMessageBus(context.Background())
 		clients.StartPresenceHeartbeat(context.Background())
-		cachepkg.StartSyncWorker(context.Background(), database, redisBackend)
+		cachepkg.StartSyncWorker(context.Background(), database, redisBackend, redisBackend)
 		logger.Info("Using Redis cache, client manager, and cache-sync queue at %s", addr)
 		return srv
 	default:

@@ -56,7 +56,7 @@ func NewServer(database db.Database, opts ...ServerOption) *Server {
 	if server.cache == nil {
 		memoryBackend = cachepkg.NewMemoryBackend(1024)
 		server.cache = cachepkg.NewDistributedCache(database, memoryBackend, memoryBackend, 30*time.Minute)
-		cachepkg.StartSyncWorker(context.Background(), database, memoryBackend)
+		cachepkg.StartSyncWorker(context.Background(), database, memoryBackend, memoryBackend)
 	}
 	if server.clients == nil {
 		if memoryBackend != nil {

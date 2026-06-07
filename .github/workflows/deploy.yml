@@ -55,44 +55,28 @@ jobs:
 
       - name: Setup Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
-      - name: Configure Docker for GCR
-        run: |
-          gcloud auth configure-docker --quiet
-          gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://gcr.io
-
-      - name: Build and Push Container
-        run: |
-          docker build -f ./backend/Dockerfile -t gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA ./backend
-          docker build -f ./backend/Dockerfile -t gcr.io/$PROJECT_ID/$SERVICE_NAME:latest ./backend
-          docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA
-          docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:latest
-
-      - name: Deploy to Cloud Run
-        id: deploy
+      - name: Build and deploy backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_ADDR: ${{ secrets.REDIS_ADDR }}
         run: |
-          echo "DATABASE_URL length: ${#DATABASE_URL}"
-          echo "DATABASE_URL preview: ${DATABASE_URL:0:50}..."
-          gcloud run deploy $SERVICE_NAME \
-            --image gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA \
-            --region $REGION \
-            --platform managed \
-            --allow-unauthenticated \
-            --memory 512Mi \
-            --cpu 1 \
-            --max-instances 10 \
-            --min-instances 0 \
-            --set-env-vars "DATABASE_URL=${DATABASE_URL},CORS_ORIGIN=https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app,LOG_LEVEL=INFO,GCS_BUCKET=skat-ai-qtables,CLOUD_LOGGING_ENABLED=true,ASSUME_NO_MOVING_GC_UNSAFE_RISK_IT_WITH=go1.25"
+          gcloud builds submit ./backend \
+            --project=$PROJECT_ID \
+            --config=backend/cloudbuild.yaml \
+            --substitutions="^|^_SERVICE_NAME=$SERVICE_NAME|_REGION=$REGION|_IMAGE_TAG=$GITHUB_SHA|_DATABASE_URL=$DATABASE_URL|_CORS_ORIGIN=https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app|_GCS_BUCKET=skat-ai-qtables|_REDIS_ADDR=$REDIS_ADDR"
 
-          # Get the service URL
-          echo "url=$(gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)')" >> $GITHUB_OUTPUT
+      - name: Get Backend URL
+        id: deploy
+        run: |
+          echo "url=$(gcloud run services describe $SERVICE_NAME --project $PROJECT_ID --region $REGION --format 'value(status.url)')" >> $GITHUB_OUTPUT
 
       - name: Output Backend URL
         run: echo "Backend deployed to ${{ steps.deploy.outputs.url }}"
@@ -110,6 +94,8 @@ jobs:
 
       - name: Setup Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -119,7 +105,7 @@ jobs:
       - name: Get Backend URL
         id: backend-url
         run: |
-          BACKEND_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)')
+          BACKEND_URL=$(gcloud run services describe $SERVICE_NAME --project $PROJECT_ID --region $REGION --format 'value(status.url)')
           echo "url=$BACKEND_URL" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js

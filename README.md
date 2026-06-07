@@ -195,6 +195,11 @@ gcloud builds submit \
   --substitutions=_DATABASE_URL="${DATABASE_URL}",_CORS_ORIGIN="https://your-frontend.example",_GCS_BUCKET="${GCS_BUCKET}"
 ```
 
+Cloud Run treats WebSocket connections as long-running HTTP requests. The
+Cloud Build deployment sets `_REQUEST_TIMEOUT=3600s`, Cloud Run's maximum, so a
+WebSocket can stay open for up to 60 minutes before the client needs to
+reconnect.
+
 The frontend is a Vite app and can be built with:
 
 ```bash

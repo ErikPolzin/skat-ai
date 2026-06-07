@@ -28,6 +28,7 @@ steps:
       - '--cpu=1'
       - '--max-instances=10'
       - '--min-instances=0'
+      - '--timeout=${_REQUEST_TIMEOUT}'
       - '--set-env-vars=^|^DATABASE_URL=${_DATABASE_URL}|CORS_ORIGIN=${_CORS_ORIGIN}|LOG_LEVEL=INFO|GCS_BUCKET=${_GCS_BUCKET}|CLOUD_LOGGING_ENABLED=true|ASSUME_NO_MOVING_GC_UNSAFE_RISK_IT_WITH=go1.25|CACHE_BACKEND=redis|REDIS_ADDR=${_REDIS_ADDR}|CACHE_TTL=30m'
 
 images:
@@ -42,3 +43,4 @@ substitutions:
   _GCS_BUCKET: 'skat-ai-qtables'
   _DATABASE_URL: ''
   _REDIS_ADDR: ''
+  _REQUEST_TIMEOUT: '3600s'

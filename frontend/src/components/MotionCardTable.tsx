@@ -15,7 +15,6 @@ import {
   useTheme,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
-import SignalWifiOffIcon from "@mui/icons-material/SignalWifiOff";
 import WarningIcon from "@mui/icons-material/Warning";
 import { type Card as CardType, reportTimeout } from "../api/games";
 import "./MotionCardTable.css";
@@ -512,48 +511,6 @@ export function MotionCardTable() {
   const centerOverrideUI = useMemo(() => {
     return game.gameOver ? (
       <GameOverScreen />
-    ) : !game.controls.isConnected ? (
-      <div
-        style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          zIndex: 2000,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "16px",
-        }}
-      >
-        <SignalWifiOffIcon
-          sx={{
-            fontSize: 60,
-            color: "warning.main",
-            filter: "drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))",
-          }}
-        />
-        <span
-          style={{
-            fontSize: "20px",
-            fontWeight: "bold",
-            color: "#ed6c02",
-            textShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
-          }}
-        >
-          Disconnected from server
-        </span>
-        <span
-          style={{
-            fontSize: "14px",
-            color: "#d4d4d4",
-          }}
-        >
-          {game.controls.reconnectCountdown !== null
-            ? `Reconnecting in ${Math.ceil(game.controls.reconnectCountdown)}s...`
-            : "Attempting to reconnect..."}
-        </span>
-      </div>
     ) : game.isLoading ? (
       <Box sx={{ textAlign: "center" }}>
         <ThemedLoader size={60} />
@@ -1119,6 +1076,17 @@ export function MotionCardTable() {
             </>
           )}
         </AnimatePresence>
+
+        {!game.controls.isConnected && !game.gameOver && (
+          <div className="connection-status" role="status" aria-live="polite">
+            <span>Connection lost.</span>
+            <span>
+              {game.controls.reconnectCountdown !== null
+                ? `Reconnecting in ${Math.ceil(game.controls.reconnectCountdown)}s`
+                : "Reconnecting..."}
+            </span>
+          </div>
+        )}
 
         {showScorePiles && (
           <>

@@ -106,6 +106,32 @@
   pointer-events: none;
 }
 
+.connection-status {
+  position: absolute;
+  top: calc(50% + var(--card-height) / 2 + 14px);
+  left: 50%;
+  z-index: 450;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(360px, calc(100% - 32px));
+  padding: 5px 10px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.connection-status span:first-child {
+  color: rgba(255, 213, 79, 0.9);
+}
+
 /* Card hover lift effect */
 @keyframes cardLift {
   0% {
@@ -693,6 +719,12 @@
     font-size: 12px;
     max-width: 150px;
     padding: 6px 10px;
+  }
+
+  .connection-status {
+    top: calc(50% + var(--card-height) / 2 + 10px);
+    font-size: 12px;
+    max-width: calc(100% - 24px);
   }
 
   /* Skat exchange controls on mobile */

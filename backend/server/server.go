@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"skat/agent"
 	"skat/game"
 	"skat/logger"
+	cachepkg "skat/server/cache"
 	"skat/server/db"
 
 	"github.com/gorilla/websocket"
@@ -26,17 +28,51 @@ var upgrader = websocket.Upgrader{
 // Server manages all game sessions and client connections
 type Server struct {
 	db      db.Database
-	cache   *Cache
+	cache   cachepkg.GameCache
 	clients *ClientManager // Centralized client management
 }
 
-func NewServer(database db.Database) *Server {
-	server := &Server{
-		db:      database,
-		cache:   NewCache(database),
-		clients: NewClientManager(database),
+type ServerOption func(*Server)
+
+func WithGameCache(gameCache cachepkg.GameCache) ServerOption {
+	return func(s *Server) {
+		s.cache = gameCache
+	}
+}
+
+func WithClientManager(clients *ClientManager) ServerOption {
+	return func(s *Server) {
+		s.clients = clients
+	}
+}
+
+func NewServer(database db.Database, opts ...ServerOption) *Server {
+	server := &Server{db: database}
+	for _, opt := range opts {
+		opt(server)
 	}
 
+	var memoryBackend *cachepkg.MemoryBackend
+	if server.cache == nil {
+		memoryBackend = cachepkg.NewMemoryBackend(1024)
+		server.cache = cachepkg.NewDistributedCache(database, memoryBackend, memoryBackend, 30*time.Minute)
+		cachepkg.StartSyncWorker(context.Background(), database, memoryBackend)
+	}
+	if server.clients == nil {
+		if memoryBackend != nil {
+			server.clients = NewClientManager(WithClientBackend(memoryBackend))
+			server.clients.StartMessageBus(context.Background())
+			server.clients.StartPresenceHeartbeat(context.Background())
+		} else {
+			server.clients = NewClientManager()
+		}
+	}
+	configureAgentLoader(database)
+
+	return server
+}
+
+func configureAgentLoader(database db.Database) {
 	// Set up agent config loader with error recovery
 	agent.SetAgentConfigLoader(func(profileID string) (result *agent.AgentConfigData, err error) {
 		// Recover from panics in config loading
@@ -72,8 +108,6 @@ func NewServer(database db.Database) *Server {
 			CardplayWeightsPath: cardplayWeightsPath,
 		}, nil
 	})
-
-	return server
 }
 
 // IsCloudRun returns true if running on Google Cloud Run
@@ -297,7 +331,7 @@ func (s *Server) timeoutGame(gs *game.GameState, clientReported bool) error {
 	}
 
 	timeoutMsg := fmt.Sprintf("%s was inactive for 2 minutes and has forfeited the game", currentPlayer.Name)
-	s.clients.BroadcastStateChange(gs, timeoutMsg, gs.CurrentPlayer)
+	s.BroadcastStateChange(gs, timeoutMsg, gs.CurrentPlayer)
 	logger.Info("Game %s forfeited due to timeout from %s (%s)", gs.Code, currentPlayer.ID, source)
 	return nil
 }

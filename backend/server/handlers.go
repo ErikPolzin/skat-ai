@@ -509,7 +509,7 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go s.cache.SaveGame(*gs)
-	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(playerID))
+	s.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(playerID))
 	go s.BroadcastAIActions(gs)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -600,7 +600,7 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 				"game_id":     gs.ID,
 			},
 		})
-		s.clients.BroadcastStateChange(gs, fmt.Sprintf("%s left before all games were played", playerName), gs.CurrentPlayer)
+		s.BroadcastStateChange(gs, fmt.Sprintf("%s left before all games were played", playerName), gs.CurrentPlayer)
 
 		logger.Info("Player %s forfeited strict tournament %s", playerID, gs.Code)
 	} else {
@@ -726,7 +726,7 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go s.cache.SaveGame(*gs)
-	s.clients.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(agentProfile.ID))
+	s.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(agentProfile.ID))
 	go s.BroadcastAIActions(gs)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1079,7 +1079,7 @@ func (s *Server) handleGameAction(w http.ResponseWriter, r *http.Request, valida
 	}
 
 	go s.cache.SaveGame(*gs)
-	s.clients.BroadcastStateChange(gs, response, currentPosition)
+	s.BroadcastStateChange(gs, response, currentPosition)
 	go s.BroadcastAIActions(gs)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1231,7 +1231,7 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Broadcast the updated state to all players BEFORE checking if all are ready
-	s.clients.BroadcastStateChange(gs, fmt.Sprintf("%s is ready for the next game", player.Name), gs.CurrentPlayer)
+	s.BroadcastStateChange(gs, fmt.Sprintf("%s is ready for the next game", player.Name), gs.CurrentPlayer)
 
 	go s.cache.SaveGame(*gs)
 
@@ -1256,7 +1256,7 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		})
 
 		// Also broadcast the state change
-		s.clients.BroadcastStateChange(gs, response, gs.CurrentPlayer)
+		s.BroadcastStateChange(gs, response, gs.CurrentPlayer)
 		go s.BroadcastAIActions(gs)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1318,7 +1318,7 @@ func (s *Server) handleEndTournament(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.clients.BroadcastStateChange(gs, "Tournament ended", gs.CurrentPlayer)
+	s.BroadcastStateChange(gs, "Tournament ended", gs.CurrentPlayer)
 
 	results, err := s.db.GetFormattedSessionResults(gs.SessionID)
 	if err != nil {

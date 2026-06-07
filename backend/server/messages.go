@@ -38,20 +38,20 @@ func (cm *ClientManager) BroadcastToPlayers(gs *game.GameState, msg *Message) {
 	cm.BroadcastToClients(profileIDs, msg)
 }
 
-func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fromPlayer game.GamePosition) {
+func (s *Server) BroadcastStateChange(gs *game.GameState, msg string, fromPlayer game.GamePosition) {
 	// Fetch formatted session results if game just completed
 	var sessionResults []game.SessionGameResult
 	var sessionPlayerResults []game.PlayerSessionResultState
 	var gamesPlayed int
 	if gs.Phase == game.PhaseComplete && gs.SessionID != "" {
-		results, err := cm.db.GetFormattedSessionResults(gs.SessionID)
+		results, err := s.db.GetFormattedSessionResults(gs.SessionID)
 		if err != nil {
 			logger.Warning("Failed to fetch session results for broadcast: %e", err)
 		} else {
 			sessionResults = results
 			gamesPlayed = len(results)
 		}
-		playerResults, err := cm.db.GetSessionPlayerResults(gs.SessionID)
+		playerResults, err := s.db.GetSessionPlayerResults(gs.SessionID)
 		if err != nil {
 			logger.Warning("Failed to fetch session player results for broadcast: %e", err)
 		} else {
@@ -80,7 +80,7 @@ func (cm *ClientManager) BroadcastStateChange(gs *game.GameState, msg string, fr
 				Type: "state_update",
 				Data: msgData,
 			}
-			cm.SendToClient(player.ID, stateMsg)
+			s.clients.SendToClient(player.ID, stateMsg)
 		}
 	}
 }
@@ -302,6 +302,6 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 		if err := s.maybeSaveGameResults(gs); err != nil {
 			logger.Warning("Failed to save game results after AI action: %e", err)
 		}
-		s.clients.BroadcastStateChange(gs, response, currentPlayer)
+		s.BroadcastStateChange(gs, response, currentPlayer)
 	}
 }

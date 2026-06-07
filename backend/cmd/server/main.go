@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 	"skat/logger"
 	"skat/server"
+	cachepkg "skat/server/cache"
 	"skat/server/db"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -36,7 +40,7 @@ func main() {
 		port = "8080"
 	}
 
-	// Initialize database (optional - will run without it)
+	// Initialize database
 	var database db.Database
 	dbURL := os.Getenv("DATABASE_URL")
 
@@ -68,17 +72,10 @@ func main() {
 	}
 
 	if database == nil {
-		logger.Info("No database configured - using in-memory database")
-		database = db.NewMemoryDatabase()
+		logger.Fatal("DATABASE_URL must be configured")
 	}
 
-	// Ensure we always have a database (fallback to memory)
-	if database == nil {
-		logger.Info("Falling back to in-memory database")
-		database = db.NewMemoryDatabase()
-	}
-
-	srv := server.NewServer(database)
+	srv := newConfiguredServer(database)
 	router := srv.SetupRoutes()
 
 	// Start cleanup task: check every 5 minutes for games inactive for 15+ minutes
@@ -89,4 +86,50 @@ func main() {
 	if err := http.ListenAndServe(":"+port, router); err != nil {
 		logger.Fatal("Server failed: %e", err)
 	}
+}
+
+func newConfiguredServer(database db.Database) *server.Server {
+	backend := strings.ToLower(os.Getenv("CACHE_BACKEND"))
+	cacheTTL := envDuration("CACHE_TTL", 30*time.Minute)
+
+	switch backend {
+	case "redis":
+		addr := os.Getenv("REDIS_ADDR")
+		if addr == "" {
+			addr = "localhost:6379"
+		}
+		redisDB, _ := strconv.Atoi(os.Getenv("REDIS_DB"))
+		redisBackend := cachepkg.NewRedisBackend(addr, os.Getenv("REDIS_PASSWORD"), redisDB)
+		if err := redisBackend.Ping(context.Background()); err != nil {
+			logger.Warning("Failed to connect to Redis cache backend: %e", err)
+			return server.NewServer(database)
+		}
+		cache := cachepkg.NewDistributedCache(database, redisBackend, redisBackend, cacheTTL)
+		clients := server.NewClientManager(server.WithClientBackend(redisBackend))
+		srv := server.NewServer(
+			database,
+			server.WithGameCache(cache),
+			server.WithClientManager(clients),
+		)
+		clients.StartMessageBus(context.Background())
+		clients.StartPresenceHeartbeat(context.Background())
+		cachepkg.StartSyncWorker(context.Background(), database, redisBackend)
+		logger.Info("Using Redis cache, client manager, and cache-sync queue at %s", addr)
+		return srv
+	default:
+		return server.NewServer(database)
+	}
+}
+
+func envDuration(name string, fallback time.Duration) time.Duration {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback
+	}
+	duration, err := time.ParseDuration(raw)
+	if err != nil {
+		logger.Warning("Invalid %s=%s, using %s", name, raw, fallback)
+		return fallback
+	}
+	return duration
 }

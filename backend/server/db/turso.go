@@ -174,6 +174,9 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	var gs game.GameState
 	var skatString, trickString, cardsPlayedString string
 	var deadline sql.NullString
+	var declarer sql.NullInt64
+	var trickWinner sql.NullInt64
+	var forfeitedPlayer sql.NullInt64
 	err := d.DB.QueryRow(
 		`SELECT g.id, g.session_id, gss.code, g.game_number, gss.max_games, gss.pass_policy, gss.timer_enabled, gss.completion_policy, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
@@ -187,11 +190,11 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		gameID,
 	).Scan(
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.TimerEnabled, &gs.CompletionPolicy, &gs.Phase, &skatString, &trickString,
-		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
+		&gs.TrickStarter, &trickWinner, &gs.CurrentPlayer, &declarer,
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
-		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
+		&deadline, &forfeitedPlayer, &cardsPlayedString)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game with ID %s not found", gameID)
 	}
@@ -219,6 +222,7 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	} else {
 		gs.CurrentPlayerDeadline = ""
 	}
+	applyNullablePositions(&gs, declarer, trickWinner, forfeitedPlayer)
 
 	// Load players
 	gs.Players, err = d.ListPlayers(gs.ID)
@@ -233,6 +237,9 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 	var gs game.GameState
 	var skatString, trickString, cardsPlayedString string
 	var deadline sql.NullString
+	var declarer sql.NullInt64
+	var trickWinner sql.NullInt64
+	var forfeitedPlayer sql.NullInt64
 	err := d.DB.QueryRow(
 		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, gs.timer_enabled, gs.completion_policy, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
@@ -248,11 +255,11 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 		sessionCode,
 	).Scan(
 		&gs.ID, &gs.SessionID, &gs.Code, &gs.GameNumber, &gs.MaxGames, &gs.PassPolicy, &gs.TimerEnabled, &gs.CompletionPolicy, &gs.Phase, &skatString, &trickString,
-		&gs.TrickStarter, &gs.TrickWinner, &gs.CurrentPlayer, &gs.Declarer,
+		&gs.TrickStarter, &trickWinner, &gs.CurrentPlayer, &declarer,
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
-		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
+		&deadline, &forfeitedPlayer, &cardsPlayedString)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game with session code %s not found", sessionCode)
 	}
@@ -280,6 +287,7 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 	} else {
 		gs.CurrentPlayerDeadline = ""
 	}
+	applyNullablePositions(&gs, declarer, trickWinner, forfeitedPlayer)
 
 	// Load players
 	gs.Players, err = d.ListPlayers(gs.ID)
@@ -303,6 +311,9 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 	} else {
 		deadline = gs.CurrentPlayerDeadline
 	}
+	declarer := nullablePosition(gs.Declarer)
+	trickWinner := nullablePosition(gs.TrickWinner)
+	forfeitedPlayer := nullablePosition(gs.ForfeitedPlayer)
 
 	// SQLite/Turso syntax
 	_, err := d.DB.Exec(
@@ -336,12 +347,12 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			forfeited_player = excluded.forfeited_player, cards_played = excluded.cards_played,
 			updated_at = CURRENT_TIMESTAMP`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
-		gs.TrickStarter, gs.TrickWinner, gs.CurrentPlayer,
-		gs.Declarer, gs.PlayerScores[0], gs.PlayerScores[1], gs.PlayerScores[2],
+		gs.TrickStarter, trickWinner, gs.CurrentPlayer,
+		declarer, gs.PlayerScores[0], gs.PlayerScores[1], gs.PlayerScores[2],
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
 		gs.PlayedHand, gs.AnnouncedSchneider, gs.AnnouncedSchwarz,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,
-		deadline, gs.ForfeitedPlayer, cardsPlayedString,
+		deadline, forfeitedPlayer, cardsPlayedString,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save game: %w", err)

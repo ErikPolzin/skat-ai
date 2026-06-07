@@ -291,14 +291,21 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 
 		response, err := action()
 		if err != nil {
-			logger.Error("Agent encountered an error: %e", err)
+			logger.Error("Agent encountered an error: %v", err)
 			s.clients.BroadcastToPlayers(gs, &Message{
 				Type: "error",
 				Data: map[string]any{"message": err.Error()},
 			})
 			return
 		}
-		s.cache.SaveGame(*gs)
+		if err := s.cache.SaveGame(*gs); err != nil {
+			logger.Error("Failed to save game after AI action: %v", err)
+			s.clients.BroadcastToPlayers(gs, &Message{
+				Type: "error",
+				Data: map[string]any{"message": "failed to save game"},
+			})
+			return
+		}
 		if err := s.maybeSaveGameResults(gs); err != nil {
 			logger.Warning("Failed to save game results after AI action: %e", err)
 		}

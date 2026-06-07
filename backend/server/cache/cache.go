@@ -68,7 +68,9 @@ func NewDistributedCache(database db.Database, store Store, queue SyncQueue, ttl
 
 func (c *DistributedCache) GetGameByID(gameID string) (*game.GameState, error) {
 	if gs, err := c.getGame("game:" + gameID); err == nil {
-		return gs, nil
+		if !hasInvalidMissingDeclarer(gs) {
+			return gs, nil
+		}
 	}
 
 	gs, err := c.db.GetGameByID(gameID)
@@ -77,6 +79,15 @@ func (c *DistributedCache) GetGameByID(gameID string) (*game.GameState, error) {
 	}
 	_ = c.writeGameToCache(*gs)
 	return gs, nil
+}
+
+func hasInvalidMissingDeclarer(gs *game.GameState) bool {
+	if gs == nil || gs.Mode == game.ModeRamsch || gs.Declarer != nil {
+		return false
+	}
+	return gs.Phase == game.PhaseSkatExchange ||
+		gs.Phase == game.PhaseDeclarerChoice ||
+		gs.Phase == game.PhasePlaying
 }
 
 func (c *DistributedCache) GetGameBySessionID(sessionID string) (*game.GameState, error) {

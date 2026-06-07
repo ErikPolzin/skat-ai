@@ -334,8 +334,10 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save to database
-	go s.cache.SaveGame(*gs)
+	if err := s.cache.SaveGame(*gs); err != nil {
+		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -508,7 +510,10 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go s.cache.SaveGame(*gs)
+	if err := s.cache.SaveGame(*gs); err != nil {
+		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
+		return
+	}
 	s.BroadcastStateChange(gs, response, gs.GetPositionForPlayer(playerID))
 	go s.BroadcastAIActions(gs)
 
@@ -1078,7 +1083,10 @@ func (s *Server) handleGameAction(w http.ResponseWriter, r *http.Request, valida
 		return
 	}
 
-	go s.cache.SaveGame(*gs)
+	if err := s.cache.SaveGame(*gs); err != nil {
+		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
+		return
+	}
 	s.BroadcastStateChange(gs, response, currentPosition)
 	go s.BroadcastAIActions(gs)
 

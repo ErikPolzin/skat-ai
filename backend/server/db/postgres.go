@@ -144,6 +144,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 	var deadline sql.NullString
 	var declarer sql.NullInt64
 	var trickWinner sql.NullInt64
+	var forfeitedPlayer sql.NullInt64
 	var gs game.GameState
 	err := d.DB.QueryRow(
 		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, gs.timer_enabled, gs.completion_policy, g.phase, g.skat, g.trick,
@@ -162,7 +163,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
-		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
+		&deadline, &forfeitedPlayer, &cardsPlayedString)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game with ID %s not found", gameID)
 	}
@@ -190,19 +191,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		gs.CurrentPlayerDeadline = ""
 	}
 
-	if declarer.Valid {
-		d := game.GamePosition(declarer.Int64)
-		gs.Declarer = &d
-	} else {
-		gs.Declarer = nil
-	}
-
-	if trickWinner.Valid {
-		d := game.GamePosition(trickWinner.Int64)
-		gs.TrickWinner = &d
-	} else {
-		gs.TrickWinner = nil
-	}
+	applyNullablePositions(&gs, declarer, trickWinner, forfeitedPlayer)
 
 	// Load players
 	gs.Players, err = d.ListPlayers(gs.ID)
@@ -219,6 +208,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 	var deadline sql.NullString
 	var declarer sql.NullInt64
 	var trickWinner sql.NullInt64
+	var forfeitedPlayer sql.NullInt64
 	err := d.DB.QueryRow(
 		`SELECT g.id, g.session_id, gs.code, g.game_number, gs.max_games, gs.pass_policy, gs.timer_enabled, gs.completion_policy, g.phase, g.skat, g.trick,
 			g.trick_starter, g.trick_winner, g.current_player, g.declarer,
@@ -238,7 +228,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
-		&deadline, &gs.ForfeitedPlayer, &cardsPlayedString)
+		&deadline, &forfeitedPlayer, &cardsPlayedString)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game with session code %s not found", sessionCode)
 	}
@@ -267,19 +257,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		gs.CurrentPlayerDeadline = ""
 	}
 
-	if declarer.Valid {
-		d := game.GamePosition(declarer.Int64)
-		gs.Declarer = &d
-	} else {
-		gs.Declarer = nil
-	}
-
-	if trickWinner.Valid {
-		d := game.GamePosition(trickWinner.Int64)
-		gs.TrickWinner = &d
-	} else {
-		gs.TrickWinner = nil
-	}
+	applyNullablePositions(&gs, declarer, trickWinner, forfeitedPlayer)
 
 	// Load players
 	gs.Players, err = d.ListPlayers(gs.ID)
@@ -304,17 +282,10 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 		deadline = gs.CurrentPlayerDeadline
 	}
 	var declarer any
-	if gs.Declarer != nil {
-		declarer = int(*gs.Declarer)
-	} else {
-		declarer = nil
-	}
+	declarer = nullablePosition(gs.Declarer)
 	var trickWinner any
-	if gs.TrickWinner != nil {
-		trickWinner = int(*gs.TrickWinner)
-	} else {
-		trickWinner = nil
-	}
+	trickWinner = nullablePosition(gs.TrickWinner)
+	forfeitedPlayer := nullablePosition(gs.ForfeitedPlayer)
 
 	_, err := d.DB.Exec(
 		`INSERT INTO games (
@@ -343,7 +314,7 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
 		gs.PlayedHand, gs.AnnouncedSchneider, gs.AnnouncedSchwarz,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,
-		deadline, gs.ForfeitedPlayer, cardsPlayedString,
+		deadline, forfeitedPlayer, cardsPlayedString,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save game: %w", err)

@@ -102,6 +102,41 @@ type GameState struct {
 	CacheRevision         int64         `json:"-"`                       // Monotonic cache revision used to order async DB syncs
 }
 
+func (gs *GameState) String() string {
+	if gs == nil {
+		return "<nil>"
+	}
+	declarer := positionString(gs.Declarer)
+	trickWinner := positionString(gs.TrickWinner)
+	forfeitedPlayer := positionString(gs.ForfeitedPlayer)
+	return fmt.Sprintf(
+		"id=%s session=%s game_number=%d phase=%s mode=%s current=%d declarer=%s bid=%d passed=%t/%t/%t trick_len=%d trick_winner=%s cards_played=%d revision=%d forfeited=%s",
+		gs.ID,
+		gs.SessionID,
+		gs.GameNumber,
+		gs.Phase,
+		gs.Mode,
+		gs.CurrentPlayer,
+		declarer,
+		gs.BidValue,
+		gs.ListenerPassed,
+		gs.SpeakerPassed,
+		gs.DealerPassed,
+		len(gs.Trick),
+		trickWinner,
+		len(gs.CardsPlayed),
+		gs.CacheRevision,
+		forfeitedPlayer,
+	)
+}
+
+func positionString(position *GamePosition) string {
+	if position == nil {
+		return "nil"
+	}
+	return fmt.Sprintf("%d", *position)
+}
+
 type GameResult struct {
 	BaseValue          int  `json:"base_value"`          // Base value (9-12 for suits, 24 for grand, 23 for null)
 	Matadors           int  `json:"matadors"`            // Matadors (positive=with, negative=without)

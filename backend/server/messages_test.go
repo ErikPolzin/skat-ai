@@ -285,7 +285,7 @@ func TestLeaveInProgressGamePersistsCompleteForfeit(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("failed to save player results: %v", err)
 	}
-	if err := server.cache.SaveGame(*gs); err != nil {
+	if err := server.cache.SaveGame(gs); err != nil {
 		t.Fatalf("failed to seed cache: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/games/"+gs.ID+"/leave", nil)
@@ -344,7 +344,7 @@ func TestStrictTournamentLeaveAfterCompletedGameCountsAsForfeit(t *testing.T) {
 	if err := database.SaveGame(*gs); err != nil {
 		t.Fatalf("failed to save game: %v", err)
 	}
-	if err := server.cache.SaveGame(*gs); err != nil {
+	if err := server.cache.SaveGame(gs); err != nil {
 		t.Fatalf("failed to seed cache: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/games/"+gs.ID+"/leave", nil)

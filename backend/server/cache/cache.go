@@ -6,9 +6,11 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"runtime"
 	"time"
 
 	"skat/game"
+	"skat/logger"
 	"skat/server/db"
 )
 
@@ -16,7 +18,7 @@ type GameCache interface {
 	GetGameByID(gameID string) (*game.GameState, error)
 	GetGameBySessionID(sessionID string) (*game.GameState, error)
 	GetGameBySessionCode(sessionCode string) (*game.GameState, error)
-	SaveGame(gs game.GameState) error
+	SaveGame(gs *game.GameState) error
 }
 
 type SyncQueue interface {
@@ -32,7 +34,7 @@ type Store interface {
 }
 
 type RevisionStore interface {
-	NextRevision(ctx context.Context, gameID string, ttl time.Duration) (int64, error)
+	WriteRevision(ctx context.Context, gs game.GameState, ttl time.Duration) (int64, error)
 }
 
 type ClientPresenceStore interface {
@@ -50,6 +52,8 @@ type ClientMessageBus interface {
 var ErrQueueEmpty = errors.New("cache sync queue empty")
 
 var ErrMiss = errors.New("distributed cache miss")
+
+var ErrStaleGameState = errors.New("stale game state")
 
 type DistributedCache struct {
 	store Store
@@ -71,17 +75,27 @@ func NewDistributedCache(database db.Database, store Store, queue SyncQueue, ttl
 }
 
 func (c *DistributedCache) GetGameByID(gameID string) (*game.GameState, error) {
+	var invalidCached *game.GameState
 	if gs, err := c.getGame("game:" + gameID); err == nil {
 		if !hasInvalidMissingDeclarer(gs) {
 			return gs, nil
 		}
+		invalidCached = gs
+		logger.Warning("Ignoring cached game with missing declarer: %s", gs)
 	}
 
 	gs, err := c.db.GetGameByID(gameID)
 	if err != nil {
 		return nil, err
 	}
-	_ = c.writeGameToCache(*gs)
+	if hasInvalidMissingDeclarer(gs) {
+		logger.Error("Loaded DB game with missing declarer: db=%s cache=%s", gs, invalidCached)
+		return gs, nil
+	}
+	if invalidCached != nil && gs.Phase != invalidCached.Phase {
+		logger.Warning("DB fallback phase differs from invalid cache: db=%s cache=%s", gs, invalidCached)
+	}
+	_, _ = c.writeGameToCache(*gs)
 	return gs, nil
 }
 
@@ -117,21 +131,30 @@ func (c *DistributedCache) GetGameBySessionCode(sessionCode string) (*game.GameS
 	if err != nil {
 		return nil, err
 	}
-	_ = c.writeGameToCache(*gs)
+	_, _ = c.writeGameToCache(*gs)
 	return gs, nil
 }
 
-func (c *DistributedCache) SaveGame(gs game.GameState) error {
+func (c *DistributedCache) SaveGame(gs *game.GameState) error {
+	if gs == nil {
+		return fmt.Errorf("cannot save nil game")
+	}
 	snapshot := *gs.Clone()
-	revision, err := c.nextRevision(snapshot.ID)
+	if hasInvalidMissingDeclarer(&snapshot) {
+		logger.Warning("Saving game with missing declarer: %s caller=%s", &snapshot, callerLocation())
+	}
+	revision, err := c.writeGameToCache(snapshot)
 	if err != nil {
-		return c.db.SaveGame(snapshot)
+		if errors.Is(err, ErrStaleGameState) {
+			logger.Warning("Rejected stale game save: %s expected_revision=%d", &snapshot, snapshot.CacheRevision)
+			return err
+		} else {
+			logger.Warning("Failed to allocate cache revision for %s: %v", snapshot.ID, err)
+			return c.db.SaveGame(snapshot)
+		}
 	}
+	gs.CacheRevision = revision
 	snapshot.CacheRevision = revision
-
-	if err := c.writeGameToCache(snapshot); err != nil {
-		return c.db.SaveGame(snapshot)
-	}
 	if c.queue == nil {
 		return c.db.SaveGame(snapshot)
 	}
@@ -141,30 +164,28 @@ func (c *DistributedCache) SaveGame(gs game.GameState) error {
 	return nil
 }
 
-func (c *DistributedCache) nextRevision(gameID string) (int64, error) {
+func (c *DistributedCache) writeGameToCache(gs game.GameState) (int64, error) {
 	revisionStore, ok := c.store.(RevisionStore)
 	if !ok {
-		return time.Now().UnixNano(), nil
+		revision := gs.CacheRevision + 1
+		gs.CacheRevision = revision
+		data, err := encodeGameState(gs)
+		if err != nil {
+			return revision, err
+		}
+		ctx := context.Background()
+		if err := c.store.Set(ctx, "game:"+gs.ID, data, c.ttl); err != nil {
+			return revision, err
+		}
+		if err := c.store.Set(ctx, "session:"+gs.SessionID+":latest", []byte(gs.ID), c.ttl); err != nil {
+			return revision, err
+		}
+		if err := c.store.Set(ctx, "code:"+string(gs.Code)+":latest", []byte(gs.ID), c.ttl); err != nil {
+			return revision, err
+		}
+		return revision, nil
 	}
-	return revisionStore.NextRevision(context.Background(), gameID, c.ttl)
-}
-
-func (c *DistributedCache) writeGameToCache(gs game.GameState) error {
-	data, err := encodeGameState(gs)
-	if err != nil {
-		return err
-	}
-	ctx := context.Background()
-	if err := c.store.Set(ctx, "game:"+gs.ID, data, c.ttl); err != nil {
-		return err
-	}
-	if err := c.store.Set(ctx, "session:"+gs.SessionID+":latest", []byte(gs.ID), c.ttl); err != nil {
-		return err
-	}
-	if err := c.store.Set(ctx, "code:"+string(gs.Code)+":latest", []byte(gs.ID), c.ttl); err != nil {
-		return err
-	}
-	return nil
+	return revisionStore.WriteRevision(context.Background(), gs, c.ttl)
 }
 
 func (c *DistributedCache) getGame(key string) (*game.GameState, error) {
@@ -211,10 +232,16 @@ func StartSyncWorker(ctx context.Context, database db.Database, queue SyncQueue,
 			if len(store) > 0 && store[0] != nil {
 				latest, err := latestCachedGame(ctx, store[0], gs.ID)
 				if err == nil && latest.CacheRevision > 0 && latest.CacheRevision > gs.CacheRevision {
+					if hasInvalidMissingDeclarer(gs) {
+						logger.Warning("Skipping stale queued game with missing declarer: queued=%s latest=%s", gs, latest)
+					}
 					continue
 				}
 			}
 
+			if hasInvalidMissingDeclarer(gs) {
+				logger.Warning("Sync worker saving game with missing declarer: %s", gs)
+			}
 			if err := database.SaveGame(*gs); err != nil {
 				_ = queue.EnqueueGameSave(context.Background(), *gs)
 				time.Sleep(backoff)
@@ -248,4 +275,12 @@ func decodeGameState(data []byte) (*game.GameState, error) {
 		return nil, fmt.Errorf("decode game state: %w", err)
 	}
 	return &gs, nil
+}
+
+func callerLocation() string {
+	_, file, line, ok := runtime.Caller(2)
+	if !ok {
+		return "unknown"
+	}
+	return fmt.Sprintf("%s:%d", file, line)
 }

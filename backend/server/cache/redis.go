@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"skat/game"
@@ -42,9 +43,47 @@ func (r *RedisBackend) Set(ctx context.Context, key string, value []byte, ttl ti
 	return r.client.Set(ctx, "skat:cache:"+key, value, ttl).Err()
 }
 
-func (r *RedisBackend) NextRevision(ctx context.Context, gameID string, ttl time.Duration) (int64, error) {
-	key := "skat:cache-revision:game:" + gameID
-	return r.client.Incr(ctx, key).Result()
+func (r *RedisBackend) WriteRevision(ctx context.Context, gs game.GameState, ttl time.Duration) (int64, error) {
+	revisionKey := "skat:cache-revision:game:" + gs.ID
+	gameKey := "skat:cache:game:" + gs.ID
+	sessionKey := "skat:cache:session:" + gs.SessionID + ":latest"
+	codeKey := "skat:cache:code:" + string(gs.Code) + ":latest"
+
+	for {
+		var nextRevision int64
+		err := r.client.Watch(ctx, func(tx *redis.Tx) error {
+			currentRevision, err := redisInt64OrZero(tx.Get(ctx, revisionKey).Result())
+			if err != nil {
+				return err
+			}
+			if gs.CacheRevision > 0 && currentRevision > gs.CacheRevision {
+				return ErrStaleGameState
+			}
+
+			nextRevision = currentRevision + 1
+			gs.CacheRevision = nextRevision
+			data, err := encodeGameState(gs)
+			if err != nil {
+				return err
+			}
+
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Set(ctx, revisionKey, nextRevision, ttl)
+				pipe.Set(ctx, gameKey, data, ttl)
+				pipe.Set(ctx, sessionKey, []byte(gs.ID), ttl)
+				pipe.Set(ctx, codeKey, []byte(gs.ID), ttl)
+				return nil
+			})
+			return err
+		}, revisionKey)
+		if errors.Is(err, redis.TxFailedErr) {
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+		return nextRevision, nil
+	}
 }
 
 func (r *RedisBackend) EnqueueGameSave(ctx context.Context, gs game.GameState) error {
@@ -144,4 +183,16 @@ func (r *RedisBackend) SubscribeClientMessages(ctx context.Context) (<-chan []by
 
 func (r *RedisBackend) Close() error {
 	return r.client.Close()
+}
+
+// Private utilities
+
+func redisInt64OrZero(value string, err error) (int64, error) {
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(value, 10, 64)
 }

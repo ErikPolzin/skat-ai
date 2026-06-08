@@ -307,7 +307,7 @@ func (s *Server) checkInactivityTimeouts() {
 func (s *Server) timeoutGame(gs *game.GameState, clientReported bool) error {
 	if gs.Phase == game.PhaseComplete {
 		gs.CurrentPlayerDeadline = ""
-		return s.cache.SaveGame(*gs)
+		return s.cache.SaveGame(gs)
 	}
 
 	currentPlayer := gs.GetCurrentPlayer()
@@ -323,7 +323,7 @@ func (s *Server) timeoutGame(gs *game.GameState, clientReported bool) error {
 
 	gs.ForfeitDueToInactivity()
 
-	if err := s.cache.SaveGame(*gs); err != nil {
+	if err := s.cache.SaveGame(gs); err != nil {
 		return fmt.Errorf("failed to save timeout game: %w", err)
 	}
 	if err := s.maybeSaveGameResults(gs); err != nil {

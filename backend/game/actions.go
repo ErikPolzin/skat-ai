@@ -518,6 +518,7 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.Players = rotatedPlayers
 
 	gs.ID = uuid.New().String()
+	gs.CacheRevision = 0
 	gs.GameNumber++
 	gs.Phase = PhaseDealing
 	gs.Mode = ModeSuit

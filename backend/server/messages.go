@@ -1,11 +1,13 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"skat/agent"
 	"skat/game"
 	"skat/game/rating"
 	"skat/logger"
+	cachepkg "skat/server/cache"
 	"skat/server/db"
 	"sort"
 	"time"
@@ -278,7 +280,10 @@ func forfeitedPlayerID(gs *game.GameState) string {
 	return player.ID
 }
 
+const maxStaleAIActionRetries = 3
+
 func (s *Server) BroadcastAIActions(gs *game.GameState) {
+	staleRetries := 0
 	for {
 		action := agent.NextAction(gs)
 		if action == nil {
@@ -297,7 +302,22 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 			})
 			return
 		}
-		if err := s.cache.SaveGame(*gs); err != nil {
+		if err := s.cache.SaveGame(gs); err != nil {
+			if errors.Is(err, cachepkg.ErrStaleGameState) {
+				staleRetries++
+				if staleRetries > maxStaleAIActionRetries {
+					logger.Warning("Stopping AI action loop after stale retries for game %s", gs.ID)
+					return
+				}
+				latest, loadErr := s.cache.GetGameByID(gs.ID)
+				if loadErr != nil {
+					logger.Warning("Failed to reload stale AI game %s: %e", gs.ID, loadErr)
+					return
+				}
+				logger.Info("Reloaded stale AI game %s after save conflict", gs.ID)
+				gs = latest
+				continue
+			}
 			logger.Error("Failed to save game after AI action: %v", err)
 			s.clients.BroadcastToPlayers(gs, &Message{
 				Type: "error",
@@ -305,6 +325,7 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 			})
 			return
 		}
+		staleRetries = 0
 		if err := s.maybeSaveGameResults(gs); err != nil {
 			logger.Warning("Failed to save game results after AI action: %e", err)
 		}

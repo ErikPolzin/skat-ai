@@ -58,6 +58,97 @@ func TestSyncWorkerSkipsOlderRevision(t *testing.T) {
 	}
 }
 
+func TestSaveGameRejectsStaleRevision(t *testing.T) {
+	database := &recordingDatabase{saved: make(chan game.GameState, 10)}
+	store := NewMemoryBackend(4)
+	cache := NewDistributedCache(database, store, nil, time.Minute)
+
+	gs := game.NewGame()
+	gs.ID = "game-1"
+	gs.SessionID = "session-1"
+	gs.Phase = game.PhaseBidding
+	gs.Players = [3]*game.PlayerState{
+		{ID: "dealer", Name: "Dealer"},
+		{ID: "listener", Name: "Listener"},
+		{ID: "speaker", Name: "Speaker"},
+	}
+	if err := cache.SaveGame(gs); err != nil {
+		t.Fatalf("save initial game: %v", err)
+	}
+	if gs.CacheRevision != 1 {
+		t.Fatalf("expected caller revision 1, got %d", gs.CacheRevision)
+	}
+
+	loaded, err := cache.GetGameByID(gs.ID)
+	if err != nil {
+		t.Fatalf("load initial cached game: %v", err)
+	}
+	if loaded.CacheRevision != 1 {
+		t.Fatalf("expected initial revision 1, got %d", loaded.CacheRevision)
+	}
+
+	declarer := game.Listener
+	latest := *loaded.Clone()
+	latest.Declarer = &declarer
+	latest.Phase = game.PhaseSkatExchange
+	latest.CurrentPlayer = declarer
+	if err := cache.SaveGame(&latest); err != nil {
+		t.Fatalf("save latest game: %v", err)
+	}
+
+	stale := *loaded.Clone()
+	stale.Phase = game.PhasePlaying
+	stale.CurrentPlayer = game.Listener
+	err = cache.SaveGame(&stale)
+	if !errors.Is(err, ErrStaleGameState) {
+		t.Fatalf("expected stale game state error, got %v", err)
+	}
+
+	cached, err := cache.GetGameByID(gs.ID)
+	if err != nil {
+		t.Fatalf("load final cached game: %v", err)
+	}
+	if cached.Declarer == nil || *cached.Declarer != declarer {
+		t.Fatalf("expected cached declarer %d, got %v", declarer, cached.Declarer)
+	}
+	if cached.Phase != game.PhaseSkatExchange {
+		t.Fatalf("expected cached phase %s, got %s", game.PhaseSkatExchange, cached.Phase)
+	}
+}
+
+func TestSaveGameEnqueuesSnapshotWithAllocatedRevision(t *testing.T) {
+	database := &recordingDatabase{saved: make(chan game.GameState, 10)}
+	store := NewMemoryBackend(4)
+	queue := newGameQueue(1)
+	cache := NewDistributedCache(database, store, queue, time.Minute)
+
+	gs := game.NewGame()
+	gs.ID = "game-1"
+	gs.SessionID = "session-1"
+	gs.Phase = game.PhaseBidding
+	gs.Players = [3]*game.PlayerState{
+		{ID: "dealer", Name: "Dealer"},
+		{ID: "listener", Name: "Listener"},
+		{ID: "speaker", Name: "Speaker"},
+	}
+
+	if err := cache.SaveGame(gs); err != nil {
+		t.Fatalf("save game: %v", err)
+	}
+	if gs.CacheRevision != 1 {
+		t.Fatalf("expected caller revision 1, got %d", gs.CacheRevision)
+	}
+
+	select {
+	case queued := <-queue.items:
+		if queued.CacheRevision != gs.CacheRevision {
+			t.Fatalf("expected queued revision %d, got %d", gs.CacheRevision, queued.CacheRevision)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for queued game save")
+	}
+}
+
 func mustEncodeGameState(t *testing.T, gs game.GameState) []byte {
 	t.Helper()
 	data, err := encodeGameState(gs)

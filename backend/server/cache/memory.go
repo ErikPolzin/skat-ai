@@ -71,11 +71,31 @@ func (m *MemoryBackend) Set(ctx context.Context, key string, value []byte, ttl t
 	return nil
 }
 
-func (m *MemoryBackend) NextRevision(ctx context.Context, gameID string, ttl time.Duration) (int64, error) {
+func (m *MemoryBackend) WriteRevision(ctx context.Context, gs game.GameState, ttl time.Duration) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.revisions[gameID]++
-	return m.revisions[gameID], nil
+	if gs.CacheRevision > 0 && m.revisions[gs.ID] > gs.CacheRevision {
+		return 0, ErrStaleGameState
+	}
+	m.revisions[gs.ID]++
+	nextRevision := m.revisions[gs.ID]
+	gs.CacheRevision = nextRevision
+	data, err := encodeGameState(gs)
+	if err != nil {
+		return 0, err
+	}
+
+	item := memoryItem{value: append([]byte(nil), data...)}
+	idItem := memoryItem{value: []byte(gs.ID)}
+	if ttl > 0 {
+		expiresAt := time.Now().Add(ttl)
+		item.expiresAt = expiresAt
+		idItem.expiresAt = expiresAt
+	}
+	m.items["game:"+gs.ID] = item
+	m.items["session:"+gs.SessionID+":latest"] = idItem
+	m.items["code:"+string(gs.Code)+":latest"] = idItem
+	return nextRevision, nil
 }
 
 func (m *MemoryBackend) EnqueueGameSave(ctx context.Context, gs game.GameState) error {

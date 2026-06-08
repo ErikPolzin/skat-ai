@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -12,6 +13,7 @@ import (
 	"skat/game"
 	"skat/game/rating"
 	"skat/logger"
+	cachepkg "skat/server/cache"
 	"skat/server/db"
 	"strconv"
 	"strings"
@@ -334,7 +336,11 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.cache.SaveGame(*gs); err != nil {
+	if err := s.cache.SaveGame(gs); err != nil {
+		if errors.Is(err, cachepkg.ErrStaleGameState) {
+			http.Error(w, "game state changed; retry action", http.StatusConflict)
+			return
+		}
 		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -510,7 +516,11 @@ func (s *Server) handleJoinGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.cache.SaveGame(*gs); err != nil {
+	if err := s.cache.SaveGame(gs); err != nil {
+		if errors.Is(err, cachepkg.ErrStaleGameState) {
+			http.Error(w, "game state changed; retry action", http.StatusConflict)
+			return
+		}
 		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -561,7 +571,7 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 		gs.Phase = game.PhaseComplete
 		gs.ForfeitedPlayer = &position
 
-		if err := s.cache.SaveGame(*gs); err != nil {
+		if err := s.cache.SaveGame(gs); err != nil {
 			logger.Warning("Failed to save forfeited game: %e", err)
 			http.Error(w, "failed to save game", http.StatusInternalServerError)
 			return
@@ -586,7 +596,7 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 	} else if gs.Phase == game.PhaseComplete && gs.CompletionPolicy == game.CompletionPolicyStrict && gs.MaxGames > 0 && gs.GameNumber+1 < gs.MaxGames {
 		gs.ForfeitedPlayer = &position
 
-		if err := s.cache.SaveGame(*gs); err != nil {
+		if err := s.cache.SaveGame(gs); err != nil {
 			logger.Warning("Failed to save strict tournament forfeit: %e", err)
 			http.Error(w, "failed to save game", http.StatusInternalServerError)
 			return
@@ -625,7 +635,7 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 			logger.Info("All players left game %s, deleted", gs.Code)
 		} else {
 			// Save the updated game
-			if err := s.cache.SaveGame(*gs); err != nil {
+			if err := s.cache.SaveGame(gs); err != nil {
 				http.Error(w, "failed to save game", http.StatusInternalServerError)
 				return
 			}
@@ -733,7 +743,11 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.cache.SaveGame(*gs); err != nil {
+	if err := s.cache.SaveGame(gs); err != nil {
+		if errors.Is(err, cachepkg.ErrStaleGameState) {
+			http.Error(w, "game state changed; retry action", http.StatusConflict)
+			return
+		}
 		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -1089,7 +1103,11 @@ func (s *Server) handleGameAction(w http.ResponseWriter, r *http.Request, valida
 		return
 	}
 
-	if err := s.cache.SaveGame(*gs); err != nil {
+	if err := s.cache.SaveGame(gs); err != nil {
+		if errors.Is(err, cachepkg.ErrStaleGameState) {
+			http.Error(w, "game state changed; retry action", http.StatusConflict)
+			return
+		}
 		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -1244,7 +1262,7 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := s.cache.SaveGame(*gs); err != nil {
+	if err := s.cache.SaveGame(gs); err != nil {
 		http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -1260,7 +1278,7 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		}
 
 		newGameID := gs.ID
-		if err := s.cache.SaveGame(*gs); err != nil {
+		if err := s.cache.SaveGame(gs); err != nil {
 			http.Error(w, fmt.Sprintf("failed to save game: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -1326,7 +1344,7 @@ func (s *Server) handleEndTournament(w http.ResponseWriter, r *http.Request) {
 		gs.MaxGames = finalGameCount
 	}
 
-	if err := s.cache.SaveGame(*gs); err != nil {
+	if err := s.cache.SaveGame(gs); err != nil {
 		logger.Warning("Failed to save game before ending tournament: %e", err)
 		http.Error(w, "failed to save game", http.StatusInternalServerError)
 		return

@@ -62,6 +62,8 @@
   transform: translate(-50%, -50%);
   transform-style: preserve-3d;
   transition: filter 0.2s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .motion-card.playing {
@@ -141,14 +143,6 @@
     transform: translateY(-10px);
   }
 }
-
-/* Disable hover effects on touch devices */
-@media (hover: none) {
-  .motion-card:hover {
-    transform: translate(-50%, -50%) !important;
-  }
-}
-
 
 /* Avatar Styles */
 .opponent-avatar-container,

@@ -259,6 +259,8 @@ func TestLeaveInProgressGamePersistsCompleteForfeit(t *testing.T) {
 	server := NewServer(database)
 	gs := game.NewGame()
 	gs.Phase = game.PhasePlaying
+	declarer := game.Dealer
+	gs.Declarer = &declarer
 	gs.Players = [3]*game.PlayerState{
 		{ID: "alice", Name: "Alice"},
 		{ID: "bob", Name: "Bob"},

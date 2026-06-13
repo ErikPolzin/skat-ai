@@ -56,7 +56,7 @@ func (r *RedisBackend) WriteRevision(ctx context.Context, gs game.GameState, ttl
 			if err != nil {
 				return err
 			}
-			if gs.CacheRevision > 0 && currentRevision > gs.CacheRevision {
+			if currentRevision > gs.CacheRevision {
 				return ErrStaleGameState
 			}
 

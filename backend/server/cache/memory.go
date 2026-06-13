@@ -74,7 +74,7 @@ func (m *MemoryBackend) Set(ctx context.Context, key string, value []byte, ttl t
 func (m *MemoryBackend) WriteRevision(ctx context.Context, gs game.GameState, ttl time.Duration) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if gs.CacheRevision > 0 && m.revisions[gs.ID] > gs.CacheRevision {
+	if m.revisions[gs.ID] > gs.CacheRevision {
 		return 0, ErrStaleGameState
 	}
 	m.revisions[gs.ID]++

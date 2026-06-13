@@ -262,7 +262,7 @@ func latestCachedGame(ctx context.Context, store Store, gameID string) (*game.Ga
 
 func encodeGameState(gs game.GameState) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(gs); err != nil {
+	if err := gob.NewEncoder(&buf).Encode(toEncodedGameState(gs)); err != nil {
 		return nil, fmt.Errorf("encode game state: %w", err)
 	}
 	return buf.Bytes(), nil
@@ -270,11 +270,85 @@ func encodeGameState(gs game.GameState) ([]byte, error) {
 
 func decodeGameState(data []byte) (*game.GameState, error) {
 	buf := bytes.NewBuffer(data)
+	var encoded encodedGameState
+	if err := gob.NewDecoder(buf).Decode(&encoded); err == nil {
+		return encoded.toGameState(), nil
+	}
+
+	buf = bytes.NewBuffer(data)
 	var gs game.GameState
 	if err := gob.NewDecoder(buf).Decode(&gs); err != nil {
 		return nil, fmt.Errorf("decode game state: %w", err)
 	}
 	return &gs, nil
+}
+
+type encodedGameState struct {
+	State              game.GameState
+	PlayerSet          [3]bool
+	Players            [3]game.PlayerState
+	DeclarerSet        bool
+	Declarer           game.GamePosition
+	TrickWinnerSet     bool
+	TrickWinner        game.GamePosition
+	ForfeitedPlayerSet bool
+	ForfeitedPlayer    game.GamePosition
+}
+
+func toEncodedGameState(gs game.GameState) encodedGameState {
+	state := gs
+	state.Players = [3]*game.PlayerState{{}, {}, {}}
+	state.Declarer = nil
+	state.TrickWinner = nil
+	state.ForfeitedPlayer = nil
+
+	encoded := encodedGameState{State: state}
+	for i, player := range gs.Players {
+		if player != nil {
+			encoded.PlayerSet[i] = true
+			encoded.Players[i] = *player
+		}
+	}
+	if gs.Declarer != nil {
+		encoded.DeclarerSet = true
+		encoded.Declarer = *gs.Declarer
+	}
+	if gs.TrickWinner != nil {
+		encoded.TrickWinnerSet = true
+		encoded.TrickWinner = *gs.TrickWinner
+	}
+	if gs.ForfeitedPlayer != nil {
+		encoded.ForfeitedPlayerSet = true
+		encoded.ForfeitedPlayer = *gs.ForfeitedPlayer
+	}
+	return encoded
+}
+
+func (e encodedGameState) toGameState() *game.GameState {
+	gs := e.State
+	gs.Players = [3]*game.PlayerState{}
+	for i, playerSet := range e.PlayerSet {
+		if playerSet {
+			player := e.Players[i]
+			gs.Players[i] = &player
+		}
+	}
+	gs.Declarer = nil
+	if e.DeclarerSet {
+		declarer := e.Declarer
+		gs.Declarer = &declarer
+	}
+	gs.TrickWinner = nil
+	if e.TrickWinnerSet {
+		trickWinner := e.TrickWinner
+		gs.TrickWinner = &trickWinner
+	}
+	gs.ForfeitedPlayer = nil
+	if e.ForfeitedPlayerSet {
+		forfeitedPlayer := e.ForfeitedPlayer
+		gs.ForfeitedPlayer = &forfeitedPlayer
+	}
+	return &gs
 }
 
 func callerLocation() string {

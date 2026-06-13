@@ -116,6 +116,55 @@ func TestSaveGameRejectsStaleRevision(t *testing.T) {
 	}
 }
 
+func TestSaveGameRejectsZeroRevisionWhenCachedRevisionExists(t *testing.T) {
+	database := &recordingDatabase{saved: make(chan game.GameState, 10)}
+	store := NewMemoryBackend(4)
+	cache := NewDistributedCache(database, store, nil, time.Minute)
+
+	gs := game.NewGame()
+	gs.ID = "game-1"
+	gs.SessionID = "session-1"
+	gs.Phase = game.PhaseBidding
+	gs.Players = [3]*game.PlayerState{
+		{ID: "dealer", Name: "Dealer"},
+		{ID: "listener", Name: "Listener"},
+		{ID: "speaker", Name: "Speaker"},
+	}
+	if err := cache.SaveGame(gs); err != nil {
+		t.Fatalf("save initial game: %v", err)
+	}
+
+	declarer := game.Listener
+	latest := *gs.Clone()
+	latest.Declarer = &declarer
+	latest.Phase = game.PhaseSkatExchange
+	latest.CurrentPlayer = declarer
+	if err := cache.SaveGame(&latest); err != nil {
+		t.Fatalf("save latest game: %v", err)
+	}
+
+	dbFallback := *gs.Clone()
+	dbFallback.CacheRevision = 0
+	dbFallback.Phase = game.PhaseSkatExchange
+	dbFallback.CurrentPlayer = game.Listener
+	dbFallback.Declarer = nil
+	err := cache.SaveGame(&dbFallback)
+	if !errors.Is(err, ErrStaleGameState) {
+		t.Fatalf("expected stale game state error, got %v", err)
+	}
+
+	cached, err := cache.GetGameByID(gs.ID)
+	if err != nil {
+		t.Fatalf("load final cached game: %v", err)
+	}
+	if cached.Declarer == nil || *cached.Declarer != declarer {
+		t.Fatalf("expected cached declarer %d, got %v", declarer, cached.Declarer)
+	}
+	if cached.Phase != game.PhaseSkatExchange {
+		t.Fatalf("expected cached phase %s, got %s", game.PhaseSkatExchange, cached.Phase)
+	}
+}
+
 func TestSaveGameEnqueuesSnapshotWithAllocatedRevision(t *testing.T) {
 	database := &recordingDatabase{saved: make(chan game.GameState, 10)}
 	store := NewMemoryBackend(4)
@@ -146,6 +195,62 @@ func TestSaveGameEnqueuesSnapshotWithAllocatedRevision(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for queued game save")
+	}
+}
+
+func TestGameStateEncodingPreservesDealerPositionPointers(t *testing.T) {
+	gs := game.NewGame()
+	gs.Players = [3]*game.PlayerState{
+		{ID: "dealer", Name: "Dealer"},
+		{ID: "listener", Name: "Listener"},
+		{ID: "speaker", Name: "Speaker"},
+	}
+	dealer := game.Dealer
+	gs.Declarer = &dealer
+	gs.TrickWinner = &dealer
+	gs.ForfeitedPlayer = &dealer
+
+	data, err := encodeGameState(*gs)
+	if err != nil {
+		t.Fatalf("encode game state: %v", err)
+	}
+	decoded, err := decodeGameState(data)
+	if err != nil {
+		t.Fatalf("decode game state: %v", err)
+	}
+
+	if decoded.Declarer == nil || *decoded.Declarer != game.Dealer {
+		t.Fatalf("expected dealer declarer to survive encoding, got %v", decoded.Declarer)
+	}
+	if decoded.TrickWinner == nil || *decoded.TrickWinner != game.Dealer {
+		t.Fatalf("expected dealer trick winner to survive encoding, got %v", decoded.TrickWinner)
+	}
+	if decoded.ForfeitedPlayer == nil || *decoded.ForfeitedPlayer != game.Dealer {
+		t.Fatalf("expected dealer forfeited player to survive encoding, got %v", decoded.ForfeitedPlayer)
+	}
+}
+
+func TestGameStateEncodingPreservesEmptyPlayerSlots(t *testing.T) {
+	gs := game.NewGame()
+	gs.Players[game.Listener] = &game.PlayerState{ID: "listener", Name: "Listener"}
+
+	data, err := encodeGameState(*gs)
+	if err != nil {
+		t.Fatalf("encode game state: %v", err)
+	}
+	decoded, err := decodeGameState(data)
+	if err != nil {
+		t.Fatalf("decode game state: %v", err)
+	}
+
+	if decoded.Players[game.Dealer] != nil {
+		t.Fatalf("expected dealer slot to remain empty, got %+v", decoded.Players[game.Dealer])
+	}
+	if decoded.Players[game.Listener] == nil || decoded.Players[game.Listener].ID != "listener" {
+		t.Fatalf("expected listener slot to survive encoding, got %+v", decoded.Players[game.Listener])
+	}
+	if decoded.Players[game.Speaker] != nil {
+		t.Fatalf("expected speaker slot to remain empty, got %+v", decoded.Players[game.Speaker])
 	}
 }
 

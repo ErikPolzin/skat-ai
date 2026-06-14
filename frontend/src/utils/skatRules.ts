@@ -60,14 +60,15 @@ function getEffectiveSuit(
   trumpSuit: string,
 ): string {
   const isJack = card.rank === "J";
+  const jacksAreOnlyTrumps = gameMode === "grand" || gameMode === "ramsch";
 
   if (gameMode === "null") {
     // In null games, no trumps
     return card.suit;
   }
 
-  if (gameMode === "grand") {
-    // In grand, only jacks are trumps
+  if (jacksAreOnlyTrumps) {
+    // In grand and ramsch, only jacks are trumps
     return isJack ? "trump" : card.suit;
   }
 

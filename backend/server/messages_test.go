@@ -254,6 +254,45 @@ func TestDeclarerStatsCountsOnlyDeclarerResults(t *testing.T) {
 	}
 }
 
+func TestEnsureSessionPlayerResultsRebuildsEndedSessionWhenCurrentGameMissing(t *testing.T) {
+	database := newTestDatabase()
+	server := NewServer(database)
+	endedAt := time.Now().UTC().Format(time.RFC3339)
+	sessionID := "session"
+
+	if err := database.SaveGameSession(game.GameSessionState{
+		ID:      sessionID,
+		Code:    "ABC123",
+		GameID:  "missing-game",
+		EndedAt: &endedAt,
+	}); err != nil {
+		t.Fatalf("failed to save session: %v", err)
+	}
+	if err := database.SavePlayerResults([]game.PlayerResultState{
+		{GameID: "game-1", SessionID: sessionID, PlayerID: "alice", PlayerPoints: 120, IsDeclarer: true, IsWinner: true},
+		{GameID: "game-1", SessionID: sessionID, PlayerID: "bob", PlayerPoints: 80},
+		{GameID: "game-1", SessionID: sessionID, PlayerID: "cara", PlayerPoints: 20},
+	}); err != nil {
+		t.Fatalf("failed to save player results: %v", err)
+	}
+
+	results := server.ensureSessionPlayerResults(sessionID)
+
+	if len(results) != 3 {
+		t.Fatalf("expected rebuilt session results, got %d", len(results))
+	}
+	if results[0].PlayerID != "alice" || !results[0].IsWinner || results[0].PlayerPoints != 120 {
+		t.Fatalf("expected alice to win rebuilt standings, got %+v", results[0])
+	}
+	savedResults, err := database.GetSessionPlayerResults(sessionID)
+	if err != nil {
+		t.Fatalf("failed to load saved session results: %v", err)
+	}
+	if len(savedResults) != 3 {
+		t.Fatalf("expected rebuilt session results to be persisted, got %d", len(savedResults))
+	}
+}
+
 func TestLeaveInProgressGamePersistsCompleteForfeit(t *testing.T) {
 	database := newTestDatabase()
 	server := NewServer(database)

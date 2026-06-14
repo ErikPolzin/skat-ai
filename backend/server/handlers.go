@@ -823,16 +823,23 @@ func (s *Server) handleGetSessionResults(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) ensureSessionPlayerResults(sessionID string) []game.PlayerSessionResultState {
 	session, err := s.db.GetGameSession(sessionID)
-	if err != nil || session.GameID == "" {
-		if err != nil {
-			logger.Warning("Failed to load session for final result check: %e", err)
+	if err != nil {
+		logger.Warning("Failed to load session for final result check: %v", err)
+		return []game.PlayerSessionResultState{}
+	}
+	if session.GameID == "" {
+		if session.EndedAt != nil {
+			return s.rebuildSessionPlayerResults(sessionID)
 		}
 		return []game.PlayerSessionResultState{}
 	}
 
-	gs, err := s.db.GetGameByID(session.GameID)
+	gs, err := s.cache.GetGameByID(session.GameID)
 	if err != nil {
-		logger.Warning("Failed to load current session game for final result check: %e", err)
+		if session.EndedAt != nil {
+			return s.rebuildSessionPlayerResults(sessionID)
+		}
+		logger.Warning("Failed to load current session game for final result check: %v", err)
 		return []game.PlayerSessionResultState{}
 	}
 	if gs.Phase != game.PhaseComplete {
@@ -907,6 +914,9 @@ func (s *Server) rebuildSessionPlayerResults(sessionID string) []game.PlayerSess
 	if err != nil {
 		logger.Warning("Failed to count games for rating rebuild: %e", err)
 		return []game.PlayerSessionResultState{}
+	}
+	if handsPlayed == 0 {
+		handsPlayed = countSessionGames(gameResults)
 	}
 	if err := rating.UpdateRatings(sessionResults, playerRatings, handsPlayed, declarerStats(gameResults)); err != nil {
 		logger.Warning("Failed to update ratings during session rebuild: %e", err)

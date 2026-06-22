@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"skat/agent/strategies"
 	"skat/game"
 )
 
@@ -286,6 +287,20 @@ func WithAgentGameChoice(gs *game.GameState) (*game.GameState, bool) {
 	mode, trumpSuit := declarerAgent.ChooseGame(gs)
 	if _, err := gs.DeclareGame(mode, trumpSuit, false, false); err != nil {
 		panic(fmt.Sprintf("DeclareGame error: %v", err))
+	}
+	declarerPosition := *gs.Declarer
+	declarerHand := gs.Players[declarerPosition].Hand
+	declarerExpectation := strategies.EstimateContractWinProbability(declarerHand, mode, trumpSuit)
+	for position := game.Dealer; position <= game.Speaker; position++ {
+		playerAgent := GetAgentForPlayer(gs.Players[position])
+		if playerAgent == nil {
+			continue
+		}
+		expectation := 1 - declarerExpectation
+		if position == declarerPosition {
+			expectation = declarerExpectation
+		}
+		playerAgent.RecordExpectedWinProbability(expectation)
 	}
 	return gs, gs.Overbid
 }

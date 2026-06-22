@@ -10,23 +10,21 @@ import (
 
 // Re-export strategy types for backwards compatibility
 type (
-	RandomBiddingStrategy                 = strategies.RandomBiddingStrategy
-	HeuristicBiddingStrategy              = strategies.HeuristicBiddingStrategy
-	RandomGameChoiceStrategy              = strategies.RandomGameChoiceStrategy
-	HeuristicGameChoiceStrategy           = strategies.HeuristicGameChoiceStrategy
-	RandomCardPlayStrategy                = strategies.RandomCardPlayStrategy
-	HeuristicCardPlayStrategy             = strategies.HeuristicCardPlayStrategy
-	MCTSCardPlayStrategy                  = strategies.MCTSCardPlayStrategy
-	PerfectInfoMinimaxStrategy            = strategies.PerfectInfoMinimaxStrategy
-	PerfectInfoMinimaxVsHeuristicStrategy = strategies.PerfectInfoMinimaxVsHeuristicStrategy
+	RandomBiddingStrategy       = strategies.RandomBiddingStrategy
+	HeuristicBiddingStrategy    = strategies.HeuristicBiddingStrategy
+	RandomGameChoiceStrategy    = strategies.RandomGameChoiceStrategy
+	HeuristicGameChoiceStrategy = strategies.HeuristicGameChoiceStrategy
+	RandomCardPlayStrategy      = strategies.RandomCardPlayStrategy
+	HeuristicCardPlayStrategy   = strategies.HeuristicCardPlayStrategy
+	MCTSCardPlayStrategy        = strategies.MCTSCardPlayStrategy
+	PerfectInfoMinimaxStrategy  = strategies.PerfectInfoMinimaxStrategy
 )
 
 // Re-export constructor functions
 var (
-	NewMCTSCardPlayStrategyWithParams                 = strategies.NewMCTSCardPlayStrategyWithParams
-	NewHeuristicCardPlayStrategy                      = strategies.NewHeuristicCardPlayStrategy
-	NewPerfectInfoMinimaxStrategyWithDepth            = strategies.NewPerfectInfoMinimaxStrategyWithDepth
-	NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth = strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth
+	NewMCTSCardPlayStrategyWithParams      = strategies.NewMCTSCardPlayStrategyWithParams
+	NewHeuristicCardPlayStrategy           = strategies.NewHeuristicCardPlayStrategy
+	NewPerfectInfoMinimaxStrategyWithDepth = strategies.NewPerfectInfoMinimaxStrategyWithDepth
 )
 
 // BiddingStrategy interface for bidding decisions
@@ -71,8 +69,9 @@ type AgentMetrics struct {
 	biddingAccepts       map[int]int  // bid value -> count of accepts
 	biddingRejects       map[int]int  // bid value -> count of rejects
 	passedGames          atomic.Int64 // bidding hands where all players passed
-	predictedProbability []float64    // predicted win probabilities for games won
+	predictedProbability []float64    // expected win probabilities from hand strength
 	actualOutcomes       []bool       // actual outcomes (true = won, false = lost)
+	outcomeIsDeclarer    []bool       // role for each expected/actual outcome pair
 }
 
 // SkatAgent uses strategies for different aspects of play
@@ -92,6 +91,7 @@ type SkatAgent struct {
 
 	// Last predicted win probability (for calibration tracking)
 	lastPredictedWinProb float64
+	hasPredictedWinProb  bool
 	mu                   sync.Mutex
 }
 
@@ -214,20 +214,6 @@ func NewRandomAgent(name string) *SkatAgent {
 	}
 }
 
-// NewPerfectInfoMinimaxVsHeuristicAgent creates a perfect-info card-play agent
-// that searches its own choices and predicts heuristic play for other players.
-func NewPerfectInfoMinimaxVsHeuristicAgent(name string, depth int) *SkatAgent {
-	if depth == 0 {
-		depth = 30
-	}
-	return &SkatAgent{
-		name:               name,
-		biddingStrategy:    strategies.NewHeuristicBiddingStrategy(),
-		gameChoiceStrategy: strategies.NewHeuristicGameChoiceStrategy(),
-		cardPlayStrategy:   strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth(depth),
-	}
-}
-
 // HybridAgentConfig holds configuration for creating hybrid agents
 type HybridAgentConfig struct {
 	BiddingType      string
@@ -237,8 +223,9 @@ type HybridAgentConfig struct {
 	GameChoiceQTable map[int]map[int]float64 // For Q-learning game choice
 
 	CardPlayType      string
-	MCTSSimulations   int    // For MCTS card play
-	MinimaxDepth      int    // For minimax card play
+	MCTSSimulations   int // For MCTS card play
+	MinimaxDepth      int // For minimax card play
+	MinimaxSearch     *strategies.MinimaxSearchConfig
 	NeuralWeightsPath string // For neural network card play (combined declarer+defender weights)
 }
 
@@ -287,15 +274,15 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	case "minimax":
 		depth := config.MinimaxDepth
 		if depth == 0 {
-			depth = 7 // Default depth
+			depth = 10 // Best strength/runtime balance from the evaluation sweep
 		}
-		agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth)
-	case "minimax-heuristic", "perfect-info-heuristic":
-		depth := config.MinimaxDepth
-		if depth == 0 {
-			depth = 30 // Full card-play phase against predicted heuristic opponents
+		if config.MinimaxSearch != nil {
+			searchConfig := *config.MinimaxSearch
+			searchConfig.MaxDepth = depth
+			agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxStrategyWithConfig(searchConfig)
+		} else {
+			agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth)
 		}
-		agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth(depth)
 	case "neural":
 		if config.NeuralWeightsPath == "" {
 			return nil, fmt.Errorf("neural card play requires weight path")
@@ -369,10 +356,39 @@ func (sa *SkatAgent) EnableMetrics() {
 	}
 }
 
+// RecordExpectedWinProbability stores the strategy-independent expectation for
+// the agent's role in the current game. Declarers receive the estimated
+// contract win probability; defenders receive its complement.
+func (sa *SkatAgent) RecordExpectedWinProbability(probability float64) {
+	if probability < 0 {
+		probability = 0
+	} else if probability > 1 {
+		probability = 1
+	}
+	sa.mu.Lock()
+	sa.lastPredictedWinProb = probability
+	sa.hasPredictedWinProb = true
+	sa.mu.Unlock()
+}
+
 // RecordGameResult records the result of a game for this agent (declarer or defender)
 func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.PlayerResultState) {
 	if sa.metrics == nil {
 		return
+	}
+
+	sa.mu.Lock()
+	expectedProbability := sa.lastPredictedWinProb
+	hasExpectedProbability := sa.hasPredictedWinProb
+	sa.lastPredictedWinProb = 0
+	sa.hasPredictedWinProb = false
+	sa.mu.Unlock()
+	if hasExpectedProbability {
+		sa.metrics.mu.Lock()
+		sa.metrics.predictedProbability = append(sa.metrics.predictedProbability, expectedProbability)
+		sa.metrics.actualOutcomes = append(sa.metrics.actualOutcomes, playerResult.IsWinner)
+		sa.metrics.outcomeIsDeclarer = append(sa.metrics.outcomeIsDeclarer, playerResult.IsDeclarer)
+		sa.metrics.mu.Unlock()
 	}
 
 	if playerResult.IsDeclarer {
@@ -387,19 +403,6 @@ func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.Play
 
 		if playerResult.IsOverbid {
 			sa.metrics.overbid.Add(1)
-		}
-
-		// Record predicted vs actual outcome for calibration
-		sa.mu.Lock()
-		lastProb := sa.lastPredictedWinProb
-		sa.lastPredictedWinProb = 0.0 // Reset for next game
-		sa.mu.Unlock()
-
-		if lastProb > 0.0 {
-			sa.metrics.mu.Lock()
-			sa.metrics.predictedProbability = append(sa.metrics.predictedProbability, lastProb)
-			sa.metrics.actualOutcomes = append(sa.metrics.actualOutcomes, playerResult.IsWinner)
-			sa.metrics.mu.Unlock()
 		}
 
 		// Track by game type
@@ -464,6 +467,9 @@ func (sa *SkatAgent) MergeMetrics(other AgentMetricsSnapshot) {
 	for bid, count := range other.BiddingRejects {
 		sa.metrics.biddingRejects[bid] += count
 	}
+	sa.metrics.predictedProbability = append(sa.metrics.predictedProbability, other.PredictedProbability...)
+	sa.metrics.actualOutcomes = append(sa.metrics.actualOutcomes, other.ActualOutcomes...)
+	sa.metrics.outcomeIsDeclarer = append(sa.metrics.outcomeIsDeclarer, other.OutcomeIsDeclarer...)
 	sa.metrics.mu.Unlock()
 }
 
@@ -494,6 +500,8 @@ func (sa *SkatAgent) GetMetrics() AgentMetricsSnapshot {
 	copy(predictedProb, sa.metrics.predictedProbability)
 	actualOutcomes := make([]bool, len(sa.metrics.actualOutcomes))
 	copy(actualOutcomes, sa.metrics.actualOutcomes)
+	outcomeIsDeclarer := make([]bool, len(sa.metrics.outcomeIsDeclarer))
+	copy(outcomeIsDeclarer, sa.metrics.outcomeIsDeclarer)
 
 	return AgentMetricsSnapshot{
 		Wins:                 sa.metrics.wins.Load(),
@@ -513,6 +521,7 @@ func (sa *SkatAgent) GetMetrics() AgentMetricsSnapshot {
 		PassedGames:          sa.metrics.passedGames.Load(),
 		PredictedProbability: predictedProb,
 		ActualOutcomes:       actualOutcomes,
+		OutcomeIsDeclarer:    outcomeIsDeclarer,
 	}
 }
 
@@ -539,6 +548,9 @@ func (sa *SkatAgent) ResetMetrics() {
 	sa.metrics.mu.Lock()
 	sa.metrics.biddingAccepts = make(map[int]int)
 	sa.metrics.biddingRejects = make(map[int]int)
+	sa.metrics.predictedProbability = nil
+	sa.metrics.actualOutcomes = nil
+	sa.metrics.outcomeIsDeclarer = nil
 	sa.metrics.mu.Unlock()
 }
 
@@ -561,6 +573,7 @@ type AgentMetricsSnapshot struct {
 	PassedGames          int64
 	PredictedProbability []float64
 	ActualOutcomes       []bool
+	OutcomeIsDeclarer    []bool
 }
 
 // GetMaxBid returns the highest bid value the agent accepted during evaluation

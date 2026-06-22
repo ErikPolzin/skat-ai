@@ -135,6 +135,15 @@ func (e *ContractEvaluator) winProbability(cards game.Cards, mode game.GameMode,
 	}
 }
 
+// EstimateContractWinProbability estimates the declarer's chance of winning
+// from the final ten-card hand and the contract that will actually be played.
+// It is strategy-independent so evaluation can normalize every agent against
+// the same hand-strength model.
+func EstimateContractWinProbability(hand []game.Card, mode game.GameMode, suit game.Suit) float64 {
+	heuristic := NewHeuristicGameChoiceStrategy()
+	return heuristic.evaluator.winProbability(game.Cards(hand), mode, suit)
+}
+
 func expectedContractValue(gameValue float64, winProbability float64, lossMultiplier float64) float64 {
 	return winProbability*gameValue - (1-winProbability)*gameValue*lossMultiplier
 }

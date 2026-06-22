@@ -129,6 +129,10 @@ func main() {
 			training.EvaluateAgents(config, *evalGames)
 			testStats := config.TestAgent.GetMetrics()
 			baselineStats := config.BaselineAgent.GetMetrics()
+			testDeclAdjusted := handAdjustedWinRate(testStats, roleDeclarer)
+			testDefAdjusted := handAdjustedWinRate(testStats, roleDefender)
+			baselineDeclAdjusted := handAdjustedWinRate(baselineStats, roleDeclarer)
+			baselineDefAdjusted := handAdjustedWinRate(baselineStats, roleDefender)
 
 			// Calculate win rates
 			testDeclWinRate := 0.0
@@ -157,8 +161,18 @@ func main() {
 			fmt.Printf("  → Baseline:  Decl %.1f%% (%d/%d) | Def %.1f%% (%d/%d)\n\n",
 				baselineDeclWinRate, baselineStats.Wins, baselineStats.Games,
 				baselineDefWinRate, baselineStats.DefenderWins, baselineStats.DefenderGames)
+			fmt.Printf("  → Hand-adjusted: Imitation Decl %+.1fpp (expected %.1f%%) | Def %+.1fpp (expected %.1f%%)\n",
+				testDeclAdjusted.excessPct, testDeclAdjusted.expectedPct,
+				testDefAdjusted.excessPct, testDefAdjusted.expectedPct)
+			fmt.Printf("  → Hand-adjusted: Baseline  Decl %+.1fpp (expected %.1f%%) | Def %+.1fpp (expected %.1f%%)\n",
+				baselineDeclAdjusted.excessPct, baselineDeclAdjusted.expectedPct,
+				baselineDefAdjusted.excessPct, baselineDefAdjusted.expectedPct)
 
-			evalScore := float64(testStats.Points - baselineStats.Points)
+			testAdjusted := handAdjustedWinRate(testStats, roleAny)
+			baselineAdjusted := handAdjustedWinRate(baselineStats, roleAny)
+			evalScore := testAdjusted.excessPct - baselineAdjusted.excessPct
+			pointDiff := testStats.Points - baselineStats.Points
+			fmt.Printf("  → Adjusted advantage: %+.1fpp | Raw point diff: %d\n\n", evalScore, pointDiff)
 			if evalScore > bestEvalScore {
 				bestEvalScore = evalScore
 				if err := strategiesio.SaveCombinedCardPlayWeights(*outputWeights, declWeights, defWeights); err != nil {
@@ -166,7 +180,7 @@ func main() {
 					os.Exit(1)
 				}
 				savedBest = true
-				fmt.Printf("  → New best checkpoint saved to %s (point diff %.0f)\n\n", *outputWeights, evalScore)
+				fmt.Printf("  → New best checkpoint saved to %s (adjusted advantage %+.1fpp)\n\n", *outputWeights, evalScore)
 			}
 		}
 	}
@@ -187,10 +201,64 @@ func main() {
 	elapsed := time.Since(startTime)
 	fmt.Printf("\n✓ Training complete in %s\n", elapsed)
 	if savedBest {
-		fmt.Printf("✓ Best model saved to: %s (best point diff %.0f)\n", *outputWeights, bestEvalScore)
+		fmt.Printf("✓ Best model saved to: %s (best adjusted advantage %+.1fpp)\n", *outputWeights, bestEvalScore)
 		fmt.Printf("✓ Final epoch model saved to: %s\n", finalWeights)
 	} else {
 		fmt.Printf("✓ Model saved to: %s\n", finalWeights)
+	}
+}
+
+type evaluationRole int
+
+const (
+	roleAny evaluationRole = iota
+	roleDeclarer
+	roleDefender
+)
+
+type adjustedWinRate struct {
+	expectedPct float64
+	actualPct   float64
+	excessPct   float64
+	games       int
+}
+
+// handAdjustedWinRate compares outcomes with the strategy-independent contract
+// estimate recorded for the same hands. Excess percentage points above zero
+// indicate that card play won more often than hand strength alone predicted.
+func handAdjustedWinRate(metrics agent.AgentMetricsSnapshot, role evaluationRole) adjustedWinRate {
+	count := len(metrics.PredictedProbability)
+	if len(metrics.ActualOutcomes) < count {
+		count = len(metrics.ActualOutcomes)
+	}
+	if len(metrics.OutcomeIsDeclarer) < count {
+		count = len(metrics.OutcomeIsDeclarer)
+	}
+
+	var expected, actual float64
+	games := 0
+	for i := 0; i < count; i++ {
+		isDeclarer := metrics.OutcomeIsDeclarer[i]
+		if role == roleDeclarer && !isDeclarer || role == roleDefender && isDeclarer {
+			continue
+		}
+		expected += metrics.PredictedProbability[i]
+		if metrics.ActualOutcomes[i] {
+			actual++
+		}
+		games++
+	}
+	if games == 0 {
+		return adjustedWinRate{}
+	}
+
+	expectedPct := expected / float64(games) * 100
+	actualPct := actual / float64(games) * 100
+	return adjustedWinRate{
+		expectedPct: expectedPct,
+		actualPct:   actualPct,
+		excessPct:   actualPct - expectedPct,
+		games:       games,
 	}
 }
 

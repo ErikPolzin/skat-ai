@@ -4,38 +4,57 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"runtime"
 	"skat/agent"
+	"skat/agent/strategies"
 	"skat/agent/training"
 	"skat/game"
 	"strings"
 )
 
 func main() {
-	agentType := flag.String("agent-type", "", "Agent type: heuristic, mcts, minimax, minimax-heuristic, neural, or random (if not set, uses component flags)")
+	agentType := flag.String("agent-type", "", "Agent type: heuristic, mcts, minimax, neural, or random (if not set, uses component flags)")
 	biddingType := flag.String("bidding-type", "heuristic", "Bidding & game choice strategy: heuristic or contract")
-	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, mcts, minimax, minimax-heuristic, or neural")
+	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, mcts, minimax, or neural")
 	biddingMode := flag.String("bidding-mode", "5050", "Bidding mode: 5050 (all test agents bid, alternate declarer) or 2v1 (test vs 2 baseline)")
 	games := flag.Int("games", 500, "Number of evaluation games")
 	cardplayWeights := flag.String("cardplay-weights", ".data/models/cardplay.weights", "Path to card play neural network weights")
 	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, heuristic default=0.55)")
 	minimaxDepth := flag.Int("minimax-depth", 10, "Minimax search depth for perfect-info minimax")
+	minimaxMoveOrdering := flag.Bool("minimax-move-ordering", true, "Order minimax moves to improve alpha-beta pruning")
+	minimaxTransTable := flag.Bool("minimax-transposition-table", true, "Enable the minimax transposition table")
+	minimaxLMR := flag.Bool("minimax-lmr", true, "Enable minimax late-move reduction")
+	minimaxLMRThreshold := flag.Int("minimax-lmr-threshold", 3, "Apply late-move reduction starting at this zero-based move index")
+	minimaxLMRReduction := flag.Int("minimax-lmr-reduction", 1, "Number of additional plies removed by late-move reduction")
+	evalSeed := flag.Int64("seed", 0, "Random seed for reproducible evaluation deals (0 uses the current default)")
 	mctsSimulations := flag.Int("mcts-simulations", 500, "MCTS simulation count")
 	skipGameplayExamples := flag.Bool("skip-gameplay-examples", false, "Skip slow example game-play section after evaluation")
 	flag.Parse()
+	if *evalSeed != 0 {
+		rand.Seed(*evalSeed)
+	}
 
-	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *threshold, *minimaxDepth, *mctsSimulations, *skipGameplayExamples)
+	minimaxSearch := strategies.MinimaxSearchConfig{
+		MaxDepth:          *minimaxDepth,
+		UseMoveOrdering:   *minimaxMoveOrdering,
+		UseTransTable:     *minimaxTransTable,
+		UseLateMoveRed:    *minimaxLMR,
+		LateMoveThreshold: *minimaxLMRThreshold,
+		LateMoveReduction: *minimaxLMRReduction,
+	}
+	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *threshold, *minimaxDepth, *mctsSimulations, *skipGameplayExamples, &minimaxSearch)
 }
 
-func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int, skipGameplayExamples bool) {
+func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int, skipGameplayExamples bool, minimaxSearch *strategies.MinimaxSearchConfig) {
 	var testAgent *agent.SkatAgent
 	var err error
 
 	// Create agent based on type or component configuration
 	if agentType != "" {
 		// Use predefined agent type
-		testAgent, err = createAgentByType(agentType, cardplayWeights, threshold, minimaxDepth, mctsSimulations)
+		testAgent, err = createAgentByType(agentType, cardplayWeights, threshold, minimaxDepth, mctsSimulations, minimaxSearch)
 		if err != nil {
 			fmt.Printf("Error creating agent: %v\n", err)
 			os.Exit(1)
@@ -50,6 +69,7 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 			CardPlayType:      cardPlayType,
 			NeuralWeightsPath: cardplayWeights,
 			MinimaxDepth:      minimaxDepth,
+			MinimaxSearch:     minimaxSearch,
 			MCTSSimulations:   mctsSimulations,
 		}
 		testAgent, err = agent.NewHybridAgent("Test", config)
@@ -192,12 +212,12 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 		fmt.Printf("Point difference: %+.1f points per game\n", pointDiff)
 	}
 
-	// Show calibration statistics if available
+	// Show performance normalized by the estimated strength of each hand.
 	if len(testMetrics.PredictedProbability) > 0 {
 		fmt.Println("\n" + strings.Repeat("=", 50))
-		fmt.Println("CALIBRATION STATISTICS")
+		fmt.Println("HAND-STRENGTH-ADJUSTED PERFORMANCE")
 		fmt.Println(strings.Repeat("=", 50))
-		displayCalibration(testMetrics.PredictedProbability, testMetrics.ActualOutcomes)
+		displayStrengthAdjustedPerformance(testMetrics.PredictedProbability, testMetrics.ActualOutcomes, testMetrics.OutcomeIsDeclarer)
 	}
 
 	// Show example bidding decisions
@@ -223,11 +243,11 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 
 func skipsGameplayExamplesByDefault(agentType, cardPlayType string) bool {
 	switch agentType {
-	case "minimax", "minimax-heuristic":
+	case "minimax":
 		return true
 	}
 	switch cardPlayType {
-	case "minimax", "minimax-heuristic", "perfect-info-heuristic":
+	case "minimax":
 		return true
 	}
 	return false
@@ -380,7 +400,7 @@ func formatGameChoice(mode game.GameMode, suit game.Suit) string {
 }
 
 // createAgentByType creates an agent using predefined agent type
-func createAgentByType(agentType, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int) (*agent.SkatAgent, error) {
+func createAgentByType(agentType, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int, minimaxSearch *strategies.MinimaxSearchConfig) (*agent.SkatAgent, error) {
 	switch agentType {
 	case "heuristic":
 		config := agent.HybridAgentConfig{
@@ -408,15 +428,7 @@ func createAgentByType(agentType, cardplayWeights string, threshold float64, min
 			GameChoiceType:   "heuristic",
 			CardPlayType:     "minimax",
 			MinimaxDepth:     minimaxDepth,
-		}
-		return agent.NewHybridAgent("Test", config)
-	case "minimax-heuristic":
-		config := agent.HybridAgentConfig{
-			BiddingType:      "heuristic",
-			BiddingThreshold: threshold,
-			GameChoiceType:   "heuristic",
-			CardPlayType:     "minimax-heuristic",
-			MinimaxDepth:     minimaxDepth,
+			MinimaxSearch:    minimaxSearch,
 		}
 		return agent.NewHybridAgent("Test", config)
 	case "neural":
@@ -442,13 +454,13 @@ func buildAgentDescription(a *agent.SkatAgent) string {
 	return fmt.Sprintf("%s bidding + %s game choice + %s card play", bidding, gameChoice, cardPlay)
 }
 
-func displayCalibration(predicted []float64, actual []bool) {
-	if len(predicted) == 0 || len(predicted) != len(actual) {
-		fmt.Println("No calibration data available")
+func displayStrengthAdjustedPerformance(predicted []float64, actual, isDeclarer []bool) {
+	if len(predicted) == 0 || len(predicted) != len(actual) || len(predicted) != len(isDeclarer) {
+		fmt.Println("No hand-strength data available")
 		return
 	}
 
-	// Bin predictions into buckets [0.5-0.6), [0.6-0.7), [0.7-0.8), [0.8-0.9), [0.9-1.0]
+	// Bin role-specific expectations into deciles.
 	type bucket struct {
 		minProb    float64
 		maxProb    float64
@@ -459,12 +471,10 @@ func displayCalibration(predicted []float64, actual []bool) {
 		actualRate float64
 	}
 
-	buckets := []bucket{
-		{0.5, 0.6, 0, 0, 0, 0, 0},
-		{0.6, 0.7, 0, 0, 0, 0, 0},
-		{0.7, 0.8, 0, 0, 0, 0, 0},
-		{0.8, 0.9, 0, 0, 0, 0, 0},
-		{0.9, 1.0, 0, 0, 0, 0, 0},
+	buckets := make([]bucket, 10)
+	for i := range buckets {
+		buckets[i].minProb = float64(i) / 10
+		buckets[i].maxProb = float64(i+1) / 10
 	}
 
 	for i, prob := range predicted {
@@ -482,19 +492,32 @@ func displayCalibration(predicted []float64, actual []bool) {
 
 	// Calculate averages
 	totalCount := 0
-	totalWins := 0
+	brierScore := 0.0
 	for i := range buckets {
 		if buckets[i].count > 0 {
 			buckets[i].avgProb = buckets[i].sumProb / float64(buckets[i].count)
 			buckets[i].actualRate = float64(buckets[i].wins) / float64(buckets[i].count)
 			totalCount += buckets[i].count
-			totalWins += buckets[i].wins
 		}
 	}
+	for i, probability := range predicted {
+		outcome := 0.0
+		if actual[i] {
+			outcome = 1
+		}
+		difference := outcome - probability
+		brierScore += difference * difference
+	}
 
-	fmt.Printf("Total games with predictions: %d\n", totalCount)
-	fmt.Printf("Overall win rate: %.1f%%\n\n", float64(totalWins)/float64(totalCount)*100)
-	fmt.Printf("%-15s %-10s %-10s %-10s %s\n", "Predicted", "Games", "Actual", "Avg Pred", "Calibration")
+	fmt.Printf("Games with hand estimates: %d\n", totalCount)
+	fmt.Printf("%-12s %7s %10s %10s %12s\n", "Role", "Games", "Actual", "Expected", "Above exp.")
+	displayRoleAdjustedSummary("All", predicted, actual, isDeclarer, nil)
+	declarerRole := true
+	defenderRole := false
+	displayRoleAdjustedSummary("Declarer", predicted, actual, isDeclarer, &declarerRole)
+	displayRoleAdjustedSummary("Defender", predicted, actual, isDeclarer, &defenderRole)
+	fmt.Printf("Hand-model Brier score: %.3f (calibration diagnostic, not agent strength)\n\n", brierScore/float64(totalCount))
+	fmt.Printf("%-15s %-10s %-10s %-10s %s\n", "Expected", "Games", "Actual", "Avg Hand", "Vs Expectation")
 	fmt.Println(strings.Repeat("-", 70))
 
 	for _, b := range buckets {
@@ -512,9 +535,33 @@ func displayCalibration(predicted []float64, actual []bool) {
 			calibStr = "✓"
 		}
 
-		fmt.Printf("%-15s %-10d %-10.1f%% %-10.1f%% %s\n",
-			rangeStr, b.count, b.actualRate*100, b.avgProb*100, calibStr)
+		actualRate := fmt.Sprintf("%.1f%%", b.actualRate*100)
+		averageHand := fmt.Sprintf("%.1f%%", b.avgProb*100)
+		fmt.Printf("%-15s %-10d %-10s %-10s %s\n",
+			rangeStr, b.count, actualRate, averageHand, calibStr)
 	}
+}
+
+func displayRoleAdjustedSummary(label string, predicted []float64, actual, isDeclarer []bool, role *bool) {
+	games := 0
+	wins := 0
+	expectedWins := 0.0
+	for i, probability := range predicted {
+		if role != nil && isDeclarer[i] != *role {
+			continue
+		}
+		games++
+		expectedWins += probability
+		if actual[i] {
+			wins++
+		}
+	}
+	if games == 0 {
+		return
+	}
+	actualRate := float64(wins) / float64(games) * 100
+	expectedRate := expectedWins / float64(games) * 100
+	fmt.Printf("%-12s %7d %9.1f%% %9.1f%% %+10.1f pp\n", label, games, actualRate, expectedRate, actualRate-expectedRate)
 }
 
 func displayBiddingDistribution(accepts map[int]int, rejects map[int]int) {

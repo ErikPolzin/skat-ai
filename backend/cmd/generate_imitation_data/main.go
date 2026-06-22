@@ -24,30 +24,7 @@ type ImitationExample struct {
 	Policy     [32]float32                        // Soft target policy from expert scores
 }
 
-func isSearchTeacher(name string) bool {
-	return name == "minimax" || name == "minimax-heuristic"
-}
-
-func teacherDisplayName(name string) string {
-	switch name {
-	case "minimax":
-		return "Minimax"
-	case "minimax-heuristic":
-		return "MinimaxVsHeuristic"
-	default:
-		return name
-	}
-}
-
-func newSearchTeacherAgent(name, teacher string, depth int, biddingThreshold float64) *agent.SkatAgent {
-	var cardPlay agent.CardPlayStrategy
-	switch teacher {
-	case "minimax-heuristic":
-		cardPlay = strategies.NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth(depth)
-	default:
-		cardPlay = strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth)
-	}
-
+func newSearchTeacherAgent(name string, depth int, biddingThreshold float64) *agent.SkatAgent {
 	config := strategies.DefaultContractEvaluatorConfig()
 	config.MinWinProbability = biddingThreshold
 
@@ -55,38 +32,35 @@ func newSearchTeacherAgent(name, teacher string, depth int, biddingThreshold flo
 		name,
 		strategies.NewHeuristicBiddingStrategyWithConfig(config),
 		strategies.NewHeuristicGameChoiceStrategyWithConfig(config),
-		cardPlay,
+		strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth),
 	)
 }
 
 func main() {
 	numExamples := flag.Int("examples", 100000, "Number of examples to collect (per role: declarer and defender)")
 	outputFile := flag.String("output", ".data/imitation_dataset.csv", "Output file for dataset")
+	role := flag.String("role", "all", "Role to collect: all, declarer, or defender")
 	searchDepth := flag.Int("depth", 7, "Minimax search depth for expert card-play labels (default: 7)")
-	teacher := flag.String("teacher", "minimax", "Declarer label teacher: minimax or minimax-heuristic")
-	defenderTeacher := flag.String("defender-teacher", "heuristic", "Defender label teacher: heuristic, minimax, or minimax-heuristic")
 	biddingThreshold := flag.Float64("bidding-threshold", 0.55, "Heuristic bidding threshold for contract generation; higher means stronger declarer hands")
+	minHandStrength := flag.Float64("min-hand-strength", 0.55, "Minimum estimated declarer win probability to collect")
+	maxHandStrength := flag.Float64("max-hand-strength", 0.75, "Maximum estimated declarer win probability to collect")
 	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel workers")
 	flag.Parse()
 
-	if !isSearchTeacher(*teacher) {
-		fmt.Fprintf(os.Stderr, "Unknown teacher %q (use minimax or minimax-heuristic)\n", *teacher)
+	if *role != "all" && *role != "declarer" && *role != "defender" {
+		fmt.Fprintf(os.Stderr, "Unknown role %q (use all, declarer, or defender)\n", *role)
 		os.Exit(1)
 	}
-	if *defenderTeacher != "heuristic" && !isSearchTeacher(*defenderTeacher) {
-		fmt.Fprintf(os.Stderr, "Unknown defender teacher %q (use heuristic, minimax, or minimax-heuristic)\n", *defenderTeacher)
+	if *minHandStrength < 0 || *maxHandStrength > 1 || *minHandStrength > *maxHandStrength {
+		fmt.Fprintf(os.Stderr, "Invalid hand-strength range %.2f-%.2f (expected 0 <= min <= max <= 1)\n", *minHandStrength, *maxHandStrength)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Generating imitation learning dataset with %d examples per role...\n", *numExamples)
-	fmt.Printf("  Declarer strategy: %s (depth %d)\n", teacherDisplayName(*teacher), *searchDepth)
-	fmt.Printf("  Defender strategy: %s", teacherDisplayName(*defenderTeacher))
-	if isSearchTeacher(*defenderTeacher) {
-		fmt.Printf(" (depth %d)", *searchDepth)
-	}
-	fmt.Printf("\n")
+	fmt.Printf("Generating imitation learning dataset with %d examples for role %s...\n", *numExamples, *role)
+	fmt.Printf("  Declarer strategy: Minimax (depth %d)\n", *searchDepth)
+	fmt.Printf("  Defender strategy: Minimax (depth %d)\n", *searchDepth)
 	fmt.Printf("  Contract bidding: heuristic threshold %.2f\n", *biddingThreshold)
-	fmt.Printf("  Filtering: Excluding overbid games\n")
+	fmt.Printf("  Filtering: won games with declarer hand strength %.2f-%.2f; excluding overbids\n", *minHandStrength, *maxHandStrength)
 	fmt.Printf("Using %d parallel workers\n", *workers)
 
 	// Channel for collecting results
@@ -125,16 +99,12 @@ func main() {
 		defer wg.Done()
 
 		// Create search agent for expert card-play labels.
-		searchAgent := newSearchTeacherAgent("SearchExpert", *teacher, *searchDepth, *biddingThreshold)
-		defenderSearchAgent := searchAgent
-		if isSearchTeacher(*defenderTeacher) && *defenderTeacher != *teacher {
-			defenderSearchAgent = newSearchTeacherAgent("DefenderSearchExpert", *defenderTeacher, *searchDepth, *biddingThreshold)
-		}
+		searchAgent := newSearchTeacherAgent("SearchExpert", *searchDepth, *biddingThreshold)
 
 		config := strategies.DefaultContractEvaluatorConfig()
 		config.MinWinProbability = *biddingThreshold
 
-		// Create heuristic agent for defender examples and opponent simulation
+		// Heuristic opponents face the Minimax teacher in each role-specific replay.
 		heuristicAgent := agent.NewAgentWithStrategies(
 			"HeuristicDefender",
 			strategies.NewHeuristicBiddingStrategyWithConfig(config),
@@ -148,7 +118,7 @@ func main() {
 			case <-stopChan:
 				return
 			default:
-				examples := playGameAndCollectExamples(searchAgent, defenderSearchAgent, heuristicAgent, *defenderTeacher)
+				examples := playGameAndCollectExamples(searchAgent, heuristicAgent, *role, *minHandStrength, *maxHandStrength)
 				if len(examples) > 0 {
 					// Try to send, but stop if channel is closed
 					select {
@@ -176,7 +146,7 @@ func main() {
 						return
 					}
 				} else {
-					// Game was filtered out (overbid)
+					// Deal or both replays were filtered out.
 					select {
 					case progressChan <- ProgressUpdate{GamesPlayed: 1}:
 					case <-stopChan:
@@ -206,13 +176,13 @@ func main() {
 			}
 
 			// Check after each example if we have enough of both
-			if len(declarerExamples) >= *numExamples && len(defenderExamples) >= *numExamples {
+			if doneCollecting(*role, len(declarerExamples), len(defenderExamples), *numExamples) {
 				break
 			}
 		}
 
 		// Double-check after processing the batch
-		if len(declarerExamples) >= *numExamples && len(defenderExamples) >= *numExamples {
+		if doneCollecting(*role, len(declarerExamples), len(defenderExamples), *numExamples) {
 			break
 		}
 	}
@@ -311,9 +281,20 @@ func main() {
 
 	fmt.Printf("\nDataset Statistics:\n")
 	fmt.Printf("  Total examples: %d\n", len(dataset))
-	fmt.Printf("  Declarer examples: %d (%.1f%%) - trained with %s\n", actualDeclarer, declarerPct, teacherDisplayName(*teacher))
-	fmt.Printf("  Defender examples: %d (%.1f%%) - trained with %s\n", actualDefender, defenderPct, teacherDisplayName(*defenderTeacher))
+	fmt.Printf("  Declarer examples: %d (%.1f%%) - trained with Minimax\n", actualDeclarer, declarerPct)
+	fmt.Printf("  Defender examples: %d (%.1f%%) - trained with Minimax\n", actualDefender, defenderPct)
 	fmt.Printf("\n✓ Dataset generation complete!\n")
+}
+
+func doneCollecting(role string, declarers, defenders, target int) bool {
+	switch role {
+	case "declarer":
+		return declarers >= target
+	case "defender":
+		return defenders >= target
+	default:
+		return declarers >= target && defenders >= target
+	}
 }
 
 // setupGame creates a game, runs bidding, and returns the game state ready for card play
@@ -389,11 +370,16 @@ func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *age
 		}
 	}
 
+	// Only imitate successful play. Keeping the examples buffered until the
+	// result is known avoids teaching attractive-looking lines that lost.
+	if !g.Result().DeclarerWon {
+		return nil
+	}
 	return examples
 }
 
-// collectDefenderExamples plays a game with heuristic declarer vs the selected defender teacher.
-func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAgent *agent.SkatAgent, defenderTeacher string) []ImitationExample {
+// collectDefenderExamples plays a game with a heuristic declarer vs Minimax defenders.
+func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
 	var examples []ImitationExample
 
 	if g.Declarer == nil {
@@ -401,15 +387,10 @@ func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAg
 	}
 
 	declarer := *g.Declarer
-	defenderAgent := heuristicAgent
-	if isSearchTeacher(defenderTeacher) {
-		defenderAgent = defenderSearchAgent
-	}
-
-	// Heuristic declarer vs selected defender teacher
+	// Heuristic declarer vs Minimax defenders.
 	agent.SetAgentForPlayer(g.GetPlayerByPosition(declarer), heuristicAgent)
-	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), defenderAgent)
-	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), defenderAgent.CachedClone())
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+1)%3), defenderSearchAgent)
+	agent.SetAgentForPlayer(g.GetPlayerByPosition((declarer+2)%3), defenderSearchAgent.CachedClone())
 
 	// Card play phase
 	for g.Phase == game.PhasePlaying {
@@ -456,6 +437,10 @@ func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAg
 		}
 	}
 
+	// Defenders win as a team when the declarer loses.
+	if g.Result().DeclarerWon {
+		return nil
+	}
 	return examples
 }
 
@@ -482,7 +467,7 @@ func oneHotPolicy(action int) [32]float32 {
 }
 
 // playGameAndCollectExamples plays games twice: once for declarer examples, once for defender examples.
-func playGameAndCollectExamples(searchAgent, defenderSearchAgent, heuristicAgent *agent.SkatAgent, defenderTeacher string) []ImitationExample {
+func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, role string, minHandStrength, maxHandStrength float64) []ImitationExample {
 	var examples []ImitationExample
 
 	// Setup game and run bidding once
@@ -493,15 +478,29 @@ func playGameAndCollectExamples(searchAgent, defenderSearchAgent, heuristicAgent
 		return examples
 	}
 
-	// Collect declarer examples: search-teacher declarer vs heuristic defenders
-	gDeclarer := g.Clone()
-	declarerExamples := collectDeclarerExamples(gDeclarer, searchAgent, heuristicAgent)
-	examples = append(examples, declarerExamples...)
+	declarer := *g.Declarer
+	handStrength := strategies.EstimateContractWinProbability(
+		g.GetPlayerByPosition(declarer).Hand,
+		g.Mode,
+		g.TrumpSuit,
+	)
+	if handStrength < minHandStrength || handStrength > maxHandStrength {
+		return examples
+	}
 
-	// Collect defender examples: heuristic declarer vs selected defender teacher
-	gDefender := g.Clone()
-	defenderExamples := collectDefenderExamples(gDefender, defenderSearchAgent, heuristicAgent, defenderTeacher)
-	examples = append(examples, defenderExamples...)
+	if role == "all" || role == "declarer" {
+		// Collect declarer examples: search-teacher declarer vs heuristic defenders
+		gDeclarer := g.Clone()
+		declarerExamples := collectDeclarerExamples(gDeclarer, searchAgent, heuristicAgent)
+		examples = append(examples, declarerExamples...)
+	}
+
+	if role == "all" || role == "defender" {
+		// Collect defender examples: heuristic declarer vs Minimax defenders.
+		gDefender := g.Clone()
+		defenderExamples := collectDefenderExamples(gDefender, searchAgent, heuristicAgent)
+		examples = append(examples, defenderExamples...)
+	}
 
 	return examples
 }

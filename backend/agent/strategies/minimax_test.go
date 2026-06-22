@@ -1,0 +1,61 @@
+package strategies
+
+import (
+	"math"
+	"skat/game"
+	"testing"
+)
+
+func TestEvaluateMaterialIncludesDefenderPoints(t *testing.T) {
+	declarer := game.Dealer
+	state := &game.GameState{
+		Players: [3]*game.PlayerState{
+			{}, {}, {},
+		},
+		Declarer:     &declarer,
+		PlayerScores: [3]int{12, 20, 10},
+	}
+
+	got := NewPerfectInfoMinimaxStrategyWithDepth(1).evaluateMaterial(state, declarer)
+	if want := -18.0; got != want {
+		t.Fatalf("material score = %.1f, want point margin %.1f", got, want)
+	}
+}
+
+func TestMinimaxFinishesTrickAtDepthCutoff(t *testing.T) {
+	declarer := game.Listener
+	seven := game.Card{Suit: game.Hearts, Rank: game.Seven}
+	king := game.Card{Suit: game.Hearts, Rank: game.King}
+	ace := game.Card{Suit: game.Hearts, Rank: game.Ace}
+	ten := game.Card{Suit: game.Hearts, Rank: game.Ten}
+	state := &game.GameState{
+		Players: [3]*game.PlayerState{
+			{Hand: game.Cards{}},
+			{Hand: game.Cards{king, ace}},
+			{Hand: game.Cards{ten}},
+		},
+		Declarer:      &declarer,
+		Mode:          game.ModeGrand,
+		Phase:         game.PhasePlaying,
+		CurrentPlayer: game.Listener,
+		TrickStarter:  game.Dealer,
+		Trick:         game.Cards{seven},
+	}
+
+	strategy := NewPerfectInfoMinimaxStrategyWithConfig(MinimaxSearchConfig{MaxDepth: 1})
+	got := strategy.SelectMove(state, game.Cards{king, ace})
+	if got != ace {
+		t.Fatalf("selected %v, want %v to secure the trick against %v", got, ace, ten)
+	}
+
+	// The cutoff extension must reach the completed trick rather than applying
+	// static evaluation to the two-card partial trick.
+	next := state.Clone()
+	if _, err := next.PlayCard(ace); err != nil {
+		t.Fatal(err)
+	}
+	value := strategy.minimax(next, 0, math.Inf(-1), math.Inf(1))
+	if math.Abs(value) < 900 {
+		t.Fatalf("cutoff value = %.1f, want terminal-scale evaluation after completing the trick", value)
+	}
+}

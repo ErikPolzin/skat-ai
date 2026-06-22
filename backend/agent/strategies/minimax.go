@@ -27,13 +27,28 @@ type PerfectInfoMinimaxStrategy struct {
 	lateMoveReduction int
 }
 
-// PerfectInfoMinimaxVsHeuristicStrategy searches the root player's choices with
-// perfect information, while predicting every other player with the heuristic
-// card-play policy. This keeps the branching factor small enough for full-game
-// depth searches against heuristic opponents.
-type PerfectInfoMinimaxVsHeuristicStrategy struct {
-	*PerfectInfoMinimaxStrategy
-	heuristicMoveCache map[uint64]game.Card
+// MinimaxSearchConfig controls search depth and optional tree-pruning aids.
+// Late-move reduction is approximate: later ordered moves are searched fewer plies.
+type MinimaxSearchConfig struct {
+	MaxDepth          int
+	UseMoveOrdering   bool
+	UseTransTable     bool
+	UseLateMoveRed    bool
+	LateMoveThreshold int
+	LateMoveReduction int
+}
+
+// DefaultMinimaxSearchConfig returns the strongest settings from the
+// reproducible minimax-vs-heuristic evaluation sweep.
+func DefaultMinimaxSearchConfig(maxDepth int) MinimaxSearchConfig {
+	return MinimaxSearchConfig{
+		MaxDepth:          maxDepth,
+		UseMoveOrdering:   true,
+		UseTransTable:     true,
+		UseLateMoveRed:    true,
+		LateMoveThreshold: 3,
+		LateMoveReduction: 1,
+	}
 }
 
 // NewPerfectInfoMinimaxStrategy creates a new perfect-info minimax strategy
@@ -51,46 +66,25 @@ func NewPerfectInfoMinimaxStrategy() *PerfectInfoMinimaxStrategy {
 
 // NewPerfectInfoMinimaxStrategyWithDepth creates a strategy with custom depth
 func NewPerfectInfoMinimaxStrategyWithDepth(maxDepth int) *PerfectInfoMinimaxStrategy {
+	return NewPerfectInfoMinimaxStrategyWithConfig(DefaultMinimaxSearchConfig(maxDepth))
+}
+
+// NewPerfectInfoMinimaxStrategyWithConfig creates a strategy with explicit
+// search and pruning settings.
+func NewPerfectInfoMinimaxStrategyWithConfig(config MinimaxSearchConfig) *PerfectInfoMinimaxStrategy {
 	return &PerfectInfoMinimaxStrategy{
-		maxDepth:          maxDepth,
+		maxDepth:          config.MaxDepth,
 		transTable:        make(map[uint64]*TranspositionEntry),
-		useMoveOrdering:   true,
-		useTransTable:     true,
-		useLateMoveRed:    true,
-		lateMoveThreshold: 2,
-		lateMoveReduction: 3,
-	}
-}
-
-// NewPerfectInfoMinimaxVsHeuristicStrategy creates a full-depth minimax strategy
-// that predicts non-root players with the heuristic card-play strategy.
-func NewPerfectInfoMinimaxVsHeuristicStrategy() *PerfectInfoMinimaxVsHeuristicStrategy {
-	return NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth(30)
-}
-
-// NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth creates a strategy with a
-// custom maximum depth. A depth of 30 can simulate the whole card-play phase.
-func NewPerfectInfoMinimaxVsHeuristicStrategyWithDepth(maxDepth int) *PerfectInfoMinimaxVsHeuristicStrategy {
-	return &PerfectInfoMinimaxVsHeuristicStrategy{
-		heuristicMoveCache: make(map[uint64]game.Card),
-		PerfectInfoMinimaxStrategy: &PerfectInfoMinimaxStrategy{
-			maxDepth:          maxDepth,
-			transTable:        make(map[uint64]*TranspositionEntry),
-			useMoveOrdering:   true,
-			useTransTable:     true,
-			useLateMoveRed:    false,
-			lateMoveThreshold: 0,
-			lateMoveReduction: 0,
-		},
+		useMoveOrdering:   config.UseMoveOrdering,
+		useTransTable:     config.UseTransTable,
+		useLateMoveRed:    config.UseLateMoveRed,
+		lateMoveThreshold: config.LateMoveThreshold,
+		lateMoveReduction: config.LateMoveReduction,
 	}
 }
 
 func (m *PerfectInfoMinimaxStrategy) GetName() string {
 	return "PerfectInfoMinimax"
-}
-
-func (m *PerfectInfoMinimaxVsHeuristicStrategy) GetName() string {
-	return "PerfectInfoMinimaxVsHeuristic"
 }
 
 func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMoves []game.Card) game.Card {
@@ -156,54 +150,12 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 	return bestMove
 }
 
-func (m *PerfectInfoMinimaxVsHeuristicStrategy) SelectMove(state *game.GameState, validMoves []game.Card) game.Card {
-	if len(validMoves) == 1 {
-		return validMoves[0]
-	}
-
-	if m.useTransTable {
-		m.transMutex.Lock()
-		m.transTable = make(map[uint64]*TranspositionEntry)
-		m.heuristicMoveCache = make(map[uint64]game.Card)
-		m.transMutex.Unlock()
-	}
-
-	rootPlayer := state.CurrentPlayer
-	rootIsDeclarer := state.Declarer != nil && rootPlayer == *state.Declarer
-
-	if m.useMoveOrdering {
-		m.orderMoves(state, validMoves, rootIsDeclarer)
-	}
-
-	bestMove := validMoves[0]
-	bestValue := math.Inf(-1)
-	if !rootIsDeclarer {
-		bestValue = math.Inf(1)
-	}
-
-	for _, move := range validMoves {
-		nextState := state.Clone()
-		m.playAndResolve(nextState, move)
-
-		value := m.minimaxVsHeuristic(nextState, m.maxDepth-1, math.Inf(-1), math.Inf(1), rootPlayer)
-		if rootIsDeclarer {
-			if value > bestValue {
-				bestValue = value
-				bestMove = move
-			}
-		} else if value < bestValue {
-			bestValue = value
-			bestMove = move
-		}
-	}
-
-	return bestMove
-}
-
 // minimax performs alpha-beta pruning minimax search
 func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, alpha, beta float64) float64 {
-	// Terminal conditions
-	if state.Phase != game.PhasePlaying || depth == 0 {
+	// Do not evaluate halfway through a trick. Extending the leaf by at most two
+	// plies prevents the current winner from being credited before every player
+	// has had the chance to beat it.
+	if state.Phase != game.PhasePlaying || (depth <= 0 && len(state.Trick) == 0) {
 		return m.evaluate(state)
 	}
 
@@ -314,120 +266,6 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 	return value
 }
 
-func (m *PerfectInfoMinimaxVsHeuristicStrategy) minimaxVsHeuristic(state *game.GameState, depth int, alpha, beta float64, rootPlayer game.GamePosition) float64 {
-	if state.Phase != game.PhasePlaying || depth == 0 {
-		return m.evaluate(state)
-	}
-
-	validMoves := state.GetValidMoves()
-	if len(validMoves) == 0 {
-		return m.evaluate(state)
-	}
-
-	if state.CurrentPlayer != rootPlayer {
-		nextState := state.Clone()
-		move := m.predictHeuristicMove(nextState, validMoves)
-		m.playAndResolve(nextState, move)
-		return m.minimaxVsHeuristic(nextState, depth-1, alpha, beta, rootPlayer)
-	}
-
-	if m.useTransTable {
-		hash := m.hashStateForRoot(state, rootPlayer)
-		m.transMutex.RLock()
-		entry, found := m.transTable[hash]
-		m.transMutex.RUnlock()
-		if found && entry.depth >= depth {
-			return entry.value
-		}
-	}
-
-	rootIsDeclarer := state.Declarer != nil && rootPlayer == *state.Declarer
-	if m.useMoveOrdering {
-		m.orderMoves(state, validMoves, rootIsDeclarer)
-	}
-
-	var value float64
-	if rootIsDeclarer {
-		value = math.Inf(-1)
-		for _, move := range validMoves {
-			nextState := state.Clone()
-			m.playAndResolve(nextState, move)
-
-			childValue := m.minimaxVsHeuristic(nextState, depth-1, alpha, beta, rootPlayer)
-			value = math.Max(value, childValue)
-			alpha = math.Max(alpha, childValue)
-			if beta <= alpha {
-				break
-			}
-		}
-	} else {
-		value = math.Inf(1)
-		for _, move := range validMoves {
-			nextState := state.Clone()
-			m.playAndResolve(nextState, move)
-
-			childValue := m.minimaxVsHeuristic(nextState, depth-1, alpha, beta, rootPlayer)
-			value = math.Min(value, childValue)
-			beta = math.Min(beta, childValue)
-			if beta <= alpha {
-				break
-			}
-		}
-	}
-
-	if m.useTransTable {
-		hash := m.hashStateForRoot(state, rootPlayer)
-		m.transMutex.Lock()
-		m.transTable[hash] = &TranspositionEntry{
-			depth: depth,
-			value: value,
-			alpha: alpha,
-			beta:  beta,
-		}
-		m.transMutex.Unlock()
-	}
-
-	return value
-}
-
-func (m *PerfectInfoMinimaxStrategy) playAndResolve(state *game.GameState, move game.Card) {
-	state.PlayCard(move)
-	if len(state.Trick) == 3 {
-		state.ResolveTrick()
-	}
-}
-
-func (m *PerfectInfoMinimaxVsHeuristicStrategy) predictHeuristicMove(state *game.GameState, validMoves []game.Card) game.Card {
-	hash := m.hashStateForRoot(state, state.CurrentPlayer)
-
-	m.transMutex.RLock()
-	move, found := m.heuristicMoveCache[hash]
-	m.transMutex.RUnlock()
-	if found {
-		return move
-	}
-
-	heuristic := heuristicStrategyForState(state)
-	moves := append([]game.Card{}, validMoves...)
-	move = heuristic.SelectMove(state, moves)
-
-	m.transMutex.Lock()
-	m.heuristicMoveCache[hash] = move
-	m.transMutex.Unlock()
-
-	return move
-}
-
-func heuristicStrategyForState(state *game.GameState) *HeuristicCardPlayStrategy {
-	heuristic := NewHeuristicCardPlayStrategy()
-	for _, trick := range state.CardsPlayed {
-		for _, card := range trick {
-			heuristic.cardsPlayed[card] = true
-		}
-	}
-	return heuristic
-}
-
 // orderMoves sorts moves to improve alpha-beta pruning efficiency
 // Uses heuristic-based ordering to prioritize moves likely to be good
 func (m *PerfectInfoMinimaxStrategy) orderMoves(state *game.GameState, moves []game.Card, isDeclarer bool) {
@@ -473,12 +311,6 @@ func (m *PerfectInfoMinimaxStrategy) hashState(state *game.GameState) uint64 {
 	hash = hash*31 + uint64(state.TrumpSuit)
 	hash = hash*31 + hashGameMode(state.Mode)
 
-	return hash
-}
-
-func (m *PerfectInfoMinimaxStrategy) hashStateForRoot(state *game.GameState, rootPlayer game.GamePosition) uint64 {
-	hash := m.hashState(state)
-	hash = hash*31 + uint64(rootPlayer)
 	return hash
 }
 
@@ -543,8 +375,9 @@ func (m *PerfectInfoMinimaxStrategy) evaluateTerminal(state *game.GameState) flo
 
 // evaluateMaterial calculates material advantage (points)
 func (m *PerfectInfoMinimaxStrategy) evaluateMaterial(state *game.GameState, declarer game.GamePosition) float64 {
-	// Start with current score
-	score := float64(state.DeclarerCardScore())
+	// Start with the actual point margin. Using only the declarer's score made
+	// points already captured by defenders disappear from cutoff evaluation.
+	score := float64(state.DeclarerCardScore() - state.OpponentCardScore())
 
 	// Add remaining card values in hands
 	for p := 0; p < 3; p++ {

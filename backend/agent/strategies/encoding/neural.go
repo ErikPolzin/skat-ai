@@ -5,44 +5,43 @@ import (
 )
 
 const (
-	StateFeatureSize = 155
+	StateFeatureSize = 175
 	ValidMoveCount   = 32
 	NetworkInputSize = StateFeatureSize + ValidMoveCount
 )
 
 // NeuralCardPlayEncoding represents the DQN network input for card play
-// Total: 155 active state features plus 32 valid-move mask features.
+// Total: 175 active state features plus 32 valid-move mask features.
 type NeuralCardPlayEncoding struct {
 	// Card presence (96 features)
 	MyHand      [32]float32 // Binary: cards in my hand
 	TrickCards  [32]float32 // Binary: cards in current trick
 	PlayedCards [32]float32 // Binary: all cards played so far (cumulative)
 
-	// Game context (14 features)
+	// Game context (13 features)
 	GameMode        [6]float32 // One-hot: [Grand, Clubs, Spades, Hearts, Diamonds, Null]
 	TrickPosition   [3]float32 // [leading, second, third]
 	Scores          [2]float32 // [derived declarer score / 120, derived opponent score / 120]
 	TricksRemaining float32    // tricks_left / 10
-	TrumpSituation  [2]float32 // [my_trump_count/11, estimated_opponent_trumps/11]
+	MyTrumpCount    float32    // Trumps in hand / total trumps in this game mode
 
-	// Trick analysis (5 features - let network learn the rest)
-	LeadSuitInHand [4]float32 // Count of lead suit cards in hand per suit (normalized)
-	TrumpInTrick   float32    // Number of trump cards in trick
+	// Trick analysis (2 features)
+	FollowCount  float32 // Cards in hand matching the led effective suit / 10
+	TrumpInTrick float32 // Trump cards in the current trick / 3
 
-	// Team and trick context (16 features)
-	Role              [3]float32 // [declarer, defender, defender_partner_known]
-	DeclarerRelative  [3]float32 // Declarer relative to me: [self, next, previous]
-	PartnerRelative   [3]float32 // Defender partner relative to me, zero for declarer
-	TrickLeaderRole   [3]float32 // [me, partner, declarer]
-	CurrentWinnerRole [3]float32 // [me, partner, declarer]
-	TrickPoints       float32    // Points currently in trick / 30
+	// Team and trick context (10 features). Relative positions retain seat order;
+	// role and partner identity can be derived from DeclarerRelative.
+	DeclarerRelative      [3]float32 // [self, next, previous]
+	TrickLeaderRelative   [3]float32 // [self, next, previous]
+	CurrentWinnerRelative [3]float32 // [self, next, previous]
+	TrickPoints           float32    // Points currently in trick / 30
 
-	// Public inference context (24 features)
-	VoidSuits       [3][4]float32 // Relative player x suit void signals from public play
-	VoidTrump       [3]float32    // Relative player trump-void signals from public play
-	RemainingBySuit [4]float32    // Unseen cards by actual suit / 8
-	RemainingTrumps float32       // Unseen trumps / max trump count
-	GamePressure    [4]float32    // [bid/264, declarer_needed/61, defenders_needed/60, hand_game]
+	// Inference and card counting (54 features). Card classes are
+	// [clubs, spades, hearts, diamonds, trump], using effective rather than printed suit.
+	VoidClasses      [3][5]float32 // Relative player x card-class void signals
+	RemainingByClass [5]float32    // Unseen side suits / 8 and trumps / total trumps
+	HigherUnseen     [32]float32   // Cards that can beat each card / 31; zero means a standing winner
+	ContractContext  [2]float32    // [bid/264, hand_game]
 
 	// Valid moves mask (32 features) - kept separate from state
 	ValidMovesMask [32]float32 // Binary: 1 if card is playable, 0 otherwise
@@ -61,7 +60,7 @@ func (e *NeuralCardPlayEncoding) ToSlice() [StateFeatureSize]float32 {
 	copy(result[idx:idx+32], e.PlayedCards[:])
 	idx += 32
 
-	// Game context (14 features)
+	// Game context (13 features)
 	copy(result[idx:idx+6], e.GameMode[:])
 	idx += 6
 	copy(result[idx:idx+3], e.TrickPosition[:])
@@ -70,41 +69,35 @@ func (e *NeuralCardPlayEncoding) ToSlice() [StateFeatureSize]float32 {
 	idx += 2
 	result[idx] = e.TricksRemaining
 	idx++
-	copy(result[idx:idx+2], e.TrumpSituation[:])
-	idx += 2
+	result[idx] = e.MyTrumpCount
+	idx++
 
-	// Trick analysis (5 features)
-	copy(result[idx:idx+4], e.LeadSuitInHand[:])
-	idx += 4
+	// Trick analysis (2 features)
+	result[idx] = e.FollowCount
+	idx++
 	result[idx] = e.TrumpInTrick
 	idx++
 
-	// Team and trick context (16 features)
-	copy(result[idx:idx+3], e.Role[:])
-	idx += 3
+	// Team and trick context (10 features)
 	copy(result[idx:idx+3], e.DeclarerRelative[:])
 	idx += 3
-	copy(result[idx:idx+3], e.PartnerRelative[:])
+	copy(result[idx:idx+3], e.TrickLeaderRelative[:])
 	idx += 3
-	copy(result[idx:idx+3], e.TrickLeaderRole[:])
-	idx += 3
-	copy(result[idx:idx+3], e.CurrentWinnerRole[:])
+	copy(result[idx:idx+3], e.CurrentWinnerRelative[:])
 	idx += 3
 	result[idx] = e.TrickPoints
 	idx++
 
-	// Public inference context (24 features)
+	// Inference and card-counting context (54 features)
 	for playerIdx := 0; playerIdx < 3; playerIdx++ {
-		copy(result[idx:idx+4], e.VoidSuits[playerIdx][:])
-		idx += 4
+		copy(result[idx:idx+5], e.VoidClasses[playerIdx][:])
+		idx += 5
 	}
-	copy(result[idx:idx+3], e.VoidTrump[:])
-	idx += 3
-	copy(result[idx:idx+4], e.RemainingBySuit[:])
-	idx += 4
-	result[idx] = e.RemainingTrumps
-	idx++
-	copy(result[idx:idx+4], e.GamePressure[:])
+	copy(result[idx:idx+5], e.RemainingByClass[:])
+	idx += 5
+	copy(result[idx:idx+32], e.HigherUnseen[:])
+	idx += 32
+	copy(result[idx:idx+2], e.ContractContext[:])
 
 	return result
 }
@@ -143,7 +136,7 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 		}
 	}
 
-	// 2. Game Context (14 features)
+	// 2. Game Context (13 features)
 
 	// Game mode one-hot
 	switch gs.Mode {
@@ -178,70 +171,44 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 	cardsInHand := len(myHand)
 	encoding.TricksRemaining = float32(cardsInHand) / 10.0
 
-	// Trump situation
-	myTrumpCount := countTrumps(gs, myHand)
-	encoding.TrumpSituation[0] = float32(myTrumpCount) / 11.0 // Max 11 trump in suit games
+	if totalTrumps := getTotalTrumpCount(gs); totalTrumps > 0 {
+		encoding.MyTrumpCount = float32(countTrumps(gs, myHand)) / float32(totalTrumps)
+	}
 
-	// Estimate opponent trumps (total trump - my trump - trump in trick - trump played)
-	totalTrump := getTotalTrumpCount(gs)
+	// All unseen-card features use the same inventory, so trump and winner counts
+	// cannot drift apart as cards move from the hand to the table and history.
+	remainingByClass, higherUnseen := cardCounts(gs, myPosition, myHand)
+
 	trumpInTrick := 0
 	for _, card := range gs.Trick {
 		if isTrump(gs, card) {
 			trumpInTrick++
 		}
 	}
-	trumpPlayed := 0
-	for _, trick := range gs.CardsPlayed {
-		for _, card := range trick {
-			if isTrump(gs, card) {
-				trumpPlayed++
-			}
-		}
-	}
-	opponentTrump := totalTrump - myTrumpCount - trumpInTrick - trumpPlayed
-	if opponentTrump < 0 {
-		opponentTrump = 0
-	}
-	encoding.TrumpSituation[1] = float32(opponentTrump) / 11.0
 
-	// 3. Trick Analysis (5 features)
+	// 3. Trick Analysis (2 features)
 
-	// Lead suit distribution in my hand
+	// Number of legal followers is the useful part of the old four-slot lead-suit
+	// distribution; the led class itself is already present in TrickCards.
 	if len(gs.Trick) > 0 {
-		leadCard := gs.Trick[0]
-		leadSuit := getEffectiveSuit(gs, leadCard)
-
+		leadSuit := getEffectiveSuit(gs, gs.Trick[0])
 		for _, card := range myHand {
 			if getEffectiveSuit(gs, card) == leadSuit {
-				suitIdx := int(card.Suit) - 1
-				if suitIdx >= 0 && suitIdx < 4 {
-					encoding.LeadSuitInHand[suitIdx] += 1.0 / 8.0 // Normalize by max suit length
-				}
+				encoding.FollowCount += 1.0 / 10.0
 			}
 		}
 	}
 
-	// Trump in trick
-	encoding.TrumpInTrick = float32(trumpInTrick)
+	encoding.TrumpInTrick = float32(trumpInTrick) / 3.0
 
 	// 4. Team and public inference context
 	if gs.Declarer != nil {
-		declarer := *gs.Declarer
-		if myPosition == declarer {
-			encoding.Role[0] = 1.0
-		} else {
-			encoding.Role[1] = 1.0
-			encoding.Role[2] = 1.0
-			if partner, ok := defenderPartner(gs, myPosition); ok {
-				encoding.PartnerRelative[relativePosition(myPosition, partner)] = 1.0
-			}
-		}
-		encoding.DeclarerRelative[relativePosition(myPosition, declarer)] = 1.0
+		encoding.DeclarerRelative[relativePosition(myPosition, *gs.Declarer)] = 1.0
 	}
 
-	encoding.TrickLeaderRole[roleIndex(gs, myPosition, gs.TrickStarter)] = 1.0
+	encoding.TrickLeaderRelative[relativePosition(myPosition, gs.TrickStarter)] = 1.0
 	winner := currentTrickWinner(gs)
-	encoding.CurrentWinnerRole[roleIndex(gs, myPosition, winner)] = 1.0
+	encoding.CurrentWinnerRelative[relativePosition(myPosition, winner)] = 1.0
 
 	trickPoints := 0
 	for _, card := range gs.Trick {
@@ -249,26 +216,14 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 	}
 	encoding.TrickPoints = clamp01(float32(trickPoints) / 30.0)
 
-	voidSuits, voidTrump := inferVoids(gs, myPosition)
-	encoding.VoidSuits = voidSuits
-	encoding.VoidTrump = voidTrump
+	encoding.VoidClasses = inferVoids(gs, myPosition)
 
-	remainingBySuit, remainingTrumps := remainingCards(gs, myHand)
-	encoding.RemainingBySuit = remainingBySuit
-	encoding.RemainingTrumps = remainingTrumps
+	encoding.RemainingByClass = remainingByClass
+	encoding.HigherUnseen = higherUnseen
 
-	encoding.GamePressure[0] = clamp01(float32(gs.BidValue) / 264.0)
-	if gs.Mode == game.ModeNull {
-		if gs.DeclarerCardScore() > 0 {
-			encoding.GamePressure[1] = 1.0
-		}
-		encoding.GamePressure[2] = 1.0 - encoding.GamePressure[1]
-	} else {
-		encoding.GamePressure[1] = clamp01(float32(61-gs.DeclarerCardScore()) / 61.0)
-		encoding.GamePressure[2] = clamp01(float32(60-gs.OpponentCardScore()) / 60.0)
-	}
+	encoding.ContractContext[0] = clamp01(float32(gs.BidValue) / 264.0)
 	if gs.PlayedHand {
-		encoding.GamePressure[3] = 1.0
+		encoding.ContractContext[1] = 1.0
 	}
 
 	// 5. Valid Moves Mask (32 features)
@@ -281,30 +236,8 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 
 // Helper functions
 
-func defenderPartner(gs *game.GameState, myPosition game.GamePosition) (game.GamePosition, bool) {
-	if gs.Declarer == nil || myPosition == *gs.Declarer {
-		return 0, false
-	}
-	for _, pos := range game.AllPositions {
-		if pos != myPosition && pos != *gs.Declarer {
-			return pos, true
-		}
-	}
-	return 0, false
-}
-
 func relativePosition(from, to game.GamePosition) int {
 	return int((to - from + 3) % 3)
-}
-
-func roleIndex(gs *game.GameState, myPosition, pos game.GamePosition) int {
-	if pos == myPosition {
-		return 0
-	}
-	if gs.Declarer != nil && pos == *gs.Declarer {
-		return 2
-	}
-	return 1
 }
 
 func currentTrickWinner(gs *game.GameState) game.GamePosition {
@@ -323,44 +256,34 @@ func currentTrickWinner(gs *game.GameState) game.GamePosition {
 	return (gs.TrickStarter + game.GamePosition(winnerOffset)) % 3
 }
 
-func inferVoids(gs *game.GameState, myPosition game.GamePosition) ([3][4]float32, [3]float32) {
-	var voidSuits [3][4]float32
-	var voidTrump [3]float32
+func inferVoids(gs *game.GameState, myPosition game.GamePosition) [3][5]float32 {
+	var voidClasses [3][5]float32
 
 	starter := game.Listener
 	for _, trick := range gs.CardsPlayed {
-		markVoidsForTrick(gs, myPosition, starter, trick, &voidSuits, &voidTrump)
+		markVoidsForTrick(gs, myPosition, starter, trick, &voidClasses)
 		starter = completedTrickWinner(gs, starter, trick)
 	}
-	markVoidsForTrick(gs, myPosition, gs.TrickStarter, gs.Trick, &voidSuits, &voidTrump)
+	markVoidsForTrick(gs, myPosition, gs.TrickStarter, gs.Trick, &voidClasses)
 
-	return voidSuits, voidTrump
+	return voidClasses
 }
 
-func markVoidsForTrick(gs *game.GameState, myPosition, starter game.GamePosition, trick []game.Card, voidSuits *[3][4]float32, voidTrump *[3]float32) {
+func markVoidsForTrick(gs *game.GameState, myPosition, starter game.GamePosition, trick []game.Card, voidClasses *[3][5]float32) {
 	if len(trick) < 2 {
 		return
 	}
 
-	leadSuit := getEffectiveSuit(gs, trick[0])
-	leadIsTrump := isTrump(gs, trick[0])
+	leadClass := cardClass(gs, trick[0])
 	for i := 1; i < len(trick); i++ {
 		card := trick[i]
-		if getEffectiveSuit(gs, card) == leadSuit {
+		if cardClass(gs, card) == leadClass {
 			continue
 		}
 
 		player := (starter + game.GamePosition(i)) % 3
 		relative := relativePosition(myPosition, player)
-		if leadIsTrump || leadSuit == game.NoSuit {
-			voidTrump[relative] = 1.0
-			continue
-		}
-
-		suitIdx := int(leadSuit) - 1
-		if suitIdx >= 0 && suitIdx < 4 {
-			voidSuits[relative][suitIdx] = 1.0
-		}
+		voidClasses[relative][leadClass] = 1.0
 	}
 }
 
@@ -379,7 +302,7 @@ func completedTrickWinner(gs *game.GameState, starter game.GamePosition, trick [
 	return (starter + game.GamePosition(winnerOffset)) % 3
 }
 
-func remainingCards(gs *game.GameState, myHand []game.Card) ([4]float32, float32) {
+func cardCounts(gs *game.GameState, myPosition game.GamePosition, myHand []game.Card) ([5]float32, [32]float32) {
 	var known [32]bool
 	for _, card := range myHand {
 		known[CardToIndex(card)] = true
@@ -392,27 +315,44 @@ func remainingCards(gs *game.GameState, myHand []game.Card) ([4]float32, float32
 			known[CardToIndex(card)] = true
 		}
 	}
+	// In a non-hand game the declarer picked up, and therefore knows, both skat
+	// cards. They remain hidden information for defenders.
+	if gs.Declarer != nil && myPosition == *gs.Declarer && !gs.PlayedHand {
+		for _, card := range gs.Skat {
+			known[CardToIndex(card)] = true
+		}
+	}
 
-	var bySuit [4]float32
-	remainingTrumps := 0
-	for _, card := range game.NewDeck() {
+	var byClass [5]float32
+	var higherUnseen [32]float32
+	deck := game.NewDeck()
+	for _, card := range deck {
 		if known[CardToIndex(card)] {
 			continue
 		}
-		suitIdx := int(card.Suit) - 1
-		if suitIdx >= 0 && suitIdx < 4 {
-			bySuit[suitIdx] += 1.0 / 8.0
+		class := cardClass(gs, card)
+		if class == 4 {
+			byClass[class] += 1.0 / float32(getTotalTrumpCount(gs))
+		} else {
+			byClass[class] += 1.0 / 8.0
 		}
-		if isTrump(gs, card) {
-			remainingTrumps++
+		for _, candidate := range deck {
+			if gs.CardBeats(card, candidate) {
+				higherUnseen[CardToIndex(candidate)] += 1.0 / 31.0
+			}
 		}
 	}
 
-	maxTrumps := getTotalTrumpCount(gs)
-	if maxTrumps == 0 {
-		return bySuit, 0
+	return byClass, higherUnseen
+}
+
+// cardClass maps the four followable side suits to 0..3 and all trumps to 4.
+// Unlike printed suit, these classes match the game's follow-suit rules.
+func cardClass(gs *game.GameState, card game.Card) int {
+	if isTrump(gs, card) {
+		return 4
 	}
-	return bySuit, clamp01(float32(remainingTrumps) / float32(maxTrumps))
+	return int(card.Suit) - 1
 }
 
 func clamp01(value float32) float32 {

@@ -363,6 +363,23 @@
   border-color: rgba(102, 126, 234, 0.5);
 }
 
+.score-pile-label.ramsch-pile {
+  border-color: var(--ramsch-color);
+  background: color-mix(in srgb, var(--ramsch-color) 24%, rgba(0, 0, 0, 0.42));
+}
+
+.ramsch-player-0 {
+  --ramsch-color: #ffb300;
+}
+
+.ramsch-player-1 {
+  --ramsch-color: #ab6cff;
+}
+
+.ramsch-player-2 {
+  --ramsch-color: #4f8cff;
+}
+
 /* Dynamic positioning handled inline now based on partnerships */
 
 .pile-stack {
@@ -452,6 +469,16 @@
 
 .pile-points-segment.unclaimed {
   background: rgba(255, 255, 255, 0.12);
+}
+
+.pile-points-segment.ramsch-player-0,
+.pile-points-segment.ramsch-player-1,
+.pile-points-segment.ramsch-player-2 {
+  background: var(--ramsch-color);
+}
+
+.ramsch-points-bar {
+  justify-content: flex-start;
 }
 
 /* Skat Exchange UI */

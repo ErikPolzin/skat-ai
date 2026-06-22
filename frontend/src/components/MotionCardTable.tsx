@@ -16,7 +16,11 @@ import {
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import WarningIcon from "@mui/icons-material/Warning";
-import { type Card as CardType, reportTimeout } from "../api/games";
+import {
+  type Card as CardType,
+  type Player,
+  reportTimeout,
+} from "../api/games";
 import "./MotionCardTable.css";
 import { useGameContext } from "../context/GameContext";
 import Card from "./Card";
@@ -385,7 +389,28 @@ export function MotionCardTable() {
     0,
     100 - playerScorePercent - opponentScorePercent,
   );
-  const showScorePiles = !isRamsch && game.phase !== "waiting_for_players";
+  const showScorePiles = game.phase !== "waiting_for_players";
+
+  const ramschPiles = [
+    game.topPlayer,
+    game.leftPlayer,
+    game.playerPosition === null ? null : game.player,
+  ]
+    .filter((player): player is Player => player != null)
+    .map((player, index) => ({
+      player,
+      score: game.playerScores[player.position],
+      colorIndex: index,
+    }));
+
+  const ramschClaimedScore = ramschPiles.reduce(
+    (sum, pile) => sum + pile.score,
+    0,
+  );
+  const ramschUnclaimedPercent = Math.max(
+    0,
+    ((totalCardPoints - ramschClaimedScore) / totalCardPoints) * 100,
+  );
 
   // Get position for player's score pile - always bottom right
   const getPlayerPilePosition = () => {
@@ -397,6 +422,19 @@ export function MotionCardTable() {
   const getOpponentPilePosition = () => {
     const pos = getPileAbsolutePosition(false);
     return { x: pos.x, y: pos.y, rotate: 0, scale: 1 };
+  };
+
+  const getRamschPilePosition = (position: number) => {
+    const x = getPileAbsolutePosition(true).x;
+    const verticalOffset = Math.max(CARD_HEIGHT + 24, tableSize.height * 0.28);
+
+    if (position === game.topPlayer?.position) {
+      return { x, y: -verticalOffset, rotate: 0, scale: 1 };
+    }
+    if (position === game.leftPlayer?.position) {
+      return { x, y: 0, rotate: 0, scale: 1 };
+    }
+    return { x, y: verticalOffset, rotate: 0, scale: 1 };
   };
 
   const topOpponentCardsMap = <T,>(fn: (index: number, key: string) => T) =>
@@ -1039,7 +1077,18 @@ export function MotionCardTable() {
                         const declarerPosition =
                           game.trickWinnerRef.current.declarer;
 
-                        if (trickWinner == null || declarerPosition == null) {
+                        if (trickWinner == null) {
+                          return {
+                            opacity: 0,
+                            transition: { duration: 0.12 },
+                          };
+                        }
+
+                        if (isRamsch) {
+                          return { ...getRamschPilePosition(trickWinner) };
+                        }
+
+                        if (declarerPosition == null) {
                           return {
                             opacity: 0,
                             transition: { duration: 0.12 },
@@ -1088,7 +1137,7 @@ export function MotionCardTable() {
           </div>
         )}
 
-        {showScorePiles && (
+        {showScorePiles && !isRamsch && (
           <>
             {/* Score Pile Labels - only show during playing phase when declarer is set and there are cards */}
             <div
@@ -1168,6 +1217,57 @@ export function MotionCardTable() {
               </span>
               <span className="pile-score">{opponentPileScore}</span>
             </div>
+          </>
+        )}
+
+        {showScorePiles && isRamsch && (
+          <>
+            <div
+              className="pile-points-bar ramsch-points-bar"
+              title={ramschPiles
+                .map(({ player, score }) => `${player.name}: ${score}`)
+                .join(" · ")}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                height: `${Math.max(180, tableSize.height * 0.54)}px`,
+                transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x - CARD_WIDTH / 2 - 22}px), -50%)`,
+              }}
+              aria-label="Ramsch score distribution"
+            >
+              {ramschPiles.map(({ player, score, colorIndex }) => (
+                <div
+                  key={player.id}
+                  className={`pile-points-segment ramsch-player-${colorIndex}`}
+                  style={{ height: `${(score / totalCardPoints) * 100}%` }}
+                />
+              ))}
+              <div
+                className="pile-points-segment unclaimed"
+                style={{ height: `${ramschUnclaimedPercent}%` }}
+              />
+            </div>
+
+            {ramschPiles.map(({ player, score, colorIndex }) => {
+              const position = getRamschPilePosition(player.position);
+              return (
+                <div
+                  key={player.id}
+                  className={`score-pile-label ramsch-pile ramsch-player-${colorIndex}`}
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    top: "50%",
+                    transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`,
+                  }}
+                >
+                  <span className="pile-label">{player.name}</span>
+                  <span className="pile-subtitle">RAMSCH</span>
+                  <span className="pile-score">{score}</span>
+                </div>
+              );
+            })}
           </>
         )}
       </div>

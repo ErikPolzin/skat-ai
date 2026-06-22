@@ -2,6 +2,7 @@ package strategies
 
 import (
 	"fmt"
+	"math"
 	"skat/game"
 	"sort"
 )
@@ -17,6 +18,43 @@ type ContractCandidate struct {
 	LegalForBid    bool
 
 	Reason string
+}
+
+// EstimateRamschWinProbabilities estimates each player's chance of finishing
+// with the lowest card-point score. Unlike contract strength, Ramsch strength
+// is relative to all three hands: point cards and cards likely to take tricks
+// are liabilities. The result is a normalized three-player distribution.
+func EstimateRamschWinProbabilities(hands [3][]game.Card) [3]float64 {
+	var liability [3]float64
+	for player, hand := range hands {
+		for _, card := range hand {
+			liability[player] += float64(card.Value())
+			switch card.Rank {
+			case game.Jack:
+				// Jacks are Ramsch trumps; stronger jacks are harder to avoid winning with.
+				liability[player] += float64(8 - int(card.Suit))
+			case game.Ace:
+				liability[player] += 4
+			case game.Ten:
+				liability[player] += 3
+			case game.King:
+				liability[player]++
+			}
+		}
+	}
+
+	minLiability := math.Min(liability[0], math.Min(liability[1], liability[2]))
+	var weights [3]float64
+	total := 0.0
+	for player := range weights {
+		weights[player] = math.Exp(-(liability[player] - minLiability) / 12.0)
+		total += weights[player]
+	}
+	var probabilities [3]float64
+	for player := range probabilities {
+		probabilities[player] = weights[player] / total
+	}
+	return probabilities
 }
 
 // ContractEvaluatorConfig controls the risk preferences used by the shared

@@ -164,8 +164,13 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 	}
 
 	// Scores (normalized to 0-1, max score is 120)
-	encoding.Scores[0] = float32(gs.DeclarerCardScore()) / 120.0
-	encoding.Scores[1] = float32(gs.OpponentCardScore()) / 120.0
+	if gs.Mode == game.ModeRamsch {
+		encoding.Scores[0] = float32(gs.PlayerScores[myPosition]) / 120.0
+		encoding.Scores[1] = float32(gs.PlayerScores[(myPosition+1)%3]+gs.PlayerScores[(myPosition+2)%3]) / 120.0
+	} else {
+		encoding.Scores[0] = float32(gs.DeclarerCardScore()) / 120.0
+		encoding.Scores[1] = float32(gs.OpponentCardScore()) / 120.0
+	}
 
 	// Tricks remaining (each player has 10 cards, so 10 tricks total)
 	cardsInHand := len(myHand)
@@ -389,7 +394,7 @@ func isTrump(gs *game.GameState, card game.Card) bool {
 }
 
 func getTotalTrumpCount(gs *game.GameState) int {
-	if gs.Mode == game.ModeGrand {
+	if gs.Mode == game.ModeGrand || gs.Mode == game.ModeRamsch {
 		return 4 // Only jacks
 	} else if gs.Mode == game.ModeSuit {
 		return 11 // 4 jacks + 7 suit cards

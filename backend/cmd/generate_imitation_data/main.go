@@ -4,10 +4,12 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"skat/agent"
 	"skat/agent/strategies"
@@ -17,11 +19,45 @@ import (
 
 // ImitationExample represents a single (state, action) pair for supervised learning
 type ImitationExample struct {
-	State      [encoding.StateFeatureSize]float32 // DQN state encoding
-	ValidMask  [32]float32                        // Valid moves at this state
-	Action     int                                // Card index that expert chose
-	IsDeclarer bool                               // Role (for separate networks)
-	Policy     [32]float32                        // Soft target policy from expert scores
+	State          [encoding.StateFeatureSize]float32 // DQN state encoding
+	ValidMask      [32]float32                        // Valid moves at this state
+	Action         int                                // Card index that expert chose
+	Role           int                                // 0=defender, 1=declarer, 2=Ramsch
+	GameMode       game.GameMode
+	WinProbability float64
+	Policy         [32]float32 // Soft target policy from expert scores
+}
+
+const (
+	roleDefender = iota
+	roleDeclarer
+	roleRamsch
+)
+
+var bucketOrder = []string{"suit_declarer", "suit_defender", "grand_declarer", "grand_defender", "null_declarer", "null_defender", "ramsch"}
+
+const (
+	needSuitDeclarer uint32 = 1 << iota
+	needSuitDefender
+	needGrandDeclarer
+	needGrandDefender
+	needNullDeclarer
+	needNullDefender
+	needRamsch
+	needAllBuckets = (1 << iota) - 1
+)
+
+const needNormalBuckets = needAllBuckets &^ needRamsch
+
+func exampleBucket(ex ImitationExample) string {
+	if ex.Role == roleRamsch {
+		return "ramsch"
+	}
+	role := "defender"
+	if ex.Role == roleDeclarer {
+		role = "declarer"
+	}
+	return string(ex.GameMode) + "_" + role
 }
 
 func newSearchTeacherAgent(name string, depth int, biddingThreshold float64) *agent.SkatAgent {
@@ -37,62 +73,35 @@ func newSearchTeacherAgent(name string, depth int, biddingThreshold float64) *ag
 }
 
 func main() {
-	numExamples := flag.Int("examples", 100000, "Number of examples to collect (per role: declarer and defender)")
+	numExamples := flag.Int("examples", 100000, "Number of examples to collect in each game-type/role bucket")
 	outputFile := flag.String("output", ".data/imitation_dataset.csv", "Output file for dataset")
-	role := flag.String("role", "all", "Role to collect: all, declarer, or defender")
-	searchDepth := flag.Int("depth", 7, "Minimax search depth for expert card-play labels (default: 7)")
-	biddingThreshold := flag.Float64("bidding-threshold", 0.55, "Heuristic bidding threshold for contract generation; higher means stronger declarer hands")
-	minHandStrength := flag.Float64("min-hand-strength", 0.55, "Minimum estimated declarer win probability to collect")
-	maxHandStrength := flag.Float64("max-hand-strength", 0.75, "Maximum estimated declarer win probability to collect")
+	searchDepth := flag.Int("depth", 7, "Minimax search depth for expert labels; uses move ordering, transposition table, and LMR 3/1")
+	biddingThreshold := flag.Float64("bidding-threshold", 0.55, "Heuristic bidding threshold used for natural contract generation")
+	minWinProbability := flag.Float64("min-win-probability", 0.10, "Minimum pre-game win probability to collect")
+	maxWinProbability := flag.Float64("max-win-probability", 0.65, "Maximum pre-game win probability to collect")
 	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel workers")
 	flag.Parse()
 
-	if *role != "all" && *role != "declarer" && *role != "defender" {
-		fmt.Fprintf(os.Stderr, "Unknown role %q (use all, declarer, or defender)\n", *role)
-		os.Exit(1)
-	}
-	if *minHandStrength < 0 || *maxHandStrength > 1 || *minHandStrength > *maxHandStrength {
-		fmt.Fprintf(os.Stderr, "Invalid hand-strength range %.2f-%.2f (expected 0 <= min <= max <= 1)\n", *minHandStrength, *maxHandStrength)
+	if *minWinProbability < 0 || *maxWinProbability > 1 || *minWinProbability > *maxWinProbability {
+		fmt.Fprintf(os.Stderr, "Invalid win-probability range %.2f-%.2f (expected 0 <= min <= max <= 1)\n", *minWinProbability, *maxWinProbability)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Generating imitation learning dataset with %d examples for role %s...\n", *numExamples, *role)
+	fmt.Printf("Generating %d examples in each of 7 game-type/role buckets...\n", *numExamples)
 	fmt.Printf("  Declarer strategy: Minimax (depth %d)\n", *searchDepth)
 	fmt.Printf("  Defender strategy: Minimax (depth %d)\n", *searchDepth)
-	fmt.Printf("  Contract bidding: heuristic threshold %.2f\n", *biddingThreshold)
-	fmt.Printf("  Filtering: won games with declarer hand strength %.2f-%.2f; excluding overbids\n", *minHandStrength, *maxHandStrength)
+	fmt.Printf("  Ramsch strategy: Minimax (depth %d)\n", *searchDepth)
+	fmt.Printf("  Contracts: natural bidding and game choice (threshold %.2f)\n", *biddingThreshold)
+	fmt.Printf("  Contract filtering: Minimax wins from %.2f-%.2f pre-game win probability; excluding overbids\n", *minWinProbability, *maxWinProbability)
+	fmt.Printf("  Ramsch filtering: winners from any starting hand\n")
 	fmt.Printf("Using %d parallel workers\n", *workers)
 
 	// Channel for collecting results
 	examplesChan := make(chan []ImitationExample, *workers)
 	stopChan := make(chan bool) // Signal workers to stop
 	var wg sync.WaitGroup
-
-	// Progress tracking
-	type ProgressUpdate struct {
-		GamesPlayed      int
-		DeclarerExamples int
-		DefenderExamples int
-	}
-	progressChan := make(chan ProgressUpdate, *workers)
-	doneChan := make(chan bool)
-
-	// Progress reporter goroutine
-	go func() {
-		gamesPlayed := 0
-		declarerCount := 0
-		defenderCount := 0
-		for update := range progressChan {
-			gamesPlayed += update.GamesPlayed
-			declarerCount += update.DeclarerExamples
-			defenderCount += update.DefenderExamples
-			if gamesPlayed%100 == 0 {
-				fmt.Printf("  Played %d games -> %d declarer, %d defender examples\n",
-					gamesPlayed, declarerCount, defenderCount)
-			}
-		}
-		doneChan <- true
-	}()
+	var neededBuckets atomic.Uint32
+	neededBuckets.Store(needAllBuckets)
 
 	// Worker function - collect until we have enough examples
 	worker := func() {
@@ -118,40 +127,19 @@ func main() {
 			case <-stopChan:
 				return
 			default:
-				examples := playGameAndCollectExamples(searchAgent, heuristicAgent, *role, *minHandStrength, *maxHandStrength)
-				if len(examples) > 0 {
-					// Try to send, but stop if channel is closed
-					select {
-					case examplesChan <- examples:
-						// Count declarer vs defender examples
-						declCount := 0
-						defCount := 0
-						for _, ex := range examples {
-							if ex.IsDeclarer {
-								declCount++
-							} else {
-								defCount++
-							}
-						}
-						select {
-						case progressChan <- ProgressUpdate{
-							GamesPlayed:      1,
-							DeclarerExamples: declCount,
-							DefenderExamples: defCount,
-						}:
-						case <-stopChan:
-							return
-						}
-					case <-stopChan:
-						return
-					}
+				needed := neededBuckets.Load()
+				var examples []ImitationExample
+				if needed&needRamsch != 0 && (needed&needNormalBuckets == 0 || rand.Intn(4) == 0) {
+					examples = playRamschAndCollectExamples(searchAgent)
 				} else {
-					// Deal or both replays were filtered out.
-					select {
-					case progressChan <- ProgressUpdate{GamesPlayed: 1}:
-					case <-stopChan:
-						return
-					}
+					examples = playGameAndCollectExamples(searchAgent, heuristicAgent, *minWinProbability, *maxWinProbability, needed)
+				}
+				// Every attempted game sends one batch, including filtered empty batches,
+				// so the collector owns exact progress accounting.
+				select {
+				case examplesChan <- examples:
+				case <-stopChan:
+					return
 				}
 			}
 		}
@@ -163,26 +151,23 @@ func main() {
 		go worker()
 	}
 
-	// Collect results until we have enough examples
-	var declarerExamples []ImitationExample
-	var defenderExamples []ImitationExample
+	// Collect exactly n examples for every normal game/role pair plus Ramsch.
+	buckets := make(map[string][]ImitationExample, len(bucketOrder))
+	gamesPlayed := 0
 
 	for examples := range examplesChan {
+		gamesPlayed++
 		for _, ex := range examples {
-			if ex.IsDeclarer && len(declarerExamples) < *numExamples {
-				declarerExamples = append(declarerExamples, ex)
-			} else if !ex.IsDeclarer && len(defenderExamples) < *numExamples {
-				defenderExamples = append(defenderExamples, ex)
-			}
-
-			// Check after each example if we have enough of both
-			if doneCollecting(*role, len(declarerExamples), len(defenderExamples), *numExamples) {
-				break
+			key := exampleBucket(ex)
+			if len(buckets[key]) < *numExamples {
+				buckets[key] = append(buckets[key], ex)
 			}
 		}
-
-		// Double-check after processing the batch
-		if doneCollecting(*role, len(declarerExamples), len(defenderExamples), *numExamples) {
+		neededBuckets.Store(neededBucketMask(buckets, *numExamples))
+		if gamesPlayed%100 == 0 {
+			printBucketProgress(gamesPlayed, buckets, *numExamples)
+		}
+		if bucketsComplete(buckets, *numExamples) {
 			break
 		}
 	}
@@ -195,21 +180,14 @@ func main() {
 
 	// Close channels
 	close(examplesChan)
-	close(progressChan)
-
-	// Wait for progress reporter to finish
-	<-doneChan
 
 	// Create balanced dataset (should already be at exact count)
-	dataset := make([]ImitationExample, 0, len(declarerExamples)+len(defenderExamples))
-	dataset = append(dataset, declarerExamples...)
-	dataset = append(dataset, defenderExamples...)
-
-	actualDeclarer := len(declarerExamples)
-	actualDefender := len(defenderExamples)
-
-	fmt.Printf("\nCollected dataset: %d declarer + %d defender = %d total examples\n",
-		actualDeclarer, actualDefender, len(dataset))
+	dataset := make([]ImitationExample, 0, len(bucketOrder)*(*numExamples))
+	for _, key := range bucketOrder {
+		dataset = append(dataset, buckets[key]...)
+		fmt.Printf("  %-16s %d\n", key, len(buckets[key]))
+	}
+	fmt.Printf("\nCollected dataset: %d total examples\n", len(dataset))
 
 	// Save dataset to CSV file
 	fmt.Printf("\nSaving %d examples to %s...\n", len(dataset), *outputFile)
@@ -235,10 +213,11 @@ func main() {
 	for i := 0; i < 32; i++ {
 		header = append(header, fmt.Sprintf("m%d", i))
 	}
-	header = append(header, "action", "is_declarer")
+	header = append(header, "action", "role")
 	for i := 0; i < 32; i++ {
 		header = append(header, fmt.Sprintf("p%d", i))
 	}
+	header = append(header, "game_mode", "win_probability")
 	if err := writer.Write(header); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write header: %v\n", err)
 		os.Exit(1)
@@ -260,14 +239,11 @@ func main() {
 
 		// Action and role
 		record = append(record, strconv.Itoa(ex.Action))
-		if ex.IsDeclarer {
-			record = append(record, "1")
-		} else {
-			record = append(record, "0")
-		}
+		record = append(record, strconv.Itoa(ex.Role))
 		for _, val := range ex.Policy {
 			record = append(record, strconv.FormatFloat(float64(val), 'f', 6, 32))
 		}
+		record = append(record, string(ex.GameMode), strconv.FormatFloat(ex.WinProbability, 'f', 6, 64))
 
 		if err := writer.Write(record); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to write record: %v\n", err)
@@ -276,28 +252,53 @@ func main() {
 	}
 
 	// Print statistics
-	declarerPct := float64(actualDeclarer) / float64(len(dataset)) * 100.0
-	defenderPct := float64(actualDefender) / float64(len(dataset)) * 100.0
-
 	fmt.Printf("\nDataset Statistics:\n")
 	fmt.Printf("  Total examples: %d\n", len(dataset))
-	fmt.Printf("  Declarer examples: %d (%.1f%%) - trained with Minimax\n", actualDeclarer, declarerPct)
-	fmt.Printf("  Defender examples: %d (%.1f%%) - trained with Minimax\n", actualDefender, defenderPct)
 	fmt.Printf("\n✓ Dataset generation complete!\n")
 }
 
-func doneCollecting(role string, declarers, defenders, target int) bool {
-	switch role {
-	case "declarer":
-		return declarers >= target
-	case "defender":
-		return defenders >= target
+func bucketsComplete(buckets map[string][]ImitationExample, target int) bool {
+	for _, key := range bucketOrder {
+		if len(buckets[key]) < target {
+			return false
+		}
+	}
+	return true
+}
+
+func neededBucketMask(buckets map[string][]ImitationExample, target int) uint32 {
+	var mask uint32
+	for i, key := range bucketOrder {
+		if len(buckets[key]) < target {
+			mask |= 1 << i
+		}
+	}
+	return mask
+}
+
+func contractBucketBits(mode game.GameMode) (declarer, defender uint32) {
+	switch mode {
+	case game.ModeSuit:
+		return needSuitDeclarer, needSuitDefender
+	case game.ModeGrand:
+		return needGrandDeclarer, needGrandDefender
+	case game.ModeNull:
+		return needNullDeclarer, needNullDefender
 	default:
-		return declarers >= target && defenders >= target
+		return 0, 0
 	}
 }
 
-// setupGame creates a game, runs bidding, and returns the game state ready for card play
+func printBucketProgress(games int, buckets map[string][]ImitationExample, target int) {
+	fmt.Printf("  Played %d | Suit Dec %d/%d Def %d/%d | Grand Dec %d/%d Def %d/%d | Null Dec %d/%d Def %d/%d | Ramsch %d/%d\n",
+		games,
+		len(buckets["suit_declarer"]), target, len(buckets["suit_defender"]), target,
+		len(buckets["grand_declarer"]), target, len(buckets["grand_defender"]), target,
+		len(buckets["null_declarer"]), target, len(buckets["null_defender"]), target,
+		len(buckets["ramsch"]), target)
+}
+
+// setupGame creates a naturally bid game ready for card play.
 func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, bool) {
 	config := agent.NewThreeWayConfig(
 		heuristicAgent,
@@ -308,6 +309,9 @@ func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, bool) {
 	g = agent.WithAgentPlayers(g, config)
 	g = g.WithCardsDealt()
 	g = agent.WithAgentBidding(g, config)
+	if g.Declarer == nil {
+		return g, false
+	}
 	g = agent.WithAgentSkatDecision(g)
 	return agent.WithAgentGameChoice(g)
 }
@@ -345,11 +349,12 @@ func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *age
 
 			// Store declarer example
 			examples = append(examples, ImitationExample{
-				State:      state,
-				ValidMask:  validMask,
-				Action:     action,
-				IsDeclarer: true,
-				Policy:     policy,
+				State:     state,
+				ValidMask: validMask,
+				Action:    action,
+				Role:      roleDeclarer,
+				GameMode:  g.Mode,
+				Policy:    policy,
 			})
 
 			// Play card
@@ -411,11 +416,12 @@ func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAg
 
 			// Store defender example
 			examples = append(examples, ImitationExample{
-				State:      state,
-				ValidMask:  validMask,
-				Action:     action,
-				IsDeclarer: false,
-				Policy:     policy,
+				State:     state,
+				ValidMask: validMask,
+				Action:    action,
+				Role:      roleDefender,
+				GameMode:  g.Mode,
+				Policy:    policy,
 			})
 
 			// Play card
@@ -467,14 +473,15 @@ func oneHotPolicy(action int) [32]float32 {
 }
 
 // playGameAndCollectExamples plays games twice: once for declarer examples, once for defender examples.
-func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, role string, minHandStrength, maxHandStrength float64) []ImitationExample {
+func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, minWinProbability, maxWinProbability float64, needed uint32) []ImitationExample {
 	var examples []ImitationExample
 
-	// Setup game and run bidding once
 	g, overbid := setupGame(heuristicAgent)
-
 	if g.Declarer == nil || overbid {
-		// No declarer or overbid, skip
+		return examples
+	}
+	declarerBucket, defenderBucket := contractBucketBits(g.Mode)
+	if needed&(declarerBucket|defenderBucket) == 0 {
 		return examples
 	}
 
@@ -484,23 +491,78 @@ func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, ro
 		g.Mode,
 		g.TrumpSuit,
 	)
-	if handStrength < minHandStrength || handStrength > maxHandStrength {
-		return examples
-	}
-
-	if role == "all" || role == "declarer" {
-		// Collect declarer examples: search-teacher declarer vs heuristic defenders
+	if needed&declarerBucket != 0 && probabilityInRange(handStrength, minWinProbability, maxWinProbability) {
+		// Collect an initially unfavored declarer only when Minimax converts the win.
 		gDeclarer := g.Clone()
-		declarerExamples := collectDeclarerExamples(gDeclarer, searchAgent, heuristicAgent)
-		examples = append(examples, declarerExamples...)
+		batch := collectDeclarerExamples(gDeclarer, searchAgent, heuristicAgent)
+		for i := range batch {
+			batch[i].WinProbability = handStrength
+		}
+		examples = append(examples, batch...)
 	}
 
-	if role == "all" || role == "defender" {
-		// Collect defender examples: heuristic declarer vs Minimax defenders.
+	defenderWinProbability := 1 - handStrength
+	if needed&defenderBucket != 0 && probabilityInRange(defenderWinProbability, minWinProbability, maxWinProbability) {
+		// Defenders qualify by their own estimated chance, not the declarer's.
 		gDefender := g.Clone()
-		defenderExamples := collectDefenderExamples(gDefender, searchAgent, heuristicAgent)
-		examples = append(examples, defenderExamples...)
+		batch := collectDefenderExamples(gDefender, searchAgent, heuristicAgent)
+		for i := range batch {
+			batch[i].WinProbability = defenderWinProbability
+		}
+		examples = append(examples, batch...)
 	}
 
 	return examples
+}
+
+func playRamschAndCollectExamples(searchAgent *agent.SkatAgent) []ImitationExample {
+	config := agent.NewThreeWayConfig(searchAgent, searchAgent.CachedClone(), searchAgent.CachedClone().CachedClone())
+	g := agent.WithAgentPlayers(game.NewGame(), config).WithCardsDealt()
+	g.Mode = game.ModeRamsch
+	g.TrumpSuit = game.NoSuit
+	g.Declarer = nil
+	g.Phase = game.PhasePlaying
+	g.CurrentPlayer = game.Listener
+	g.TrickStarter = game.Listener
+	var hands [3][]game.Card
+	for pos := range g.Players {
+		hands[pos] = append([]game.Card(nil), g.Players[pos].Hand...)
+	}
+	winProbabilities := strategies.EstimateRamschWinProbabilities(hands)
+
+	var byPlayer [3][]ImitationExample
+	for g.Phase == game.PhasePlaying {
+		player := g.CurrentPlayer
+		moves := g.GetValidMoves()
+		enc := encoding.EncodeNeuralCardPlay(g, player, moves)
+		card := agent.GetAgentForPlayer(g.GetCurrentPlayer()).SelectMove(g, moves)
+		action := encoding.CardToIndex(card)
+		byPlayer[player] = append(byPlayer[player], ImitationExample{State: enc.ToSlice(), ValidMask: enc.GetValidMask(), Action: action, Role: roleRamsch, GameMode: game.ModeRamsch, Policy: oneHotPolicy(action)})
+		if _, err := g.PlayCard(card); err != nil {
+			panic(err)
+		}
+		if len(g.Trick) == 3 {
+			resolveTrickAndNotify(g)
+		}
+	}
+	minScore := g.PlayerScores[0]
+	for _, score := range g.PlayerScores[1:] {
+		if score < minScore {
+			minScore = score
+		}
+	}
+	var examples []ImitationExample
+	for pos, score := range g.PlayerScores {
+		if score == minScore {
+			for i := range byPlayer[pos] {
+				byPlayer[pos][i].WinProbability = winProbabilities[pos]
+			}
+			examples = append(examples, byPlayer[pos]...)
+		}
+	}
+	return examples
+}
+
+func probabilityInRange(probability, minimum, maximum float64) bool {
+	return probability >= minimum && probability <= maximum
 }

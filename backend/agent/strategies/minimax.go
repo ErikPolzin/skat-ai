@@ -100,6 +100,9 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 	}
 
 	currentPlayer := state.CurrentPlayer
+	if state.Mode == game.ModeRamsch {
+		return m.selectRamschMove(state, validMoves, currentPlayer)
+	}
 	isDeclarer := state.Declarer != nil && currentPlayer == *state.Declarer
 
 	// Order moves by card value for better pruning
@@ -148,6 +151,68 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 	}
 
 	return bestMove
+}
+
+func (m *PerfectInfoMinimaxStrategy) selectRamschMove(state *game.GameState, validMoves []game.Card, root game.GamePosition) game.Card {
+	bestMove, bestValue := validMoves[0], math.Inf(-1)
+	for _, move := range validMoves {
+		next := state.Clone()
+		m.playAndResolve(next, move)
+		value := m.minimaxRamsch(next, m.maxDepth-1, math.Inf(-1), math.Inf(1), root)
+		if value > bestValue {
+			bestMove, bestValue = move, value
+		}
+	}
+	return bestMove
+}
+
+func (m *PerfectInfoMinimaxStrategy) minimaxRamsch(state *game.GameState, depth int, alpha, beta float64, root game.GamePosition) float64 {
+	if state.Phase != game.PhasePlaying || (depth <= 0 && len(state.Trick) == 0) {
+		score := float64(-state.PlayerScores[root])
+		if state.Phase == game.PhaseComplete {
+			minScore := state.PlayerScores[0]
+			for _, points := range state.PlayerScores[1:] {
+				if points < minScore {
+					minScore = points
+				}
+			}
+			if state.PlayerScores[root] == minScore {
+				score += 1000
+			} else {
+				score -= 1000
+			}
+		}
+		return score
+	}
+	moves := state.GetValidMoves()
+	maximizing := state.CurrentPlayer == root
+	value := math.Inf(1)
+	if maximizing {
+		value = math.Inf(-1)
+	}
+	for _, move := range moves {
+		next := state.Clone()
+		m.playAndResolve(next, move)
+		child := m.minimaxRamsch(next, depth-1, alpha, beta, root)
+		if maximizing {
+			value = math.Max(value, child)
+			alpha = math.Max(alpha, value)
+		} else {
+			value = math.Min(value, child)
+			beta = math.Min(beta, value)
+		}
+		if beta <= alpha {
+			break
+		}
+	}
+	return value
+}
+
+func (m *PerfectInfoMinimaxStrategy) playAndResolve(state *game.GameState, move game.Card) {
+	state.PlayCard(move)
+	if len(state.Trick) == 3 {
+		state.ResolveTrick()
+	}
 }
 
 // minimax performs alpha-beta pruning minimax search

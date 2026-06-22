@@ -16,23 +16,31 @@ import (
 
 // ImitationExample represents a training example
 type ImitationExample struct {
-	State      [encoding.StateFeatureSize]float32
-	ValidMask  [32]float32
-	Action     int
-	IsDeclarer bool
-	Policy     [32]float32
-	Weight     float32
+	State     [encoding.StateFeatureSize]float32
+	ValidMask [32]float32
+	Action    int
+	Role      int
+	Policy    [32]float32
+	Weight    float32
 }
+
+const (
+	RoleDefender = iota
+	RoleDeclarer
+	RoleRamsch
+)
 
 // BehavioralCloningTrainer trains a network to imitate expert play using supervised learning
 type BehavioralCloningTrainer struct {
 	// Models (separate for declarer and defender)
 	declarerNet *BehavioralCloningModel
 	defenderNet *BehavioralCloningModel
+	ramschNet   *BehavioralCloningModel
 
 	// Training data
 	declarerExamples []ImitationExample
 	defenderExamples []ImitationExample
+	ramschExamples   []ImitationExample
 
 	// Hyperparameters
 	batchSize    int
@@ -83,6 +91,11 @@ func NewBehavioralCloningTrainer(batchSize int, learningRate, l2Reg float64) (*B
 		return nil, fmt.Errorf("failed to create defender network: %w", err)
 	}
 	trainer.defenderNet = defNet
+	ramschNet, err := trainer.createModel()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Ramsch network: %w", err)
+	}
+	trainer.ramschNet = ramschNet
 
 	return trainer, nil
 }
@@ -248,7 +261,7 @@ func (t *BehavioralCloningTrainer) LoadDataset(filename string) error {
 
 		// Parse role
 		isDeclarer, _ := strconv.Atoi(record[roleIdx])
-		ex.IsDeclarer = (isDeclarer == 1)
+		ex.Role = isDeclarer
 
 		if len(record) >= policyStart+32 {
 			for i := 0; i < 32; i++ {
@@ -267,10 +280,13 @@ func (t *BehavioralCloningTrainer) LoadDataset(filename string) error {
 		}
 
 		// Add to appropriate dataset
-		if ex.IsDeclarer {
+		switch ex.Role {
+		case RoleDeclarer:
 			t.declarerExamples = append(t.declarerExamples, ex)
-		} else {
+		case RoleDefender:
 			t.defenderExamples = append(t.defenderExamples, ex)
+		case RoleRamsch:
+			t.ramschExamples = append(t.ramschExamples, ex)
 		}
 	}
 
@@ -278,7 +294,7 @@ func (t *BehavioralCloningTrainer) LoadDataset(filename string) error {
 }
 
 // Train performs one epoch of training
-func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, declarerAcc, defenderAcc float64, err error) {
+func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, ramschLoss, declarerAcc, defenderAcc, ramschAcc float64, err error) {
 	// Shuffle datasets
 	rand.Shuffle(len(t.declarerExamples), func(i, j int) {
 		t.declarerExamples[i], t.declarerExamples[j] = t.declarerExamples[j], t.declarerExamples[i]
@@ -286,6 +302,7 @@ func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, declarer
 	rand.Shuffle(len(t.defenderExamples), func(i, j int) {
 		t.defenderExamples[i], t.defenderExamples[j] = t.defenderExamples[j], t.defenderExamples[i]
 	})
+	rand.Shuffle(len(t.ramschExamples), func(i, j int) { t.ramschExamples[i], t.ramschExamples[j] = t.ramschExamples[j], t.ramschExamples[i] })
 
 	// Train declarer network
 	var declLoss, declAcc float64
@@ -294,7 +311,7 @@ func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, declarer
 		batch := t.declarerExamples[i*t.batchSize : (i+1)*t.batchSize]
 		loss, acc, err := t.trainBatch(t.declarerNet, batch)
 		if err != nil {
-			return 0, 0, 0, 0, fmt.Errorf("declarer training error: %w", err)
+			return 0, 0, 0, 0, 0, 0, fmt.Errorf("declarer training error: %w", err)
 		}
 		declLoss += loss
 		declAcc += acc
@@ -311,7 +328,7 @@ func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, declarer
 		batch := t.defenderExamples[i*t.batchSize : (i+1)*t.batchSize]
 		loss, acc, err := t.trainBatch(t.defenderNet, batch)
 		if err != nil {
-			return 0, 0, 0, 0, fmt.Errorf("defender training error: %w", err)
+			return 0, 0, 0, 0, 0, 0, fmt.Errorf("defender training error: %w", err)
 		}
 		defLoss += loss
 		defAcc += acc
@@ -321,7 +338,21 @@ func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, declarer
 		defAcc /= float64(defBatches)
 	}
 
-	return declLoss, defLoss, declAcc, defAcc, nil
+	var ramLoss, ramAcc float64
+	ramBatches := len(t.ramschExamples) / t.batchSize
+	for i := 0; i < ramBatches; i++ {
+		loss, acc, err := t.trainBatch(t.ramschNet, t.ramschExamples[i*t.batchSize:(i+1)*t.batchSize])
+		if err != nil {
+			return 0, 0, 0, 0, 0, 0, fmt.Errorf("Ramsch training error: %w", err)
+		}
+		ramLoss += loss
+		ramAcc += acc
+	}
+	if ramBatches > 0 {
+		ramLoss /= float64(ramBatches)
+		ramAcc /= float64(ramBatches)
+	}
+	return declLoss, defLoss, ramLoss, declAcc, defAcc, ramAcc, nil
 }
 
 func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, batch []ImitationExample) (loss, accuracy float64, err error) {
@@ -409,22 +440,25 @@ func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, bat
 }
 
 // GetWeights returns trained network weights
-func (t *BehavioralCloningTrainer) GetWeights() (declarerWeights, defenderWeights strategies.CardPlayNetworkWeights) {
-	return t.declarerNet.weightsMap, t.defenderNet.weightsMap
+func (t *BehavioralCloningTrainer) GetWeights() (declarerWeights, defenderWeights, ramschWeights strategies.CardPlayNetworkWeights) {
+	return t.declarerNet.weightsMap, t.defenderNet.weightsMap, t.ramschNet.weightsMap
 }
 
 // SetWeights initializes the trainer networks from existing weights.
-func (t *BehavioralCloningTrainer) SetWeights(declarerWeights, defenderWeights strategies.CardPlayNetworkWeights) error {
+func (t *BehavioralCloningTrainer) SetWeights(declarerWeights, defenderWeights, ramschWeights strategies.CardPlayNetworkWeights) error {
 	if err := t.declarerNet.weightsMap.CopyFrom(declarerWeights); err != nil {
 		return fmt.Errorf("copy declarer weights: %w", err)
 	}
 	if err := t.defenderNet.weightsMap.CopyFrom(defenderWeights); err != nil {
 		return fmt.Errorf("copy defender weights: %w", err)
 	}
+	if err := t.ramschNet.weightsMap.CopyFrom(ramschWeights); err != nil {
+		return fmt.Errorf("copy Ramsch weights: %w", err)
+	}
 	return nil
 }
 
 // GetDatasetSizes returns number of examples for each role
-func (t *BehavioralCloningTrainer) GetDatasetSizes() (int, int) {
-	return len(t.declarerExamples), len(t.defenderExamples)
+func (t *BehavioralCloningTrainer) GetDatasetSizes() (int, int, int) {
+	return len(t.declarerExamples), len(t.defenderExamples), len(t.ramschExamples)
 }

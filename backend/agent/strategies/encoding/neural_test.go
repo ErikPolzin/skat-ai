@@ -125,3 +125,19 @@ func assertFloat32(t *testing.T, got, want float32) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
+
+func TestEncodeRamschUsesPersonalScoresAndFiniteTrumpCounts(t *testing.T) {
+	gs := &game.GameState{
+		Mode: game.ModeRamsch, PlayerScores: [3]int{10, 20, 30},
+		Players: [3]*game.PlayerState{{}, {Hand: game.Cards{{Suit: game.Clubs, Rank: game.Jack}}}, {}},
+	}
+	enc := EncodeNeuralCardPlay(gs, game.Listener, gs.Players[game.Listener].Hand)
+	assertFloat32(t, enc.Scores[0], 20.0/120.0)
+	assertFloat32(t, enc.Scores[1], 40.0/120.0)
+	assertFloat32(t, enc.MyTrumpCount, 0.25)
+	for i, value := range enc.ToSlice() {
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			t.Fatalf("feature %d is not finite: %v", i, value)
+		}
+	}
+}

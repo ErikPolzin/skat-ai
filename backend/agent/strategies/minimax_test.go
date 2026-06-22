@@ -22,6 +22,23 @@ func TestEvaluateMaterialIncludesDefenderPoints(t *testing.T) {
 	}
 }
 
+func TestMinimaxRamschAvoidsWinningPoints(t *testing.T) {
+	root := game.Listener
+	seven := game.Card{Suit: game.Hearts, Rank: game.Seven}
+	king := game.Card{Suit: game.Hearts, Rank: game.King}
+	ace := game.Card{Suit: game.Hearts, Rank: game.Ace}
+	ten := game.Card{Suit: game.Hearts, Rank: game.Ten}
+	state := &game.GameState{
+		Players: [3]*game.PlayerState{{Hand: game.Cards{}}, {Hand: game.Cards{seven, ace}}, {Hand: game.Cards{ten}}},
+		Mode:    game.ModeRamsch, Phase: game.PhasePlaying, CurrentPlayer: root,
+		TrickStarter: game.Dealer, Trick: game.Cards{king},
+	}
+	strategy := NewPerfectInfoMinimaxStrategyWithDepth(1)
+	if got := strategy.SelectMove(state, game.Cards{seven, ace}); got != seven {
+		t.Fatalf("selected %v, want %v to avoid taking Ramsch points", got, seven)
+	}
+}
+
 func TestMinimaxFinishesTrickAtDepthCutoff(t *testing.T) {
 	declarer := game.Listener
 	seven := game.Card{Suit: game.Hearts, Rank: game.Seven}

@@ -165,8 +165,8 @@ func LoadWeightsIntoNodes(path string, nodes []*gorgonia.Node) error {
 	return nil
 }
 
-// SaveCombinedCardPlayWeights saves both declarer and defender weights to a single file
-func SaveCombinedCardPlayWeights(path string, declarerWeights, defenderWeights map[string]*gorgonia.Node) error {
+// SaveCombinedCardPlayWeights saves declarer, defender, and Ramsch weights to one file.
+func SaveCombinedCardPlayWeights(path string, declarerWeights, defenderWeights, ramschWeights map[string]*gorgonia.Node) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -178,8 +178,8 @@ func SaveCombinedCardPlayWeights(path string, declarerWeights, defenderWeights m
 		return err
 	}
 
-	// Write version (3 for combined format)
-	version := uint32(3)
+	// Version 4 adds the dedicated Ramsch network.
+	version := uint32(4)
 	if err := binary.Write(f, binary.LittleEndian, version); err != nil {
 		return err
 	}
@@ -232,13 +232,16 @@ func SaveCombinedCardPlayWeights(path string, declarerWeights, defenderWeights m
 	if err := writeWeights(defenderWeights, "defender_"); err != nil {
 		return fmt.Errorf("failed to write defender weights: %w", err)
 	}
+	if err := writeWeights(ramschWeights, "ramsch_"); err != nil {
+		return fmt.Errorf("failed to write Ramsch weights: %w", err)
+	}
 
 	return nil
 }
 
-// LoadCombinedCardPlayWeights loads both declarer and defender weights from a single file (local or GCS)
+// LoadCombinedCardPlayWeights loads all three role networks from a single file.
 // Supports both local paths and GCS URIs (gs://bucket/path)
-func LoadCombinedCardPlayWeights(path string, declarerGraph, defenderGraph *gorgonia.ExprGraph) (declarerWeights, defenderWeights map[string]*gorgonia.Node, err error) {
+func LoadCombinedCardPlayWeights(path string, declarerGraph, defenderGraph, ramschGraph *gorgonia.ExprGraph) (declarerWeights, defenderWeights, ramschWeights map[string]*gorgonia.Node, err error) {
 	// Check if GCS path
 	if len(path) > 5 && path[:5] == "gs://" {
 		// Parse GCS path
@@ -251,46 +254,47 @@ func LoadCombinedCardPlayWeights(path string, declarerGraph, defenderGraph *gorg
 			}
 		}
 		if slashIdx == -1 {
-			return nil, nil, fmt.Errorf("invalid GCS path: %s", path)
+			return nil, nil, nil, fmt.Errorf("invalid GCS path: %s", path)
 		}
 		bucket := remainder[:slashIdx]
 		objectPath := remainder[slashIdx+1:]
 
-		return loadCombinedCardPlayWeightsFromGCS(context.Background(), bucket, objectPath, declarerGraph, defenderGraph)
+		return loadCombinedCardPlayWeightsFromGCS(context.Background(), bucket, objectPath, declarerGraph, defenderGraph, ramschGraph)
 	}
 
 	// Local file
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defer f.Close()
 
-	return loadCombinedCardPlayWeightsFromReader(f, declarerGraph, defenderGraph)
+	return loadCombinedCardPlayWeightsFromReader(f, declarerGraph, defenderGraph, ramschGraph)
 }
 
 // loadCombinedCardPlayWeightsFromReader reads combined weights from an io.Reader
-func loadCombinedCardPlayWeightsFromReader(reader io.Reader, declarerGraph, defenderGraph *gorgonia.ExprGraph) (declarerWeights, defenderWeights map[string]*gorgonia.Node, err error) {
+func loadCombinedCardPlayWeightsFromReader(reader io.Reader, declarerGraph, defenderGraph, ramschGraph *gorgonia.ExprGraph) (declarerWeights, defenderWeights, ramschWeights map[string]*gorgonia.Node, err error) {
 	// Read magic number
 	magic := make([]byte, 4)
 	if _, err := io.ReadFull(reader, magic); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if string(magic) != "SKAT" {
-		return nil, nil, fmt.Errorf("invalid magic number")
+		return nil, nil, nil, fmt.Errorf("invalid magic number")
 	}
 
 	// Read version
 	var version uint32
 	if err := binary.Read(reader, binary.LittleEndian, &version); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	if version != 3 {
-		return nil, nil, fmt.Errorf("unsupported version: %d (expected 3 for combined format)", version)
+	if version != 4 {
+		return nil, nil, nil, fmt.Errorf("unsupported version: %d (expected 4 for three-network format)", version)
 	}
 
 	declarerWeights = make(map[string]*gorgonia.Node)
 	defenderWeights = make(map[string]*gorgonia.Node)
+	ramschWeights = make(map[string]*gorgonia.Node)
 
 	// Read all weights
 	for {
@@ -300,27 +304,27 @@ func loadCombinedCardPlayWeightsFromReader(reader io.Reader, declarerGraph, defe
 			if err == io.EOF {
 				break
 			}
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		// Read name
 		nameBytes := make([]byte, nameLen)
 		if _, err := io.ReadFull(reader, nameBytes); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		fullName := string(nameBytes)
 
 		// Read shape
 		var ndim uint32
 		if err := binary.Read(reader, binary.LittleEndian, &ndim); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		shape := make([]int, ndim)
 		for i := range shape {
 			var dim uint32
 			if err := binary.Read(reader, binary.LittleEndian, &dim); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			shape[i] = int(dim)
 		}
@@ -334,7 +338,7 @@ func loadCombinedCardPlayWeightsFromReader(reader io.Reader, declarerGraph, defe
 		// Read data
 		data := make([]float32, totalElems)
 		if err := binary.Read(reader, binary.LittleEndian, &data); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		// Determine role and strip prefix
@@ -350,8 +354,12 @@ func loadCombinedCardPlayWeightsFromReader(reader io.Reader, declarerGraph, defe
 			g = defenderGraph
 			targetMap = defenderWeights
 			name = fullName[9:]
+		} else if len(fullName) > 7 && fullName[:7] == "ramsch_" {
+			g = ramschGraph
+			targetMap = ramschWeights
+			name = fullName[7:]
 		} else {
-			return nil, nil, fmt.Errorf("invalid weight name (missing role prefix): %s", fullName)
+			return nil, nil, nil, fmt.Errorf("invalid weight name (missing role prefix): %s", fullName)
 		}
 
 		// Create tensor and node
@@ -360,14 +368,14 @@ func loadCombinedCardPlayWeightsFromReader(reader io.Reader, declarerGraph, defe
 		targetMap[name] = node
 	}
 
-	return declarerWeights, defenderWeights, nil
+	return declarerWeights, defenderWeights, ramschWeights, nil
 }
 
 // loadCombinedCardPlayWeightsFromGCS loads combined weights from GCS
-func loadCombinedCardPlayWeightsFromGCS(ctx context.Context, bucketName, objectPath string, declarerGraph, defenderGraph *gorgonia.ExprGraph) (declarerWeights, defenderWeights map[string]*gorgonia.Node, err error) {
+func loadCombinedCardPlayWeightsFromGCS(ctx context.Context, bucketName, objectPath string, declarerGraph, defenderGraph, ramschGraph *gorgonia.ExprGraph) (declarerWeights, defenderWeights, ramschWeights map[string]*gorgonia.Node, err error) {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create GCS client: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create GCS client: %w", err)
 	}
 	defer client.Close()
 
@@ -375,11 +383,11 @@ func loadCombinedCardPlayWeightsFromGCS(ctx context.Context, bucketName, objectP
 	obj := bucket.Object(objectPath)
 	reader, err := obj.NewReader(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create GCS reader: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create GCS reader: %w", err)
 	}
 	defer reader.Close()
 
-	return loadCombinedCardPlayWeightsFromReader(reader, declarerGraph, defenderGraph)
+	return loadCombinedCardPlayWeightsFromReader(reader, declarerGraph, defenderGraph, ramschGraph)
 }
 
 // SaveWeightsToGCS saves network weights to Google Cloud Storage

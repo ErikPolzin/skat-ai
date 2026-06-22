@@ -30,11 +30,12 @@ type NetworkInstance struct {
 }
 
 // NeuralCardPlayStrategy implements neural network inference for card play
-// Uses separate networks for declarer and defender roles
+// Uses separate networks for declarer, defender, and Ramsch play.
 // Can be trained via imitation learning or reinforcement learning (DQN)
 type NeuralCardPlayStrategy struct {
 	declarerNet *NetworkInstance
 	defenderNet *NetworkInstance
+	ramschNet   *NetworkInstance
 	epsilon     float32
 }
 
@@ -48,17 +49,19 @@ func NewNeuralCardPlayStrategy() *NeuralCardPlayStrategy {
 	return &NeuralCardPlayStrategy{
 		declarerNet: createNetworkInstance(nil),
 		defenderNet: createNetworkInstance(nil),
+		ramschNet:   createNetworkInstance(nil),
 	}
 }
 
-// NewNeuralCardPlayStrategyFromWeights loads both declarer and defender networks from a single file
+// NewNeuralCardPlayStrategyFromWeights loads declarer, defender, and Ramsch networks from one file.
 func NewNeuralCardPlayStrategyFromWeights(path string) (*NeuralCardPlayStrategy, error) {
 	// Create graphs for loading weights
 	declarerGraph := gorgonia.NewGraph()
 	defenderGraph := gorgonia.NewGraph()
+	ramschGraph := gorgonia.NewGraph()
 
 	// Load combined weights from single file
-	declarerWeights, defenderWeights, err := strategiesio.LoadCombinedCardPlayWeights(path, declarerGraph, defenderGraph)
+	declarerWeights, defenderWeights, ramschWeights, err := strategiesio.LoadCombinedCardPlayWeights(path, declarerGraph, defenderGraph, ramschGraph)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load weights: %w", err)
 	}
@@ -66,14 +69,16 @@ func NewNeuralCardPlayStrategyFromWeights(path string) (*NeuralCardPlayStrategy,
 	return &NeuralCardPlayStrategy{
 		declarerNet: createNetworkInstance(declarerWeights),
 		defenderNet: createNetworkInstance(defenderWeights),
+		ramschNet:   createNetworkInstance(ramschWeights),
 	}, nil
 }
 
 // NewNeuralCardPlayStrategyFromWeightMaps creates a strategy from existing weight maps (for self-play)
-func NewNeuralCardPlayStrategyFromWeightMaps(declarerWeights, defenderWeights CardPlayNetworkWeights) *NeuralCardPlayStrategy {
+func NewNeuralCardPlayStrategyFromWeightMaps(declarerWeights, defenderWeights, ramschWeights CardPlayNetworkWeights) *NeuralCardPlayStrategy {
 	return &NeuralCardPlayStrategy{
 		declarerNet: createNetworkInstance(declarerWeights),
 		defenderNet: createNetworkInstance(defenderWeights),
+		ramschNet:   createNetworkInstance(ramschWeights),
 	}
 }
 
@@ -125,7 +130,9 @@ func (s *NeuralCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []gam
 
 	// Select appropriate network
 	var net *NetworkInstance
-	if isDeclarer {
+	if gs.Mode == game.ModeRamsch {
+		net = s.ramschNet
+	} else if isDeclarer {
 		net = s.declarerNet
 	} else {
 		net = s.defenderNet
@@ -182,9 +189,10 @@ func (s *NeuralCardPlayStrategy) SetExploration(epsilon float32) {
 }
 
 // UpdateWeights replaces the network weights with new ones
-func (s *NeuralCardPlayStrategy) UpdateWeights(declarerWeights, defenderWeights CardPlayNetworkWeights) {
+func (s *NeuralCardPlayStrategy) UpdateWeights(declarerWeights, defenderWeights, ramschWeights CardPlayNetworkWeights) {
 	s.declarerNet = createNetworkInstance(declarerWeights)
 	s.defenderNet = createNetworkInstance(defenderWeights)
+	s.ramschNet = createNetworkInstance(ramschWeights)
 }
 
 // Clone creates a copy of the strategy
@@ -192,6 +200,7 @@ func (s *NeuralCardPlayStrategy) Clone() *NeuralCardPlayStrategy {
 	return &NeuralCardPlayStrategy{
 		declarerNet: createNetworkInstance(s.declarerNet.weights),
 		defenderNet: createNetworkInstance(s.defenderNet.weights),
+		ramschNet:   createNetworkInstance(s.ramschNet.weights),
 		epsilon:     s.epsilon,
 	}
 }

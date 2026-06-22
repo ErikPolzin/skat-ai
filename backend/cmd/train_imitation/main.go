@@ -62,21 +62,22 @@ func main() {
 		os.Exit(1)
 	}
 	if *initialWeights != "" {
-		declWeights, defWeights, err := loadInitialWeights(*initialWeights)
+		declWeights, defWeights, ramWeights, err := loadInitialWeights(*initialWeights)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to load initial weights: %v\n", err)
 			os.Exit(1)
 		}
-		if err := trainer.SetWeights(declWeights, defWeights); err != nil {
+		if err := trainer.SetWeights(declWeights, defWeights, ramWeights); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to set initial weights: %v\n", err)
 			os.Exit(1)
 		}
 	}
 
-	declExamples, defExamples := trainer.GetDatasetSizes()
+	declExamples, defExamples, ramExamples := trainer.GetDatasetSizes()
 	fmt.Printf("  Declarer examples: %d\n", declExamples)
 	fmt.Printf("  Defender examples: %d\n", defExamples)
-	fmt.Printf("  Total examples: %d\n\n", declExamples+defExamples)
+	fmt.Printf("  Ramsch examples: %d\n", ramExamples)
+	fmt.Printf("  Total examples: %d\n\n", declExamples+defExamples+ramExamples)
 
 	// Training loop
 	fmt.Println("Starting training...")
@@ -92,24 +93,24 @@ func main() {
 
 	for epoch := 1; epoch <= *epochs; epoch++ {
 		// Train one epoch
-		declLoss, defLoss, declAcc, defAcc, err := trainer.Train()
+		declLoss, defLoss, ramLoss, declAcc, defAcc, ramAcc, err := trainer.Train()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Training error at epoch %d: %v\n", epoch, err)
 			os.Exit(1)
 		}
 
-		fmt.Printf("  [Epoch %3d/%d] Decl Loss: %.4f Acc: %.1f%% | Def Loss: %.4f Acc: %.1f%%\n",
-			epoch, *epochs, declLoss, declAcc*100, defLoss, defAcc*100)
+		fmt.Printf("  [Epoch %3d/%d] Decl Loss: %.4f Acc: %.1f%% | Def Loss: %.4f Acc: %.1f%% | Ramsch Loss: %.4f Acc: %.1f%%\n",
+			epoch, *epochs, declLoss, declAcc*100, defLoss, defAcc*100, ramLoss, ramAcc*100)
 
 		// Evaluate periodically
 		if epoch%*evalEvery == 0 {
 			fmt.Printf("\n[Epoch %d] Evaluating against heuristic baseline (%d games)...\n", epoch, *evalGames)
 
 			// Get current weights
-			declWeights, defWeights := trainer.GetWeights()
+			declWeights, defWeights, ramWeights := trainer.GetWeights()
 
 			// Create test agent with current weights (no exploration)
-			testStrategy := strategies.NewNeuralCardPlayStrategyFromWeightMaps(declWeights, defWeights)
+			testStrategy := strategies.NewNeuralCardPlayStrategyFromWeightMaps(declWeights, defWeights, ramWeights)
 			testStrategy.SetExploration(0.0)
 
 			cfg := strategies.DefaultContractEvaluatorConfig()
@@ -175,7 +176,7 @@ func main() {
 			fmt.Printf("  → Adjusted advantage: %+.1fpp | Raw point diff: %d\n\n", evalScore, pointDiff)
 			if evalScore > bestEvalScore {
 				bestEvalScore = evalScore
-				if err := strategiesio.SaveCombinedCardPlayWeights(*outputWeights, declWeights, defWeights); err != nil {
+				if err := strategiesio.SaveCombinedCardPlayWeights(*outputWeights, declWeights, defWeights, ramWeights); err != nil {
 					fmt.Fprintf(os.Stderr, "Failed to save best weights: %v\n", err)
 					os.Exit(1)
 				}
@@ -186,14 +187,14 @@ func main() {
 	}
 
 	// Save final model
-	declWeights, defWeights := trainer.GetWeights()
+	declWeights, defWeights, ramWeights := trainer.GetWeights()
 
 	finalWeights := *outputWeights
 	if savedBest {
 		finalWeights = *outputWeights + ".final"
 	}
 
-	if err := strategiesio.SaveCombinedCardPlayWeights(finalWeights, declWeights, defWeights); err != nil {
+	if err := strategiesio.SaveCombinedCardPlayWeights(finalWeights, declWeights, defWeights, ramWeights); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to save weights: %v\n", err)
 		os.Exit(1)
 	}
@@ -262,12 +263,13 @@ func handAdjustedWinRate(metrics agent.AgentMetricsSnapshot, role evaluationRole
 	}
 }
 
-func loadInitialWeights(path string) (strategies.CardPlayNetworkWeights, strategies.CardPlayNetworkWeights, error) {
+func loadInitialWeights(path string) (strategies.CardPlayNetworkWeights, strategies.CardPlayNetworkWeights, strategies.CardPlayNetworkWeights, error) {
 	declGraph := gorgonia.NewGraph()
 	defGraph := gorgonia.NewGraph()
-	declWeights, defWeights, err := strategiesio.LoadCombinedCardPlayWeights(path, declGraph, defGraph)
+	ramGraph := gorgonia.NewGraph()
+	declWeights, defWeights, ramWeights, err := strategiesio.LoadCombinedCardPlayWeights(path, declGraph, defGraph, ramGraph)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return strategies.CardPlayNetworkWeights(declWeights), strategies.CardPlayNetworkWeights(defWeights), nil
+	return strategies.CardPlayNetworkWeights(declWeights), strategies.CardPlayNetworkWeights(defWeights), strategies.CardPlayNetworkWeights(ramWeights), nil
 }

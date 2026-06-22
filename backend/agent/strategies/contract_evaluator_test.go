@@ -32,6 +32,18 @@ func TestContractEvaluatorBestUsesBidAndSharedScores(t *testing.T) {
 	}
 }
 
+func TestEstimateRamschWinProbabilitiesAreRelative(t *testing.T) {
+	safe := []game.Card{{Suit: game.Hearts, Rank: game.Seven}, {Suit: game.Spades, Rank: game.Eight}}
+	dangerous := []game.Card{{Suit: game.Clubs, Rank: game.Jack}, {Suit: game.Hearts, Rank: game.Ace}, {Suit: game.Spades, Rank: game.Ten}}
+	probabilities := EstimateRamschWinProbabilities([3][]game.Card{safe, dangerous, safe})
+	if probabilities[0] <= probabilities[1] || probabilities[2] <= probabilities[1] {
+		t.Fatalf("dangerous Ramsch hand should be less likely to win: %v", probabilities)
+	}
+	if total := probabilities[0] + probabilities[1] + probabilities[2]; total < 0.999999 || total > 1.000001 {
+		t.Fatalf("probabilities sum to %v, want 1", total)
+	}
+}
+
 func TestContractEvaluatorRejectsUnplayableBid(t *testing.T) {
 	choice := NewHeuristicGameChoiceStrategy()
 	hand := []game.Card{

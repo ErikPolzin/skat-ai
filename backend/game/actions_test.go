@@ -64,6 +64,33 @@ func TestDeclareHandGameUsesAnnouncementMultipliersForBidValidation(t *testing.T
 	}
 }
 
+func TestAnnouncedSchneiderLosesBelowNinetyCardPoints(t *testing.T) {
+	gs := newDeclarerChoiceStateForTest(0)
+	if _, err := gs.DeclareGame(ModeSuit, Clubs, true, false); err != nil {
+		t.Fatalf("DeclareGame returned error: %v", err)
+	}
+	gs.Phase = PhaseComplete
+	gs.PlayerScores[*gs.Declarer] = 89
+	for pos := Dealer; pos <= Speaker; pos++ {
+		if pos != *gs.Declarer {
+			gs.PlayerScores[pos] = 31
+			break
+		}
+	}
+
+	result := gs.Result()
+
+	if result.DeclarerWon {
+		t.Fatalf("expected declarer to lose after missing announced Schneider")
+	}
+	if result.Value != -120 {
+		t.Fatalf("expected missed announced Schneider value -120, got %d", result.Value)
+	}
+	if gs.isWinner(*gs.Declarer) {
+		t.Fatalf("expected declarer not to be marked as winner")
+	}
+}
+
 func TestSuitGameMatadorsContinueThroughTrumpSuit(t *testing.T) {
 	gs := newDeclarerChoiceStateForTest(84)
 	gs.Players[*gs.Declarer].Hand = Cards{

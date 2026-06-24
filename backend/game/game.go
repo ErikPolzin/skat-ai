@@ -551,8 +551,16 @@ func (gs *GameState) GetGameResult() (declarerWon bool, schneider bool, schwarz 
 		return
 	}
 
-	// Normal games: declarer needs 61+ points to win
-	declarerWon = gs.DeclarerCardScore() >= 61
+	// Normal games: declarer needs 61+ points to win, or the announced
+	// target if they declared Schneider/Schwarz.
+	declarerScore := gs.DeclarerCardScore()
+	declarerWon = declarerScore >= 61
+	if gs.AnnouncedSchneider && declarerScore < 90 {
+		declarerWon = false
+	}
+	if gs.AnnouncedSchwarz && declarerScore < 120 {
+		declarerWon = false
+	}
 
 	// Check for schneider (90+ points by one side)
 	if declarerWon {

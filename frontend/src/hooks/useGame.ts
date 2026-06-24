@@ -5,6 +5,7 @@ import {
   fetchGameState,
   getSessionResults,
   type GameInfo,
+  type GamePosition,
   type Player,
   type SessionPlayerResult,
   type ServerPlayer,
@@ -217,7 +218,15 @@ export function useGame(
       ),
       state: {
         ...prev.state,
+        trick_starter:
+          (prev.state.trick || []).length === 0
+            ? prev.state.current_player
+            : prev.state.trick_starter,
         trick: [...(prev.state.trick || []), card],
+        current_player:
+          (prev.state.trick || []).length === 2
+            ? prev.state.current_player
+            : (((prev.state.current_player + 1) % 3) as GamePosition),
       },
     }));
   }, []);
@@ -232,6 +241,27 @@ export function useGame(
           (c) => !(c.rank === card.rank && c.suit === card.suit),
         ),
       },
+    }));
+  }, []);
+
+  const optimisticallyDiscardCards = useCallback((cards: Card[]) => {
+    setGameInfo((prev) => ({
+      ...prev,
+      hand: (prev.hand || []).filter(
+        (handCard) =>
+          !cards.some(
+            (discardedCard) =>
+              discardedCard.rank === handCard.rank &&
+              discardedCard.suit === handCard.suit,
+          ),
+      ),
+    }));
+  }, []);
+
+  const undoOptimisticDiscardCards = useCallback((cards: Card[]) => {
+    setGameInfo((prev) => ({
+      ...prev,
+      hand: [...(prev.hand || []), ...cards],
     }));
   }, []);
 
@@ -405,6 +435,8 @@ export function useGame(
     // Actions
     optimisticallyPlayCard,
     undoOptimisticPlayCard,
+    optimisticallyDiscardCards,
+    undoOptimisticDiscardCards,
     setGameInfo,
     addMessage,
     reset,

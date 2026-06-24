@@ -93,18 +93,21 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
   const discardCards = useCallback(
     async (cards: CardType[]) => {
       if (!isLoading && playerId) {
+        game.optimisticallyDiscardCards(cards);
         setIsLoading(true);
         const cardsStr = cards.map(cardToString).join("-");
         try {
           await api.discardCards(game.gameId, playerId, cardsStr);
         } catch (error) {
           console.error("Discard cards action failed:", error);
+          game.undoOptimisticDiscardCards(cards);
+          showSnackbar("Failed to discard cards", "error");
         } finally {
           setIsLoading(false);
         }
       }
     },
-    [game.gameId, isLoading, playerId],
+    [game, isLoading, playerId, showSnackbar],
   );
 
   const bid = useCallback(

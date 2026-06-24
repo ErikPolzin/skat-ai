@@ -481,12 +481,6 @@ export function MotionCardTable() {
     ],
   );
 
-  const playerKeys = useMemo(
-    () =>
-      sortedPlayerHand.map((card) => `player-card-${card.rank}-${card.suit}`),
-    [sortedPlayerHand],
-  );
-
   // CSS variable overrides - use the card dimensions as source of truth
   const cardTableStyle = {
     "--card-width": `${CARD_WIDTH}px`,
@@ -862,12 +856,19 @@ export function MotionCardTable() {
               !game.controls.isLoading &&
               ((game.phase === "playing" && game.isMyTurn && isValidMove) ||
                 (game.isSkatExchange && game.hasPickedUpSkat));
+            const isDiscardSelection =
+              game.isSkatExchange && game.hasPickedUpSkat && selected;
 
             const declarerOffset = makeExtraCenterSpace ? 50 : 0;
-            // Raise card if selected
             const animatePosition = selected
               ? { ...basePosition, y: basePosition.y + declarerOffset - 20 }
               : { ...basePosition, y: basePosition.y + declarerOffset };
+            const discardExitPosition = {
+              ...getPlayerPilePosition(),
+              rotate: basePosition.rotate,
+              rotateY: 180,
+              scale: 0.85,
+            };
             const initialPosition = getPlayerCardInitialPosition(
               index,
               basePosition,
@@ -879,12 +880,13 @@ export function MotionCardTable() {
                 index={index}
                 rank={card.rank}
                 suit={card.suit}
-                key={playerKeys[index]}
+                key={`player-card-${card.rank}-${card.suit}`}
                 selected={selected}
                 disabled={
                   game.phase === "playing" && game.isMyTurn && !isValidMove
                 }
                 animate={animatePosition}
+                exit={isDiscardSelection ? discardExitPosition : undefined}
                 initial={initialPosition}
                 skipInitialAnimation={!shouldAnimateFromDeck}
                 whileHover={

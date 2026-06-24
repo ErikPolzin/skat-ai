@@ -57,7 +57,7 @@ type BehavioralCloningModel struct {
 	// Input nodes
 	x          *gorgonia.Node // State features
 	validMask  *gorgonia.Node // Valid moves mask (32)
-	targetMask *gorgonia.Node // One-hot target action (32)
+	targetMask *gorgonia.Node // Target action distribution (32)
 	weight     *gorgonia.Node // Sample weights
 
 	// Output nodes
@@ -116,7 +116,7 @@ func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error
 		gorgonia.WithShape(t.batchSize, 32),
 		gorgonia.WithName("bc_valid_mask"))
 
-	// Target action (one-hot): batch_size x 32
+	// Target action distribution: batch_size x 32
 	targetMask := gorgonia.NewMatrix(g, tensor.Float32,
 		gorgonia.WithShape(t.batchSize, 32),
 		gorgonia.WithName("bc_target"))
@@ -417,7 +417,15 @@ func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, bat
 				}
 			}
 		}
-		if maxIdx == ex.Action {
+		// With soft labels, any action tied for the highest target probability
+		// is an acceptable prediction.
+		maxTarget := float32(0)
+		for j := 0; j < 32; j++ {
+			if ex.Policy[j] > maxTarget {
+				maxTarget = ex.Policy[j]
+			}
+		}
+		if maxIdx >= 0 && ex.Policy[maxIdx] >= maxTarget-1e-6 {
 			correct++
 		}
 	}

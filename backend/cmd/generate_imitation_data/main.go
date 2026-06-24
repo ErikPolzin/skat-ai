@@ -79,11 +79,16 @@ func main() {
 	biddingThreshold := flag.Float64("bidding-threshold", 0.55, "Heuristic bidding threshold used for natural contract generation")
 	minWinProbability := flag.Float64("min-win-probability", 0.10, "Minimum pre-game win probability to collect")
 	maxWinProbability := flag.Float64("max-win-probability", 0.65, "Maximum pre-game win probability to collect")
+	acceptableGap := flag.Float64("acceptable-gap", 5.0, "Maximum minimax score gap from the best move to treat as an equally good target")
 	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel workers")
 	flag.Parse()
 
 	if *minWinProbability < 0 || *maxWinProbability > 1 || *minWinProbability > *maxWinProbability {
 		fmt.Fprintf(os.Stderr, "Invalid win-probability range %.2f-%.2f (expected 0 <= min <= max <= 1)\n", *minWinProbability, *maxWinProbability)
+		os.Exit(1)
+	}
+	if *acceptableGap < 0 {
+		fmt.Fprintf(os.Stderr, "Invalid acceptable gap %.2f (expected >= 0)\n", *acceptableGap)
 		os.Exit(1)
 	}
 
@@ -94,6 +99,7 @@ func main() {
 	fmt.Printf("  Contracts: natural bidding and game choice (threshold %.2f)\n", *biddingThreshold)
 	fmt.Printf("  Contract filtering: Minimax wins from %.2f-%.2f pre-game win probability; excluding overbids\n", *minWinProbability, *maxWinProbability)
 	fmt.Printf("  Ramsch filtering: winners from any starting hand\n")
+	fmt.Printf("  Multi-card targets: moves within %.2f evaluation points of best\n", *acceptableGap)
 	fmt.Printf("Using %d parallel workers\n", *workers)
 
 	// Channel for collecting results
@@ -109,6 +115,7 @@ func main() {
 
 		// Create search agent for expert card-play labels.
 		searchAgent := newSearchTeacherAgent("SearchExpert", *searchDepth, *biddingThreshold)
+		labelScorer := strategies.NewPerfectInfoMinimaxStrategyWithDepth(*searchDepth)
 
 		config := strategies.DefaultContractEvaluatorConfig()
 		config.MinWinProbability = *biddingThreshold
@@ -130,9 +137,9 @@ func main() {
 				needed := neededBuckets.Load()
 				var examples []ImitationExample
 				if needed&needRamsch != 0 && (needed&needNormalBuckets == 0 || rand.Intn(4) == 0) {
-					examples = playRamschAndCollectExamples(searchAgent)
+					examples = playRamschAndCollectExamples(searchAgent, labelScorer, *acceptableGap)
 				} else {
-					examples = playGameAndCollectExamples(searchAgent, heuristicAgent, *minWinProbability, *maxWinProbability, needed)
+					examples = playGameAndCollectExamples(searchAgent, heuristicAgent, labelScorer, *acceptableGap, *minWinProbability, *maxWinProbability, needed)
 				}
 				// Every attempted game sends one batch, including filtered empty batches,
 				// so the collector owns exact progress accounting.
@@ -188,6 +195,7 @@ func main() {
 		fmt.Printf("  %-16s %d\n", key, len(buckets[key]))
 	}
 	fmt.Printf("\nCollected dataset: %d total examples\n", len(dataset))
+	printTargetStats(dataset)
 
 	// Save dataset to CSV file
 	fmt.Printf("\nSaving %d examples to %s...\n", len(dataset), *outputFile)
@@ -317,7 +325,7 @@ func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, bool) {
 }
 
 // collectDeclarerExamples plays a game with search-teacher declarer vs heuristic defenders.
-func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap float64) []ImitationExample {
 	var examples []ImitationExample
 
 	if g.Declarer == nil {
@@ -342,10 +350,12 @@ func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *age
 			state := enc.ToSlice()
 			validMask := enc.GetValidMask()
 
-			// Get expert action
-			card := currentAgent.SelectMove(g, validMoves)
+			// Score every root move independently so near-equivalent expert moves
+			// can share the target probability.
+			scores := labelScorer.ScoreMoves(g, validMoves)
+			policy, best := acceptableMovePolicy(validMoves, scores, true, acceptableGap)
+			card := validMoves[best]
 			action := encoding.CardToIndex(card)
-			policy := oneHotPolicy(action)
 
 			// Store declarer example
 			examples = append(examples, ImitationExample{
@@ -384,7 +394,7 @@ func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *age
 }
 
 // collectDefenderExamples plays a game with a heuristic declarer vs Minimax defenders.
-func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAgent *agent.SkatAgent) []ImitationExample {
+func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap float64) []ImitationExample {
 	var examples []ImitationExample
 
 	if g.Declarer == nil {
@@ -409,10 +419,10 @@ func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAg
 			validMask := enc.GetValidMask()
 
 			// Get expert defender action
-			currentAgent := agent.GetAgentForPlayer(g.GetCurrentPlayer())
-			card := currentAgent.SelectMove(g, validMoves)
+			scores := labelScorer.ScoreMoves(g, validMoves)
+			policy, best := acceptableMovePolicy(validMoves, scores, false, acceptableGap)
+			card := validMoves[best]
 			action := encoding.CardToIndex(card)
-			policy := oneHotPolicy(action)
 
 			// Store defender example
 			examples = append(examples, ImitationExample{
@@ -464,16 +474,63 @@ func resolveTrickAndNotify(g *game.GameState) {
 	}
 }
 
-func oneHotPolicy(action int) [32]float32 {
+func acceptableMovePolicy(moves []game.Card, scores []float64, maximize bool, gap float64) ([32]float32, int) {
 	var policy [32]float32
-	if action >= 0 && action < len(policy) {
-		policy[action] = 1.0
+	if len(moves) == 0 || len(scores) != len(moves) {
+		return policy, -1
 	}
-	return policy
+	if gap < 0 {
+		gap = 0
+	}
+
+	best := 0
+	for i := 1; i < len(scores); i++ {
+		if (maximize && scores[i] > scores[best]) || (!maximize && scores[i] < scores[best]) {
+			best = i
+		}
+	}
+
+	acceptable := make([]int, 0, len(moves))
+	for i, score := range scores {
+		difference := scores[best] - score
+		if !maximize {
+			difference = score - scores[best]
+		}
+		if difference <= gap {
+			acceptable = append(acceptable, i)
+		}
+	}
+	probability := float32(1.0 / float64(len(acceptable)))
+	for _, i := range acceptable {
+		policy[encoding.CardToIndex(moves[i])] = probability
+	}
+	return policy, best
+}
+
+func printTargetStats(dataset []ImitationExample) {
+	if len(dataset) == 0 {
+		return
+	}
+	totalAcceptable, multiTarget := 0, 0
+	for _, example := range dataset {
+		count := 0
+		for _, probability := range example.Policy {
+			if probability > 0 {
+				count++
+			}
+		}
+		totalAcceptable += count
+		if count > 1 {
+			multiTarget++
+		}
+	}
+	fmt.Printf("Acceptable targets: %.2f cards/example; %.1f%% have multiple cards\n",
+		float64(totalAcceptable)/float64(len(dataset)),
+		float64(multiTarget)*100/float64(len(dataset)))
 }
 
 // playGameAndCollectExamples plays games twice: once for declarer examples, once for defender examples.
-func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, minWinProbability, maxWinProbability float64, needed uint32) []ImitationExample {
+func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap, minWinProbability, maxWinProbability float64, needed uint32) []ImitationExample {
 	var examples []ImitationExample
 
 	g, overbid := setupGame(heuristicAgent)
@@ -494,7 +551,7 @@ func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, mi
 	if needed&declarerBucket != 0 && probabilityInRange(handStrength, minWinProbability, maxWinProbability) {
 		// Collect an initially unfavored declarer only when Minimax converts the win.
 		gDeclarer := g.Clone()
-		batch := collectDeclarerExamples(gDeclarer, searchAgent, heuristicAgent)
+		batch := collectDeclarerExamples(gDeclarer, searchAgent, heuristicAgent, labelScorer, acceptableGap)
 		for i := range batch {
 			batch[i].WinProbability = handStrength
 		}
@@ -505,7 +562,7 @@ func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, mi
 	if needed&defenderBucket != 0 && probabilityInRange(defenderWinProbability, minWinProbability, maxWinProbability) {
 		// Defenders qualify by their own estimated chance, not the declarer's.
 		gDefender := g.Clone()
-		batch := collectDefenderExamples(gDefender, searchAgent, heuristicAgent)
+		batch := collectDefenderExamples(gDefender, searchAgent, heuristicAgent, labelScorer, acceptableGap)
 		for i := range batch {
 			batch[i].WinProbability = defenderWinProbability
 		}
@@ -515,7 +572,7 @@ func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, mi
 	return examples
 }
 
-func playRamschAndCollectExamples(searchAgent *agent.SkatAgent) []ImitationExample {
+func playRamschAndCollectExamples(searchAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap float64) []ImitationExample {
 	config := agent.NewThreeWayConfig(searchAgent, searchAgent.CachedClone(), searchAgent.CachedClone().CachedClone())
 	g := agent.WithAgentPlayers(game.NewGame(), config).WithCardsDealt()
 	g.Mode = game.ModeRamsch
@@ -535,9 +592,11 @@ func playRamschAndCollectExamples(searchAgent *agent.SkatAgent) []ImitationExamp
 		player := g.CurrentPlayer
 		moves := g.GetValidMoves()
 		enc := encoding.EncodeNeuralCardPlay(g, player, moves)
-		card := agent.GetAgentForPlayer(g.GetCurrentPlayer()).SelectMove(g, moves)
+		scores := labelScorer.ScoreMoves(g, moves)
+		policy, best := acceptableMovePolicy(moves, scores, true, acceptableGap)
+		card := moves[best]
 		action := encoding.CardToIndex(card)
-		byPlayer[player] = append(byPlayer[player], ImitationExample{State: enc.ToSlice(), ValidMask: enc.GetValidMask(), Action: action, Role: roleRamsch, GameMode: game.ModeRamsch, Policy: oneHotPolicy(action)})
+		byPlayer[player] = append(byPlayer[player], ImitationExample{State: enc.ToSlice(), ValidMask: enc.GetValidMask(), Action: action, Role: roleRamsch, GameMode: game.ModeRamsch, Policy: policy})
 		if _, err := g.PlayCard(card); err != nil {
 			panic(err)
 		}

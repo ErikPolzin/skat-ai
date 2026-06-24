@@ -87,6 +87,34 @@ func (m *PerfectInfoMinimaxStrategy) GetName() string {
 	return "PerfectInfoMinimax"
 }
 
+// ScoreMoves evaluates every legal root move independently. Normal-game scores
+// are from the declarer's perspective (higher is better for the declarer), while
+// Ramsch scores are from the current player's perspective (higher is better).
+// Independent full-window root searches make these values suitable for soft
+// imitation-learning targets.
+func (m *PerfectInfoMinimaxStrategy) ScoreMoves(state *game.GameState, validMoves []game.Card) []float64 {
+	scores := make([]float64, len(validMoves))
+	root := state.CurrentPlayer
+
+	for i, move := range validMoves {
+		if m.useTransTable {
+			m.transMutex.Lock()
+			m.transTable = make(map[uint64]*TranspositionEntry)
+			m.transMutex.Unlock()
+		}
+
+		next := state.Clone()
+		m.playAndResolve(next, move)
+		if state.Mode == game.ModeRamsch {
+			scores[i] = m.minimaxRamsch(next, m.maxDepth-1, math.Inf(-1), math.Inf(1), root)
+		} else {
+			scores[i] = m.minimax(next, m.maxDepth-1, math.Inf(-1), math.Inf(1))
+		}
+	}
+
+	return scores
+}
+
 func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMoves []game.Card) game.Card {
 	if len(validMoves) == 1 {
 		return validMoves[0]

@@ -39,6 +39,30 @@ func TestMinimaxRamschAvoidsWinningPoints(t *testing.T) {
 	}
 }
 
+func TestScoreMovesPreservesInputOrder(t *testing.T) {
+	root := game.Listener
+	seven := game.Card{Suit: game.Hearts, Rank: game.Seven}
+	king := game.Card{Suit: game.Hearts, Rank: game.King}
+	ace := game.Card{Suit: game.Hearts, Rank: game.Ace}
+	ten := game.Card{Suit: game.Hearts, Rank: game.Ten}
+	state := &game.GameState{
+		Players: [3]*game.PlayerState{{Hand: game.Cards{}}, {Hand: game.Cards{seven, ace}}, {Hand: game.Cards{ten}}},
+		Mode:    game.ModeRamsch, Phase: game.PhasePlaying, CurrentPlayer: root,
+		TrickStarter: game.Dealer, Trick: game.Cards{king},
+	}
+	moves := game.Cards{ace, seven}
+	scores := NewPerfectInfoMinimaxStrategyWithDepth(1).ScoreMoves(state, moves)
+	if len(scores) != len(moves) {
+		t.Fatalf("got %d scores, want %d", len(scores), len(moves))
+	}
+	if scores[1] <= scores[0] {
+		t.Fatalf("scores = %v, want seven at index 1 to score above ace at index 0", scores)
+	}
+	if moves[0] != ace || moves[1] != seven {
+		t.Fatalf("ScoreMoves mutated input order: %v", moves)
+	}
+}
+
 func TestMinimaxFinishesTrickAtDepthCutoff(t *testing.T) {
 	declarer := game.Listener
 	seven := game.Card{Suit: game.Hearts, Rank: game.Seven}

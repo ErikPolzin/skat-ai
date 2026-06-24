@@ -51,6 +51,7 @@ export function GameOverScreen() {
     "♦": "Diamonds",
   };
   const isTournamentComplete = !game.canPlayNext;
+  const playerReadyForNext = game.player?.ready_for_next ?? false;
   const readyPlayerCount = game.players.filter(
     (p) => p && !p.is_agent && p.ready_for_next,
   ).length;
@@ -303,21 +304,23 @@ export function GameOverScreen() {
           },
         }}
       >
-        {game.canPlayNext && game.completionPolicy !== "strict" && (
-          <Button
-            variant="outlined"
-            color="primary"
-            size="large"
-            onClick={async () => {
-              await game.controls.endTournament();
-              navigate(`/${game.sessionId}/results`);
-            }}
-            loading={game.controls.isLoading}
-            disabled={!game.controls.isConnected || game.controls.isLoading}
-          >
-            End Tournament
-          </Button>
-        )}
+        {game.canPlayNext &&
+          game.completionPolicy !== "strict" &&
+          !playerReadyForNext && (
+            <Button
+              variant="outlined"
+              color="primary"
+              size="large"
+              onClick={async () => {
+                await game.controls.endTournament();
+                navigate(`/${game.sessionId}/results`);
+              }}
+              loading={game.controls.isLoading}
+              disabled={!game.controls.isConnected || game.controls.isLoading}
+            >
+              End Tournament
+            </Button>
+          )}
         {!game.canPlayNext && (
           <Button
             variant="contained"
@@ -330,7 +333,7 @@ export function GameOverScreen() {
         )}
         {game.canPlayNext && (
           <>
-            {!game.player?.ready_for_next ? (
+            {!playerReadyForNext ? (
               <Button
                 variant="contained"
                 color="primary"
@@ -338,7 +341,7 @@ export function GameOverScreen() {
                 onClick={() => game.controls.playNextGame()}
                 loading={game.controls.isLoading}
                 disabled={
-                  !game.controls.isConnected || game.player?.ready_for_next
+                  !game.controls.isConnected || playerReadyForNext
                 }
               >
                 {`Play Next (${game.gamesPlayed + 1}/${maxGamesLabel})`}

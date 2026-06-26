@@ -135,6 +135,188 @@ func SortByNullRank(cards []Card) {
 type Cards []Card
 type SkatCards [2]Card
 
+// TotalPoints returns the card-point total for the hand.
+func (c Cards) TotalPoints() int {
+	total := 0
+	for _, card := range c {
+		total += card.Value()
+	}
+	return total
+}
+
+// CountRank returns how many cards of the given rank are in the hand.
+func (c Cards) CountRank(rank Rank) int {
+	count := 0
+	for _, card := range c {
+		if card.Rank == rank {
+			count++
+		}
+	}
+	return count
+}
+
+// CountRanks returns how many cards match any of the given ranks.
+func (c Cards) CountRanks(ranks ...Rank) int {
+	selected := map[Rank]bool{}
+	for _, rank := range ranks {
+		selected[rank] = true
+	}
+	count := 0
+	for _, card := range c {
+		if selected[card.Rank] {
+			count++
+		}
+	}
+	return count
+}
+
+// CountTopJacks returns the number of consecutive top jacks held, starting at clubs.
+func (c Cards) CountTopJacks() int {
+	jacks := map[Suit]bool{}
+	for _, card := range c {
+		if card.Rank == Jack {
+			jacks[card.Suit] = true
+		}
+	}
+	count := 0
+	for _, suit := range []Suit{Clubs, Spades, Hearts, Diamonds} {
+		if !jacks[suit] {
+			break
+		}
+		count++
+	}
+	return count
+}
+
+// CountAceTenPairs returns how many suits contain both ace and ten.
+func (c Cards) CountAceTenPairs() int {
+	count := 0
+	for suit := Clubs; suit <= Diamonds; suit++ {
+		hasAce, hasTen := false, false
+		for _, card := range c {
+			if card.Suit != suit {
+				continue
+			}
+			hasAce = hasAce || card.Rank == Ace
+			hasTen = hasTen || card.Rank == Ten
+		}
+		if hasAce && hasTen {
+			count++
+		}
+	}
+	return count
+}
+
+// MaxSuitLength returns the largest number of cards held in any natural suit.
+func (c Cards) MaxSuitLength() int {
+	counts := map[Suit]int{}
+	maxCount := 0
+	for _, card := range c {
+		counts[card.Suit]++
+		if counts[card.Suit] > maxCount {
+			maxCount = counts[card.Suit]
+		}
+	}
+	return maxCount
+}
+
+// IsContractTrump reports whether card is trump in the given contract.
+func (c Cards) IsContractTrump(card Card, mode GameMode, trumpSuit Suit) bool {
+	if mode == ModeNull {
+		return false
+	}
+	if card.Rank == Jack {
+		return true
+	}
+	return mode == ModeSuit && card.Suit == trumpSuit
+}
+
+// ContractTrumpCount returns how many cards are trump in the given contract.
+func (c Cards) ContractTrumpCount(mode GameMode, trumpSuit Suit) int {
+	count := 0
+	for _, card := range c {
+		if c.IsContractTrump(card, mode, trumpSuit) {
+			count++
+		}
+	}
+	return count
+}
+
+// ContractTrumpPoints returns the card-point total held in trumps.
+func (c Cards) ContractTrumpPoints(mode GameMode, trumpSuit Suit) int {
+	total := 0
+	for _, card := range c {
+		if c.IsContractTrump(card, mode, trumpSuit) {
+			total += card.Value()
+		}
+	}
+	return total
+}
+
+// HasTopTrumpControl reports whether the hand has a top jack or trump ace.
+func (c Cards) HasTopTrumpControl(mode GameMode, trumpSuit Suit) bool {
+	if mode == ModeNull {
+		return false
+	}
+	for _, card := range c {
+		if card.Rank == Jack && (card.Suit == Clubs || card.Suit == Spades) {
+			return true
+		}
+		if mode == ModeSuit && card.Suit == trumpSuit && card.Rank == Ace {
+			return true
+		}
+	}
+	return false
+}
+
+// SideAceCount returns how many non-trump aces the hand contains.
+func (c Cards) SideAceCount(mode GameMode, trumpSuit Suit) int {
+	count := 0
+	for _, card := range c {
+		if card.Rank != Ace || c.IsContractTrump(card, mode, trumpSuit) {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+// VoidSuitCount returns how many natural suits contain no non-trump cards.
+func (c Cards) VoidSuitCount(mode GameMode, trumpSuit Suit) int {
+	counts := c.NonTrumpSuitCounts(mode, trumpSuit)
+	count := 0
+	for suit := Clubs; suit <= Diamonds; suit++ {
+		if counts[suit] == 0 {
+			count++
+		}
+	}
+	return count
+}
+
+// SingletonSuitCount returns how many natural suits contain one non-trump card.
+func (c Cards) SingletonSuitCount(mode GameMode, trumpSuit Suit) int {
+	counts := c.NonTrumpSuitCounts(mode, trumpSuit)
+	count := 0
+	for suit := Clubs; suit <= Diamonds; suit++ {
+		if counts[suit] == 1 {
+			count++
+		}
+	}
+	return count
+}
+
+// NonTrumpSuitCounts counts natural suits after removing contract trumps.
+func (c Cards) NonTrumpSuitCounts(mode GameMode, trumpSuit Suit) map[Suit]int {
+	counts := map[Suit]int{}
+	for _, card := range c {
+		if c.IsContractTrump(card, mode, trumpSuit) {
+			continue
+		}
+		counts[card.Suit]++
+	}
+	return counts
+}
+
 // NewDeck creates a standard Skat deck (32 cards)
 func NewDeck() Cards {
 	deck := make([]Card, 0, 32)

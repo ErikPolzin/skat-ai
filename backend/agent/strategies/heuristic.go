@@ -5,19 +5,42 @@ import (
 	"skat/game"
 )
 
+type heuristicContractWinProbabilityEstimator struct{}
+
+// NewHeuristicContractWinProbabilityEstimator returns the legacy hand-written
+// strength estimator. It is useful as a baseline or fallback probability model.
+func NewHeuristicContractWinProbabilityEstimator() ContractWinProbabilityEstimator {
+	return heuristicContractWinProbabilityEstimator{}
+}
+
+func (m heuristicContractWinProbabilityEstimator) EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit) float64 {
+	switch mode {
+	case game.ModeGrand:
+		return m.evaluateGrandStrength(hand)
+	case game.ModeSuit:
+		return m.evaluateSuitStrength(hand, suit)
+	case game.ModeNull:
+		return m.evaluateNullStrength(hand)
+	default:
+		return 0
+	}
+}
+
 // HeuristicBiddingStrategy uses hand strength heuristics to make bidding decisions
 type HeuristicBiddingStrategy struct {
 	evaluator *ContractEvaluator
 }
 
 func NewHeuristicBiddingStrategy() *HeuristicBiddingStrategy {
-	gameChoiceStrat := NewHeuristicGameChoiceStrategy()
-	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluator(gameChoiceStrat)}
+	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluator()}
 }
 
 func NewHeuristicBiddingStrategyWithConfig(config ContractEvaluatorConfig) *HeuristicBiddingStrategy {
-	gameChoiceStrat := NewHeuristicGameChoiceStrategy()
-	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluatorWithConfig(gameChoiceStrat, config)}
+	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluatorWithConfig(config)}
+}
+
+func NewHeuristicBiddingStrategyWithEstimator(config ContractEvaluatorConfig, estimator ContractWinProbabilityEstimator) *HeuristicBiddingStrategy {
+	return &HeuristicBiddingStrategy{evaluator: NewContractEvaluatorWithEstimator(config, estimator)}
 }
 
 func (h *HeuristicBiddingStrategy) GetName() string {
@@ -39,15 +62,15 @@ type HeuristicGameChoiceStrategy struct {
 }
 
 func NewHeuristicGameChoiceStrategy() *HeuristicGameChoiceStrategy {
-	strat := &HeuristicGameChoiceStrategy{}
-	strat.evaluator = NewContractEvaluator(strat)
-	return strat
+	return &HeuristicGameChoiceStrategy{evaluator: NewContractEvaluator()}
 }
 
 func NewHeuristicGameChoiceStrategyWithConfig(config ContractEvaluatorConfig) *HeuristicGameChoiceStrategy {
-	strat := &HeuristicGameChoiceStrategy{}
-	strat.evaluator = NewContractEvaluatorWithConfig(strat, config)
-	return strat
+	return &HeuristicGameChoiceStrategy{evaluator: NewContractEvaluatorWithConfig(config)}
+}
+
+func NewHeuristicGameChoiceStrategyWithEstimator(config ContractEvaluatorConfig, estimator ContractWinProbabilityEstimator) *HeuristicGameChoiceStrategy {
+	return &HeuristicGameChoiceStrategy{evaluator: NewContractEvaluatorWithEstimator(config, estimator)}
 }
 
 func (h *HeuristicGameChoiceStrategy) GetName() string {
@@ -118,7 +141,7 @@ func (h *HeuristicGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode g
 
 // evaluateGrandStrength scores a hand for playing Grand
 // Returns normalized probability (0-1) of winning the Grand game
-func (h *HeuristicGameChoiceStrategy) evaluateGrandStrength(cards game.Cards) float64 {
+func (m heuristicContractWinProbabilityEstimator) evaluateGrandStrength(cards game.Cards) float64 {
 	score := 0.0
 
 	// Count jacks (trumps in Grand)
@@ -211,7 +234,7 @@ func (h *HeuristicGameChoiceStrategy) evaluateGrandStrength(cards game.Cards) fl
 
 // evaluateSuitStrength scores a hand for playing a specific suit
 // Returns normalized probability (0-1) of winning the suit game
-func (h *HeuristicGameChoiceStrategy) evaluateSuitStrength(cards game.Cards, trumpSuit game.Suit) float64 {
+func (m heuristicContractWinProbabilityEstimator) evaluateSuitStrength(cards game.Cards, trumpSuit game.Suit) float64 {
 	score := 0.0
 
 	// Count trumps (Jacks + trump suit)
@@ -1177,7 +1200,7 @@ func getDefenderPartner(gs *game.GameState) game.GamePosition {
 // evaluateNullStrength scores a hand for playing Null
 // Returns normalized probability (0-1) of winning the Null game
 // In Null, declarer must lose every trick, so low cards and weak holdings are best
-func (h *HeuristicGameChoiceStrategy) evaluateNullStrength(cards game.Cards) float64 {
+func (m heuristicContractWinProbabilityEstimator) evaluateNullStrength(cards game.Cards) float64 {
 	score := 0.0
 
 	// In Null games, there are no trumps - suits follow standard order (A, K, Q, J, 10, 9, 8, 7)

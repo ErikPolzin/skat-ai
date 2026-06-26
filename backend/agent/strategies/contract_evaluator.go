@@ -20,6 +20,13 @@ type ContractCandidate struct {
 	Reason string
 }
 
+// ContractWinProbabilityEstimator supplies the probability model used by
+// ContractEvaluator. This lets the same candidate-ranking logic use heuristic,
+// neural, or test probability sources.
+type ContractWinProbabilityEstimator interface {
+	EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit) float64
+}
+
 // EstimateRamschWinProbabilities estimates each player's chance of finishing
 // with the lowest card-point score. Unlike contract strength, Ramsch strength
 // is relative to all three hands: point cards and cards likely to take tricks
@@ -79,23 +86,30 @@ func DefaultContractEvaluatorConfig() ContractEvaluatorConfig {
 // Bidding and game choice both use this evaluator so they do not drift apart.
 type ContractEvaluator struct {
 	config    ContractEvaluatorConfig
-	heuristic *HeuristicGameChoiceStrategy
+	estimator ContractWinProbabilityEstimator
 }
 
-func NewContractEvaluator(heuristic *HeuristicGameChoiceStrategy) *ContractEvaluator {
-	return NewContractEvaluatorWithConfig(heuristic, DefaultContractEvaluatorConfig())
+func NewContractEvaluator() *ContractEvaluator {
+	return NewContractEvaluatorWithConfig(DefaultContractEvaluatorConfig())
 }
 
-func NewContractEvaluatorWithConfig(heuristic *HeuristicGameChoiceStrategy, config ContractEvaluatorConfig) *ContractEvaluator {
+func NewContractEvaluatorWithConfig(config ContractEvaluatorConfig) *ContractEvaluator {
+	return NewContractEvaluatorWithEstimator(config, NewHeuristicContractWinProbabilityEstimator())
+}
+
+func NewContractEvaluatorWithEstimator(config ContractEvaluatorConfig, estimator ContractWinProbabilityEstimator) *ContractEvaluator {
 	if config.MinWinProbability == 0 {
 		config.MinWinProbability = DefaultContractEvaluatorConfig().MinWinProbability
 	}
 	if config.LossMultiplier == 0 {
 		config.LossMultiplier = DefaultContractEvaluatorConfig().LossMultiplier
 	}
+	if estimator == nil {
+		estimator = NewHeuristicContractWinProbabilityEstimator()
+	}
 	return &ContractEvaluator{
 		config:    config,
-		heuristic: heuristic,
+		estimator: estimator,
 	}
 }
 
@@ -161,16 +175,7 @@ func (e *ContractEvaluator) candidate(cards game.Cards, mode game.GameMode, suit
 }
 
 func (e *ContractEvaluator) winProbability(cards game.Cards, mode game.GameMode, suit game.Suit) float64 {
-	switch mode {
-	case game.ModeGrand:
-		return e.heuristic.evaluateGrandStrength(cards)
-	case game.ModeSuit:
-		return e.heuristic.evaluateSuitStrength(cards, suit)
-	case game.ModeNull:
-		return e.heuristic.evaluateNullStrength(cards)
-	default:
-		return 0
-	}
+	return e.estimator.EstimateWinProbability(cards, mode, suit)
 }
 
 // EstimateContractWinProbability estimates the declarer's chance of winning
@@ -178,8 +183,7 @@ func (e *ContractEvaluator) winProbability(cards game.Cards, mode game.GameMode,
 // It is strategy-independent so evaluation can normalize every agent against
 // the same hand-strength model.
 func EstimateContractWinProbability(hand []game.Card, mode game.GameMode, suit game.Suit) float64 {
-	heuristic := NewHeuristicGameChoiceStrategy()
-	return heuristic.evaluator.winProbability(game.Cards(hand), mode, suit)
+	return NewHeuristicContractWinProbabilityEstimator().EstimateWinProbability(game.Cards(hand), mode, suit)
 }
 
 func expectedContractValue(gameValue float64, winProbability float64, lossMultiplier float64) float64 {

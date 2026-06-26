@@ -146,7 +146,7 @@ func (m *PerfectInfoMinimaxStrategy) GetName() string {
 // are from the declarer's perspective (higher is better for the declarer), while
 // Ramsch scores are from the current player's perspective (higher is better).
 // Independent full-window root searches make these values suitable for soft
-// imitation-learning targets.
+// supervised card-play targets.
 func (m *PerfectInfoMinimaxStrategy) ScoreMoves(state *game.GameState, validMoves []game.Card) []float64 {
 	scores := make([]float64, len(validMoves))
 	root := state.CurrentPlayer

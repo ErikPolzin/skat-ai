@@ -10,17 +10,23 @@ import (
 	"skat/agent"
 	"skat/agent/strategies"
 	"skat/agent/training"
+	"skat/agent/training/contract"
 	"skat/game"
 	"strings"
 )
 
 func main() {
+	evalMode := flag.String("eval-mode", "agent", "Evaluation mode: agent or contract")
 	agentType := flag.String("agent-type", "", "Agent type: heuristic, mcts, minimax, neural, or random (if not set, uses component flags)")
 	biddingType := flag.String("bidding-type", "heuristic", "Bidding & game choice strategy: heuristic or contract")
 	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, mcts, minimax, or neural")
 	biddingMode := flag.String("bidding-mode", "5050", "Bidding mode: 5050 (all test agents bid, alternate declarer) or 2v1 (test vs 2 baseline)")
 	games := flag.Int("games", 500, "Number of evaluation games")
 	cardplayWeights := flag.String("cardplay-weights", ".data/models/cardplay.weights", "Path to card play neural network weights")
+	contractEstimator := flag.String("contract-estimator", "heuristic", "Contract win probability estimator: heuristic or neural")
+	contractWeights := flag.String("contract-weights", ".data/models/contract.weights", "Path to contract neural network weights")
+	contractSelection := flag.String("contract-selection", "heuristic", "Contract selection model for contract eval: heuristic or neural")
+	contractBinWidth := flag.Float64("contract-bin-width", 0.1, "Probability width for contract calibration buckets")
 	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, heuristic default=0.55)")
 	minimaxDepth := flag.Int("minimax-depth", 12, "Minimax search depth for perfect-info minimax")
 	minimaxMoveOrdering := flag.Bool("minimax-move-ordering", true, "Order minimax moves to improve alpha-beta pruning")
@@ -36,6 +42,16 @@ func main() {
 		rand.Seed(*evalSeed)
 	}
 
+	switch *evalMode {
+	case "agent":
+	case "contract":
+		runContractEstimatorEvaluation(*games, *contractEstimator, *contractWeights, *contractSelection, *threshold, *contractBinWidth)
+		return
+	default:
+		fmt.Printf("Unknown eval mode: %s (use agent or contract)\n", *evalMode)
+		os.Exit(1)
+	}
+
 	minimaxSearch := strategies.MinimaxSearchConfig{
 		MaxDepth:          *minimaxDepth,
 		UseMoveOrdering:   *minimaxMoveOrdering,
@@ -44,17 +60,62 @@ func main() {
 		LateMoveThreshold: *minimaxLMRThreshold,
 		LateMoveReduction: *minimaxLMRReduction,
 	}
-	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *threshold, *minimaxDepth, *mctsSimulations, *skipGameplayExamples, &minimaxSearch)
+	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *contractEstimator, *contractWeights, *threshold, *minimaxDepth, *mctsSimulations, *skipGameplayExamples, &minimaxSearch)
 }
 
-func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int, skipGameplayExamples bool, minimaxSearch *strategies.MinimaxSearchConfig) {
+func runContractEstimatorEvaluation(games int, estimatorType, weightsPath, selection string, biddingThreshold, binWidth float64) {
+	estimator, err := createContractEstimator(estimatorType, weightsPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating contract estimator: %v\n", err)
+		os.Exit(1)
+	}
+	if biddingThreshold == 0 {
+		biddingThreshold = strategies.DefaultContractEvaluatorConfig().MinWinProbability
+	}
+
+	fmt.Println("============================================================")
+	fmt.Println("Skat Contract Win Probability Calibration")
+	fmt.Println("============================================================")
+	fmt.Printf("Estimator: %s\n", estimatorType)
+	if estimatorType == "neural" {
+		fmt.Printf("Weights: %s\n", weightsPath)
+	}
+	fmt.Printf("Games: %d\n", games)
+	fmt.Printf("Selection: %s\n", selection)
+	fmt.Printf("Bidding threshold: %.2f\n\n", biddingThreshold)
+
+	result, err := contract.EvaluateEstimator(contract.EvalConfig{
+		Games:            games,
+		Selection:        selection,
+		BiddingThreshold: biddingThreshold,
+		BinWidth:         binWidth,
+	}, estimator)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Evaluation failed: %v\n", err)
+		os.Exit(1)
+	}
+	contract.PrintEvalSummary(os.Stdout, result)
+}
+
+func createContractEstimator(estimatorType, weightsPath string) (strategies.ContractWinProbabilityEstimator, error) {
+	switch estimatorType {
+	case "heuristic":
+		return strategies.NewHeuristicContractWinProbabilityEstimator(), nil
+	case "neural":
+		return strategies.NewNeuralContractWinProbabilityEstimatorFromWeights(weightsPath)
+	default:
+		return nil, fmt.Errorf("unknown contract estimator: %s", estimatorType)
+	}
+}
+
+func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights, contractEstimator, contractWeights string, threshold float64, minimaxDepth, mctsSimulations int, skipGameplayExamples bool, minimaxSearch *strategies.MinimaxSearchConfig) {
 	var testAgent *agent.SkatAgent
 	var err error
 
 	// Create agent based on type or component configuration
 	if agentType != "" {
 		// Use predefined agent type
-		testAgent, err = createAgentByType(agentType, cardplayWeights, threshold, minimaxDepth, mctsSimulations, minimaxSearch)
+		testAgent, err = createAgentByType(agentType, cardplayWeights, contractEstimator, contractWeights, threshold, minimaxDepth, mctsSimulations, minimaxSearch)
 		if err != nil {
 			fmt.Printf("Error creating agent: %v\n", err)
 			os.Exit(1)
@@ -63,14 +124,16 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 		// Build hybrid agent from component flags
 		// Game choice type always matches bidding type
 		config := agent.HybridAgentConfig{
-			BiddingType:       biddingType,
-			BiddingThreshold:  threshold,
-			GameChoiceType:    biddingType, // Always same as bidding type
-			CardPlayType:      cardPlayType,
-			NeuralWeightsPath: cardplayWeights,
-			MinimaxDepth:      minimaxDepth,
-			MinimaxSearch:     minimaxSearch,
-			MCTSSimulations:   mctsSimulations,
+			BiddingType:           biddingType,
+			BiddingThreshold:      threshold,
+			ContractEstimatorType: contractEstimator,
+			ContractWeightsPath:   contractWeights,
+			GameChoiceType:        biddingType, // Always same as bidding type
+			CardPlayType:          cardPlayType,
+			NeuralWeightsPath:     cardplayWeights,
+			MinimaxDepth:          minimaxDepth,
+			MinimaxSearch:         minimaxSearch,
+			MCTSSimulations:       mctsSimulations,
 		}
 		testAgent, err = agent.NewHybridAgent("Test", config)
 		if err != nil {
@@ -79,13 +142,13 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 		}
 	}
 
-	testDescription := buildAgentDescription(testAgent)
+	testDescription := buildAgentDescription(testAgent, contractEstimator)
 
 	fmt.Printf("Test agent: %s\n", testDescription)
 
 	// Baseline agent: All heuristic
 	baselineAgent := agent.NewHeuristicAgent("Baseline")
-	fmt.Println("Baseline agent: All heuristic")
+	fmt.Println("Baseline agent: All heuristic (heuristic contract estimator)")
 
 	// Choose evaluation config based on bidding mode
 	var evalConfig agent.AgentConfig
@@ -400,44 +463,52 @@ func formatGameChoice(mode game.GameMode, suit game.Suit) string {
 }
 
 // createAgentByType creates an agent using predefined agent type
-func createAgentByType(agentType, cardplayWeights string, threshold float64, minimaxDepth, mctsSimulations int, minimaxSearch *strategies.MinimaxSearchConfig) (*agent.SkatAgent, error) {
+func createAgentByType(agentType, cardplayWeights, contractEstimator, contractWeights string, threshold float64, minimaxDepth, mctsSimulations int, minimaxSearch *strategies.MinimaxSearchConfig) (*agent.SkatAgent, error) {
 	switch agentType {
 	case "heuristic":
 		config := agent.HybridAgentConfig{
-			BiddingType:      "heuristic",
-			BiddingThreshold: threshold,
-			GameChoiceType:   "heuristic",
-			CardPlayType:     "heuristic",
+			BiddingType:           "heuristic",
+			BiddingThreshold:      threshold,
+			ContractEstimatorType: contractEstimator,
+			ContractWeightsPath:   contractWeights,
+			GameChoiceType:        "heuristic",
+			CardPlayType:          "heuristic",
 		}
 		return agent.NewHybridAgent("Test", config)
 	case "random":
 		return agent.NewRandomAgent("Test"), nil
 	case "mcts":
 		config := agent.HybridAgentConfig{
-			BiddingType:      "heuristic",
-			BiddingThreshold: threshold,
-			GameChoiceType:   "heuristic",
-			CardPlayType:     "mcts",
-			MCTSSimulations:  mctsSimulations,
+			BiddingType:           "heuristic",
+			BiddingThreshold:      threshold,
+			ContractEstimatorType: contractEstimator,
+			ContractWeightsPath:   contractWeights,
+			GameChoiceType:        "heuristic",
+			CardPlayType:          "mcts",
+			MCTSSimulations:       mctsSimulations,
 		}
 		return agent.NewHybridAgent("Test", config)
 	case "minimax":
 		config := agent.HybridAgentConfig{
-			BiddingType:      "heuristic",
-			BiddingThreshold: threshold,
-			GameChoiceType:   "heuristic",
-			CardPlayType:     "minimax",
-			MinimaxDepth:     minimaxDepth,
-			MinimaxSearch:    minimaxSearch,
+			BiddingType:           "heuristic",
+			BiddingThreshold:      threshold,
+			ContractEstimatorType: contractEstimator,
+			ContractWeightsPath:   contractWeights,
+			GameChoiceType:        "heuristic",
+			CardPlayType:          "minimax",
+			MinimaxDepth:          minimaxDepth,
+			MinimaxSearch:         minimaxSearch,
 		}
 		return agent.NewHybridAgent("Test", config)
 	case "neural":
 		config := agent.HybridAgentConfig{
-			BiddingType:       "heuristic",
-			BiddingThreshold:  threshold,
-			GameChoiceType:    "heuristic",
-			CardPlayType:      "neural",
-			NeuralWeightsPath: cardplayWeights,
+			BiddingType:           "heuristic",
+			BiddingThreshold:      threshold,
+			ContractEstimatorType: contractEstimator,
+			ContractWeightsPath:   contractWeights,
+			GameChoiceType:        "heuristic",
+			CardPlayType:          "neural",
+			NeuralWeightsPath:     cardplayWeights,
 		}
 		return agent.NewHybridAgent("Test", config)
 	default:
@@ -446,12 +517,12 @@ func createAgentByType(agentType, cardplayWeights string, threshold float64, min
 }
 
 // buildAgentDescription creates a human-readable description of the agent
-func buildAgentDescription(a *agent.SkatAgent) string {
+func buildAgentDescription(a *agent.SkatAgent, contractEstimator string) string {
 	bidding := a.GetBiddingStrategy().GetName()
 	gameChoice := a.GetGameChoiceStrategy().GetName()
 	cardPlay := a.GetCardPlayStrategy().GetName()
 
-	return fmt.Sprintf("%s bidding + %s game choice + %s card play", bidding, gameChoice, cardPlay)
+	return fmt.Sprintf("%s bidding + %s game choice + %s card play (%s contract estimator)", bidding, gameChoice, cardPlay, contractEstimator)
 }
 
 func displayStrengthAdjustedPerformance(predicted []float64, actual, isDeclarer []bool) {

@@ -17,12 +17,12 @@ import (
 	"skat/game"
 )
 
-// ImitationExample represents a single (state, action) pair for supervised learning
-type ImitationExample struct {
-	State          [encoding.StateFeatureSize]float32 // DQN state encoding
-	ValidMask      [32]float32                        // Valid moves at this state
-	Action         int                                // Card index that expert chose
-	Role           int                                // 0=defender, 1=declarer, 2=Ramsch
+// CardPlayExample represents a single (state, action) pair for supervised learning
+type CardPlayExample struct {
+	State          [encoding.CardPlayFeatureSize]float32 // DQN state encoding
+	ValidMask      [32]float32                           // Valid moves at this state
+	Action         int                                   // Card index that expert chose
+	Role           int                                   // 0=defender, 1=declarer, 2=Ramsch
 	GameMode       game.GameMode
 	WinProbability float64
 	Policy         [32]float32 // Soft target policy from expert scores
@@ -49,7 +49,7 @@ const (
 
 const needNormalBuckets = needAllBuckets &^ needRamsch
 
-func exampleBucket(ex ImitationExample) string {
+func exampleBucket(ex CardPlayExample) string {
 	if ex.Role == roleRamsch {
 		return "ramsch"
 	}
@@ -74,7 +74,7 @@ func newSearchTeacherAgent(name string, depth int, biddingThreshold float64) *ag
 
 func main() {
 	numExamples := flag.Int("examples", 100000, "Number of examples to collect in each game-type/role bucket")
-	outputFile := flag.String("output", ".data/imitation_dataset.csv", "Output file for dataset")
+	outputFile := flag.String("output", ".data/cardplay_dataset.csv", "Output file for dataset")
 	searchDepth := flag.Int("depth", 7, "Minimax search depth for expert labels; uses move ordering, transposition table, and LMR 3/1")
 	biddingThreshold := flag.Float64("bidding-threshold", 0.55, "Heuristic bidding threshold used for natural contract generation")
 	minWinProbability := flag.Float64("min-win-probability", 0.10, "Minimum pre-game win probability to collect")
@@ -103,7 +103,7 @@ func main() {
 	fmt.Printf("Using %d parallel workers\n", *workers)
 
 	// Channel for collecting results
-	examplesChan := make(chan []ImitationExample, *workers)
+	examplesChan := make(chan []CardPlayExample, *workers)
 	stopChan := make(chan bool) // Signal workers to stop
 	var wg sync.WaitGroup
 	var neededBuckets atomic.Uint32
@@ -135,7 +135,7 @@ func main() {
 				return
 			default:
 				needed := neededBuckets.Load()
-				var examples []ImitationExample
+				var examples []CardPlayExample
 				if needed&needRamsch != 0 && (needed&needNormalBuckets == 0 || rand.Intn(4) == 0) {
 					examples = playRamschAndCollectExamples(searchAgent, labelScorer, *acceptableGap)
 				} else {
@@ -159,7 +159,7 @@ func main() {
 	}
 
 	// Collect exactly n examples for every normal game/role pair plus Ramsch.
-	buckets := make(map[string][]ImitationExample, len(bucketOrder))
+	buckets := make(map[string][]CardPlayExample, len(bucketOrder))
 	gamesPlayed := 0
 
 	for examples := range examplesChan {
@@ -189,7 +189,7 @@ func main() {
 	close(examplesChan)
 
 	// Create balanced dataset (should already be at exact count)
-	dataset := make([]ImitationExample, 0, len(bucketOrder)*(*numExamples))
+	dataset := make([]CardPlayExample, 0, len(bucketOrder)*(*numExamples))
 	for _, key := range bucketOrder {
 		dataset = append(dataset, buckets[key]...)
 		fmt.Printf("  %-16s %d\n", key, len(buckets[key]))
@@ -214,8 +214,8 @@ func main() {
 	defer writer.Flush()
 
 	// Write header
-	header := make([]string, 0, encoding.StateFeatureSize+32+2+32)
-	for i := 0; i < encoding.StateFeatureSize; i++ {
+	header := make([]string, 0, encoding.CardPlayFeatureSize+32+2+32)
+	for i := 0; i < encoding.CardPlayFeatureSize; i++ {
 		header = append(header, fmt.Sprintf("s%d", i))
 	}
 	for i := 0; i < 32; i++ {
@@ -233,7 +233,7 @@ func main() {
 
 	// Write examples
 	for _, ex := range dataset {
-		record := make([]string, 0, encoding.StateFeatureSize+32+2+32)
+		record := make([]string, 0, encoding.CardPlayFeatureSize+32+2+32)
 
 		// State features
 		for _, val := range ex.State {
@@ -265,7 +265,7 @@ func main() {
 	fmt.Printf("\n✓ Dataset generation complete!\n")
 }
 
-func bucketsComplete(buckets map[string][]ImitationExample, target int) bool {
+func bucketsComplete(buckets map[string][]CardPlayExample, target int) bool {
 	for _, key := range bucketOrder {
 		if len(buckets[key]) < target {
 			return false
@@ -274,7 +274,7 @@ func bucketsComplete(buckets map[string][]ImitationExample, target int) bool {
 	return true
 }
 
-func neededBucketMask(buckets map[string][]ImitationExample, target int) uint32 {
+func neededBucketMask(buckets map[string][]CardPlayExample, target int) uint32 {
 	var mask uint32
 	for i, key := range bucketOrder {
 		if len(buckets[key]) < target {
@@ -297,7 +297,7 @@ func contractBucketBits(mode game.GameMode) (declarer, defender uint32) {
 	}
 }
 
-func printBucketProgress(games int, buckets map[string][]ImitationExample, target int) {
+func printBucketProgress(games int, buckets map[string][]CardPlayExample, target int) {
 	fmt.Printf("  Played %d | Suit Dec %d/%d Def %d/%d | Grand Dec %d/%d Def %d/%d | Null Dec %d/%d Def %d/%d | Ramsch %d/%d\n",
 		games,
 		len(buckets["suit_declarer"]), target, len(buckets["suit_defender"]), target,
@@ -325,8 +325,8 @@ func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, bool) {
 }
 
 // collectDeclarerExamples plays a game with search-teacher declarer vs heuristic defenders.
-func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap float64) []ImitationExample {
-	var examples []ImitationExample
+func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap float64) []CardPlayExample {
+	var examples []CardPlayExample
 
 	if g.Declarer == nil {
 		return examples
@@ -358,7 +358,7 @@ func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *age
 			action := encoding.CardToIndex(card)
 
 			// Store declarer example
-			examples = append(examples, ImitationExample{
+			examples = append(examples, CardPlayExample{
 				State:     state,
 				ValidMask: validMask,
 				Action:    action,
@@ -394,8 +394,8 @@ func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *age
 }
 
 // collectDefenderExamples plays a game with a heuristic declarer vs Minimax defenders.
-func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap float64) []ImitationExample {
-	var examples []ImitationExample
+func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap float64) []CardPlayExample {
+	var examples []CardPlayExample
 
 	if g.Declarer == nil {
 		return examples
@@ -425,7 +425,7 @@ func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAg
 			action := encoding.CardToIndex(card)
 
 			// Store defender example
-			examples = append(examples, ImitationExample{
+			examples = append(examples, CardPlayExample{
 				State:     state,
 				ValidMask: validMask,
 				Action:    action,
@@ -507,7 +507,7 @@ func acceptableMovePolicy(moves []game.Card, scores []float64, maximize bool, ga
 	return policy, best
 }
 
-func printTargetStats(dataset []ImitationExample) {
+func printTargetStats(dataset []CardPlayExample) {
 	if len(dataset) == 0 {
 		return
 	}
@@ -530,8 +530,8 @@ func printTargetStats(dataset []ImitationExample) {
 }
 
 // playGameAndCollectExamples plays games twice: once for declarer examples, once for defender examples.
-func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap, minWinProbability, maxWinProbability float64, needed uint32) []ImitationExample {
-	var examples []ImitationExample
+func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap, minWinProbability, maxWinProbability float64, needed uint32) []CardPlayExample {
+	var examples []CardPlayExample
 
 	g, overbid := setupGame(heuristicAgent)
 	if g.Declarer == nil || overbid {
@@ -572,7 +572,7 @@ func playGameAndCollectExamples(searchAgent, heuristicAgent *agent.SkatAgent, la
 	return examples
 }
 
-func playRamschAndCollectExamples(searchAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap float64) []ImitationExample {
+func playRamschAndCollectExamples(searchAgent *agent.SkatAgent, labelScorer *strategies.PerfectInfoMinimaxStrategy, acceptableGap float64) []CardPlayExample {
 	config := agent.NewThreeWayConfig(searchAgent, searchAgent.CachedClone(), searchAgent.CachedClone().CachedClone())
 	g := agent.WithAgentPlayers(game.NewGame(), config).WithCardsDealt()
 	g.Mode = game.ModeRamsch
@@ -587,7 +587,7 @@ func playRamschAndCollectExamples(searchAgent *agent.SkatAgent, labelScorer *str
 	}
 	winProbabilities := strategies.EstimateRamschWinProbabilities(hands)
 
-	var byPlayer [3][]ImitationExample
+	var byPlayer [3][]CardPlayExample
 	for g.Phase == game.PhasePlaying {
 		player := g.CurrentPlayer
 		moves := g.GetValidMoves()
@@ -596,7 +596,7 @@ func playRamschAndCollectExamples(searchAgent *agent.SkatAgent, labelScorer *str
 		policy, best := acceptableMovePolicy(moves, scores, true, acceptableGap)
 		card := moves[best]
 		action := encoding.CardToIndex(card)
-		byPlayer[player] = append(byPlayer[player], ImitationExample{State: enc.ToSlice(), ValidMask: enc.GetValidMask(), Action: action, Role: roleRamsch, GameMode: game.ModeRamsch, Policy: policy})
+		byPlayer[player] = append(byPlayer[player], CardPlayExample{State: enc.ToSlice(), ValidMask: enc.GetValidMask(), Action: action, Role: roleRamsch, GameMode: game.ModeRamsch, Policy: policy})
 		if _, err := g.PlayCard(card); err != nil {
 			panic(err)
 		}
@@ -610,7 +610,7 @@ func playRamschAndCollectExamples(searchAgent *agent.SkatAgent, labelScorer *str
 			minScore = score
 		}
 	}
-	var examples []ImitationExample
+	var examples []CardPlayExample
 	for pos, score := range g.PlayerScores {
 		if score == minScore {
 			for i := range byPlayer[pos] {

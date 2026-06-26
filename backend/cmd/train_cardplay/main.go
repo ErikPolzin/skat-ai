@@ -12,14 +12,14 @@ import (
 	"skat/agent/strategies"
 	strategiesio "skat/agent/strategies/io"
 	"skat/agent/training"
-	"skat/agent/training/imitation"
+	"skat/agent/training/cardplay"
 
 	"gorgonia.org/gorgonia"
 )
 
 func main() {
 	// Parse flags
-	datasetFile := flag.String("dataset", ".data/imitation_dataset.csv", "Path to imitation dataset")
+	datasetFile := flag.String("dataset", ".data/cardplay_dataset.csv", "Path to cardplay dataset")
 	epochs := flag.Int("epochs", 20, "Number of training epochs")
 	batchSize := flag.Int("batch", 128, "Batch size")
 	lr := flag.Float64("lr", 0.001, "Learning rate")
@@ -28,12 +28,12 @@ func main() {
 	evalGames := flag.Int("eval-games", 500, "Number of games per evaluation")
 	evalBiddingThreshold := flag.Float64("eval-bidding-threshold", 0.55, "Heuristic bidding threshold used during training-time evaluation")
 	initialWeights := flag.String("initial", "", "Optional initial combined card-play weights to continue training from")
-	outputWeights := flag.String("output", ".data/models/imitation_cardplay.weights", "Output weights file")
+	outputWeights := flag.String("output", ".data/models/cardplay.weights", "Output weights file")
 
 	flag.Parse()
 
 	fmt.Println("============================================================")
-	fmt.Println("Skat Behavioral Cloning (Imitation Learning)")
+	fmt.Println("Skat Neural Card Play Training")
 	fmt.Println("============================================================")
 	fmt.Printf("\nConfiguration:\n")
 	fmt.Printf("  Dataset: %s\n", *datasetFile)
@@ -49,7 +49,7 @@ func main() {
 	fmt.Printf("  Output: %s\n\n", *outputWeights)
 
 	// Create trainer
-	trainer, err := imitation.NewBehavioralCloningTrainer(*batchSize, *lr, *l2Reg)
+	trainer, err := cardplay.NewTrainer(*batchSize, *lr, *l2Reg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create trainer: %v\n", err)
 		os.Exit(1)
@@ -117,7 +117,7 @@ func main() {
 			cfg.MinWinProbability = *evalBiddingThreshold
 
 			testAgent := agent.NewAgentWithStrategies(
-				"Imitation",
+				"Card Play",
 				strategies.NewHeuristicBiddingStrategyWithConfig(cfg),
 				strategies.NewHeuristicGameChoiceStrategyWithConfig(cfg),
 				testStrategy,
@@ -156,13 +156,13 @@ func main() {
 				baselineDefWinRate = float64(baselineStats.DefenderWins) / float64(baselineStats.DefenderGames) * 100
 			}
 
-			fmt.Printf("  → Imitation: Decl %.1f%% (%d/%d) | Def %.1f%% (%d/%d)\n",
+			fmt.Printf("  → Card Play: Decl %.1f%% (%d/%d) | Def %.1f%% (%d/%d)\n",
 				testDeclWinRate, testStats.Wins, testStats.Games,
 				testDefWinRate, testStats.DefenderWins, testStats.DefenderGames)
 			fmt.Printf("  → Baseline:  Decl %.1f%% (%d/%d) | Def %.1f%% (%d/%d)\n\n",
 				baselineDeclWinRate, baselineStats.Wins, baselineStats.Games,
 				baselineDefWinRate, baselineStats.DefenderWins, baselineStats.DefenderGames)
-			fmt.Printf("  → Hand-adjusted: Imitation Decl %+.1fpp (expected %.1f%%) | Def %+.1fpp (expected %.1f%%)\n",
+			fmt.Printf("  → Hand-adjusted: Card Play Decl %+.1fpp (expected %.1f%%) | Def %+.1fpp (expected %.1f%%)\n",
 				testDeclAdjusted.excessPct, testDeclAdjusted.expectedPct,
 				testDefAdjusted.excessPct, testDefAdjusted.expectedPct)
 			fmt.Printf("  → Hand-adjusted: Baseline  Decl %+.1fpp (expected %.1f%%) | Def %+.1fpp (expected %.1f%%)\n",

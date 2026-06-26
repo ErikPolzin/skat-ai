@@ -1,4 +1,4 @@
-package imitation
+package cardplay
 
 import (
 	"encoding/csv"
@@ -14,9 +14,9 @@ import (
 	"gorgonia.org/tensor"
 )
 
-// ImitationExample represents a training example
-type ImitationExample struct {
-	State     [encoding.StateFeatureSize]float32
+// CardPlayExample represents a training example
+type CardPlayExample struct {
+	State     [encoding.CardPlayFeatureSize]float32
 	ValidMask [32]float32
 	Action    int
 	Role      int
@@ -30,17 +30,17 @@ const (
 	RoleRamsch
 )
 
-// BehavioralCloningTrainer trains a network to imitate expert play using supervised learning
-type BehavioralCloningTrainer struct {
+// Trainer trains card-play networks from supervised expert-play targets.
+type Trainer struct {
 	// Models (separate for declarer and defender)
-	declarerNet *BehavioralCloningModel
-	defenderNet *BehavioralCloningModel
-	ramschNet   *BehavioralCloningModel
+	declarerNet *Model
+	defenderNet *Model
+	ramschNet   *Model
 
 	// Training data
-	declarerExamples []ImitationExample
-	defenderExamples []ImitationExample
-	ramschExamples   []ImitationExample
+	declarerExamples []CardPlayExample
+	defenderExamples []CardPlayExample
+	ramschExamples   []CardPlayExample
 
 	// Hyperparameters
 	batchSize    int
@@ -48,8 +48,8 @@ type BehavioralCloningTrainer struct {
 	l2Reg        float64
 }
 
-// BehavioralCloningModel is the network for imitation learning
-type BehavioralCloningModel struct {
+// Model is the network used for card-play training.
+type Model struct {
 	graph  *gorgonia.ExprGraph
 	vm     gorgonia.VM
 	solver gorgonia.Solver
@@ -70,9 +70,9 @@ type BehavioralCloningModel struct {
 	weightsMap strategies.CardPlayNetworkWeights
 }
 
-// NewBehavioralCloningTrainer creates a new behavioral cloning trainer
-func NewBehavioralCloningTrainer(batchSize int, learningRate, l2Reg float64) (*BehavioralCloningTrainer, error) {
-	trainer := &BehavioralCloningTrainer{
+// NewTrainer creates a new card play trainer
+func NewTrainer(batchSize int, learningRate, l2Reg float64) (*Trainer, error) {
+	trainer := &Trainer{
 		batchSize:    batchSize,
 		learningRate: learningRate,
 		l2Reg:        l2Reg,
@@ -100,7 +100,7 @@ func NewBehavioralCloningTrainer(batchSize int, learningRate, l2Reg float64) (*B
 	return trainer, nil
 }
 
-func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error) {
+func (t *Trainer) createModel() (*Model, error) {
 	g := gorgonia.NewGraph()
 
 	// Create weights with random initialization
@@ -108,7 +108,7 @@ func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error
 
 	// Input: batch_size x state features
 	xState := gorgonia.NewMatrix(g, tensor.Float32,
-		gorgonia.WithShape(t.batchSize, encoding.StateFeatureSize),
+		gorgonia.WithShape(t.batchSize, encoding.CardPlayFeatureSize),
 		gorgonia.WithName("bc_state"))
 
 	// Valid moves mask: batch_size x 32
@@ -129,7 +129,7 @@ func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error
 	// Concatenate state and valid mask
 	x := gorgonia.Must(gorgonia.Concat(1, xState, validMask))
 
-	// Build network (policy head only, no value head needed for behavioral cloning)
+	// Build network (policy head only, no value head needed for card play)
 	policyLogits, _, err := weights.BuildCardPlayNetwork(x, 0) // No dropout
 	if err != nil {
 		return nil, err
@@ -195,7 +195,7 @@ func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error
 		weightsMap[name] = allWeights[i]
 	}
 
-	return &BehavioralCloningModel{
+	return &Model{
 		graph:      g,
 		vm:         vm,
 		solver:     solver,
@@ -212,7 +212,7 @@ func (t *BehavioralCloningTrainer) createModel() (*BehavioralCloningModel, error
 }
 
 // LoadDataset loads training examples from CSV file
-func (t *BehavioralCloningTrainer) LoadDataset(filename string) error {
+func (t *Trainer) LoadDataset(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("failed to open dataset: %w", err)
@@ -233,9 +233,9 @@ func (t *BehavioralCloningTrainer) LoadDataset(filename string) error {
 			break // EOF or error
 		}
 
-		var ex ImitationExample
+		var ex CardPlayExample
 
-		maskStart := encoding.StateFeatureSize
+		maskStart := encoding.CardPlayFeatureSize
 		actionIdx := maskStart + 32
 		roleIdx := actionIdx + 1
 		policyStart := roleIdx + 1
@@ -245,7 +245,7 @@ func (t *BehavioralCloningTrainer) LoadDataset(filename string) error {
 		}
 
 		// Parse state features
-		for i := 0; i < encoding.StateFeatureSize; i++ {
+		for i := 0; i < encoding.CardPlayFeatureSize; i++ {
 			val, _ := strconv.ParseFloat(record[i], 32)
 			ex.State[i] = float32(val)
 		}
@@ -294,7 +294,7 @@ func (t *BehavioralCloningTrainer) LoadDataset(filename string) error {
 }
 
 // Train performs one epoch of training
-func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, ramschLoss, declarerAcc, defenderAcc, ramschAcc float64, err error) {
+func (t *Trainer) Train() (declarerLoss, defenderLoss, ramschLoss, declarerAcc, defenderAcc, ramschAcc float64, err error) {
 	// Shuffle datasets
 	rand.Shuffle(len(t.declarerExamples), func(i, j int) {
 		t.declarerExamples[i], t.declarerExamples[j] = t.declarerExamples[j], t.declarerExamples[i]
@@ -355,15 +355,15 @@ func (t *BehavioralCloningTrainer) Train() (declarerLoss, defenderLoss, ramschLo
 	return declLoss, defLoss, ramLoss, declAcc, defAcc, ramAcc, nil
 }
 
-func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, batch []ImitationExample) (loss, accuracy float64, err error) {
+func (t *Trainer) trainBatch(model *Model, batch []CardPlayExample) (loss, accuracy float64, err error) {
 	// Prepare batch data
-	stateData := make([]float32, len(batch)*encoding.StateFeatureSize)
+	stateData := make([]float32, len(batch)*encoding.CardPlayFeatureSize)
 	maskData := make([]float32, len(batch)*32)
 	targetData := make([]float32, len(batch)*32)
 	weightData := make([]float32, len(batch))
 
 	for i, ex := range batch {
-		copy(stateData[i*encoding.StateFeatureSize:(i+1)*encoding.StateFeatureSize], ex.State[:])
+		copy(stateData[i*encoding.CardPlayFeatureSize:(i+1)*encoding.CardPlayFeatureSize], ex.State[:])
 		copy(maskData[i*32:(i+1)*32], ex.ValidMask[:])
 		copy(targetData[i*32:(i+1)*32], ex.Policy[:])
 		weightData[i] = ex.Weight
@@ -373,7 +373,7 @@ func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, bat
 	}
 
 	// Create tensors
-	stateTensor := tensor.New(tensor.WithBacking(stateData), tensor.WithShape(len(batch), encoding.StateFeatureSize))
+	stateTensor := tensor.New(tensor.WithBacking(stateData), tensor.WithShape(len(batch), encoding.CardPlayFeatureSize))
 	maskTensor := tensor.New(tensor.WithBacking(maskData), tensor.WithShape(len(batch), 32))
 	targetTensor := tensor.New(tensor.WithBacking(targetData), tensor.WithShape(len(batch), 32))
 	weightTensor := tensor.New(tensor.WithBacking(weightData), tensor.WithShape(len(batch)))
@@ -448,12 +448,12 @@ func (t *BehavioralCloningTrainer) trainBatch(model *BehavioralCloningModel, bat
 }
 
 // GetWeights returns trained network weights
-func (t *BehavioralCloningTrainer) GetWeights() (declarerWeights, defenderWeights, ramschWeights strategies.CardPlayNetworkWeights) {
+func (t *Trainer) GetWeights() (declarerWeights, defenderWeights, ramschWeights strategies.CardPlayNetworkWeights) {
 	return t.declarerNet.weightsMap, t.defenderNet.weightsMap, t.ramschNet.weightsMap
 }
 
 // SetWeights initializes the trainer networks from existing weights.
-func (t *BehavioralCloningTrainer) SetWeights(declarerWeights, defenderWeights, ramschWeights strategies.CardPlayNetworkWeights) error {
+func (t *Trainer) SetWeights(declarerWeights, defenderWeights, ramschWeights strategies.CardPlayNetworkWeights) error {
 	if err := t.declarerNet.weightsMap.CopyFrom(declarerWeights); err != nil {
 		return fmt.Errorf("copy declarer weights: %w", err)
 	}
@@ -467,6 +467,6 @@ func (t *BehavioralCloningTrainer) SetWeights(declarerWeights, defenderWeights, 
 }
 
 // GetDatasetSizes returns number of examples for each role
-func (t *BehavioralCloningTrainer) GetDatasetSizes() (int, int, int) {
+func (t *Trainer) GetDatasetSizes() (int, int, int) {
 	return len(t.declarerExamples), len(t.defenderExamples), len(t.ramschExamples)
 }

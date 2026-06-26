@@ -62,7 +62,7 @@ func TestToSliceIncludesHigherUnseen(t *testing.T) {
 	encoding.HigherUnseen[31] = 0.5
 
 	state := encoding.ToSlice()
-	if got := state[StateFeatureSize-3]; got != 0.5 {
+	if got := state[CardPlayFeatureSize-3]; got != 0.5 {
 		t.Fatalf("higher-unseen feature missing from state: got %v", got)
 	}
 }

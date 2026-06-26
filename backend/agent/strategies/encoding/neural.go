@@ -5,9 +5,8 @@ import (
 )
 
 const (
-	StateFeatureSize = 175
-	ValidMoveCount   = 32
-	NetworkInputSize = StateFeatureSize + ValidMoveCount
+	CardPlayFeatureSize = 175
+	CardPlayInputSize   = CardPlayFeatureSize + 32 // 32 valid moves
 )
 
 // NeuralCardPlayEncoding represents the DQN network input for card play
@@ -48,8 +47,8 @@ type NeuralCardPlayEncoding struct {
 }
 
 // ToStateArray converts encoding to state array (no valid mask).
-func (e *NeuralCardPlayEncoding) ToSlice() [StateFeatureSize]float32 {
-	result := [StateFeatureSize]float32{}
+func (e *NeuralCardPlayEncoding) ToSlice() [CardPlayFeatureSize]float32 {
+	result := [CardPlayFeatureSize]float32{}
 	idx := 0
 
 	// Card presence (96)
@@ -108,11 +107,11 @@ func (e *NeuralCardPlayEncoding) GetValidMask() [32]float32 {
 }
 
 // ToNetworkInput returns the complete network input (state + valid move mask).
-func (e *NeuralCardPlayEncoding) ToNetworkInput() [NetworkInputSize]float32 {
-	result := [NetworkInputSize]float32{}
+func (e *NeuralCardPlayEncoding) ToNetworkInput() [CardPlayInputSize]float32 {
+	result := [CardPlayInputSize]float32{}
 	state := e.ToSlice()
-	copy(result[0:StateFeatureSize], state[:])
-	copy(result[StateFeatureSize:NetworkInputSize], e.ValidMovesMask[:])
+	copy(result[0:CardPlayFeatureSize], state[:])
+	copy(result[CardPlayFeatureSize:CardPlayInputSize], e.ValidMovesMask[:])
 	return result
 }
 

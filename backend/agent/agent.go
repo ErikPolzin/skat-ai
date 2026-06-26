@@ -216,8 +216,11 @@ func NewRandomAgent(name string) *SkatAgent {
 
 // HybridAgentConfig holds configuration for creating hybrid agents
 type HybridAgentConfig struct {
-	BiddingType      string
-	BiddingThreshold float64
+	BiddingType           string
+	BiddingThreshold      float64
+	ContractEstimatorType string
+	ContractWeightsPath   string // For neural contract win probability estimation
+	ContractEstimator     strategies.ContractWinProbabilityEstimator
 
 	GameChoiceType   string
 	GameChoiceQTable map[int]map[int]float64 // For Q-learning game choice
@@ -232,6 +235,10 @@ type HybridAgentConfig struct {
 // NewHybridAgent creates an agent with mixed strategies (for experimentation)
 func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	agent := &SkatAgent{name: name}
+	contractEstimator, err := contractEstimatorFromConfig(config)
+	if err != nil {
+		return nil, err
+	}
 
 	// Configure bidding strategy
 	switch config.BiddingType {
@@ -240,11 +247,11 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 		if config.BiddingThreshold != 0 {
 			contractConfig.MinWinProbability = config.BiddingThreshold
 		}
-		agent.biddingStrategy = strategies.NewHeuristicBiddingStrategyWithConfig(contractConfig)
+		agent.biddingStrategy = strategies.NewHeuristicBiddingStrategyWithEstimator(contractConfig, contractEstimator)
 	case "random":
 		agent.biddingStrategy = &RandomBiddingStrategy{}
 	default:
-		agent.biddingStrategy = strategies.NewHeuristicBiddingStrategy()
+		agent.biddingStrategy = strategies.NewHeuristicBiddingStrategyWithEstimator(strategies.DefaultContractEvaluatorConfig(), contractEstimator)
 	}
 
 	// Configure game choice strategy
@@ -254,11 +261,11 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 		if config.BiddingThreshold != 0 {
 			contractConfig.MinWinProbability = config.BiddingThreshold
 		}
-		agent.gameChoiceStrategy = strategies.NewHeuristicGameChoiceStrategyWithConfig(contractConfig)
+		agent.gameChoiceStrategy = strategies.NewHeuristicGameChoiceStrategyWithEstimator(contractConfig, contractEstimator)
 	case "random":
 		agent.gameChoiceStrategy = &RandomGameChoiceStrategy{}
 	default:
-		agent.gameChoiceStrategy = strategies.NewHeuristicGameChoiceStrategy()
+		agent.gameChoiceStrategy = strategies.NewHeuristicGameChoiceStrategyWithEstimator(strategies.DefaultContractEvaluatorConfig(), contractEstimator)
 	}
 
 	// Configure card play strategy
@@ -300,6 +307,23 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	}
 
 	return agent, nil
+}
+
+func contractEstimatorFromConfig(config HybridAgentConfig) (strategies.ContractWinProbabilityEstimator, error) {
+	if config.ContractEstimator != nil {
+		return config.ContractEstimator, nil
+	}
+	switch config.ContractEstimatorType {
+	case "", "heuristic":
+		return strategies.NewHeuristicContractWinProbabilityEstimator(), nil
+	case "neural":
+		if config.ContractWeightsPath == "" {
+			return nil, fmt.Errorf("neural contract estimator requires weight path")
+		}
+		return strategies.NewNeuralContractWinProbabilityEstimatorFromWeights(config.ContractWeightsPath)
+	default:
+		return nil, fmt.Errorf("unknown contract estimator type: %s", config.ContractEstimatorType)
+	}
 }
 
 // Utility methods

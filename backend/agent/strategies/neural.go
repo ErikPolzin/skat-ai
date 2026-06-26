@@ -18,20 +18,22 @@ import (
 // CardPlayNetworkWeights holds Gorgonia nodes for card play network weights
 type CardPlayNetworkWeights map[string]*gorgonia.Node
 
-// NetworkInstance represents a single neural network for card play
+// NetworkInstance represents a single Gorgonia network used for inference.
 type NetworkInstance struct {
-	graph       *gorgonia.ExprGraph
-	vm          gorgonia.VM
-	input       *gorgonia.Node
-	policy      *gorgonia.Node
-	value       *gorgonia.Node
-	weights     CardPlayNetworkWeights
-	inferenceMu sync.Mutex
+	graph           *gorgonia.ExprGraph
+	vm              gorgonia.VM
+	input           *gorgonia.Node
+	policy          *gorgonia.Node
+	value           *gorgonia.Node
+	output          *gorgonia.Node
+	cardPlayWeights CardPlayNetworkWeights
+	contractWeights ContractNetworkWeights
+	inferenceMu     sync.Mutex
 }
 
 // NeuralCardPlayStrategy implements neural network inference for card play
 // Uses separate networks for declarer, defender, and Ramsch play.
-// Can be trained via imitation learning or reinforcement learning (DQN)
+// Can be trained via supervised expert-play data or reinforcement learning (DQN)
 type NeuralCardPlayStrategy struct {
 	declarerNet *NetworkInstance
 	defenderNet *NetworkInstance
@@ -88,7 +90,7 @@ func createNetworkInstance(weights CardPlayNetworkWeights) *NetworkInstance {
 
 	// Input node for single inference
 	input := gorgonia.NewMatrix(g, tensor.Float32,
-		gorgonia.WithShape(1, encoding.NetworkInputSize),
+		gorgonia.WithShape(1, encoding.CardPlayInputSize),
 		gorgonia.WithName("input"))
 
 	// Create or use provided weights
@@ -105,12 +107,12 @@ func createNetworkInstance(weights CardPlayNetworkWeights) *NetworkInstance {
 	vm := gorgonia.NewTapeMachine(g)
 
 	return &NetworkInstance{
-		graph:   g,
-		vm:      vm,
-		input:   input,
-		policy:  policy,
-		value:   value,
-		weights: weights,
+		graph:           g,
+		vm:              vm,
+		input:           input,
+		policy:          policy,
+		value:           value,
+		cardPlayWeights: weights,
 	}
 }
 
@@ -150,7 +152,7 @@ func (s *NeuralCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []gam
 	defer net.inferenceMu.Unlock()
 
 	// Set input tensor
-	inputTensor := tensor.New(tensor.WithBacking(inputData[:]), tensor.WithShape(1, encoding.NetworkInputSize))
+	inputTensor := tensor.New(tensor.WithBacking(inputData[:]), tensor.WithShape(1, encoding.CardPlayInputSize))
 	gorgonia.Let(net.input, inputTensor)
 
 	// Run forward pass
@@ -198,9 +200,9 @@ func (s *NeuralCardPlayStrategy) UpdateWeights(declarerWeights, defenderWeights,
 // Clone creates a copy of the strategy
 func (s *NeuralCardPlayStrategy) Clone() *NeuralCardPlayStrategy {
 	return &NeuralCardPlayStrategy{
-		declarerNet: createNetworkInstance(s.declarerNet.weights),
-		defenderNet: createNetworkInstance(s.defenderNet.weights),
-		ramschNet:   createNetworkInstance(s.ramschNet.weights),
+		declarerNet: createNetworkInstance(s.declarerNet.cardPlayWeights),
+		defenderNet: createNetworkInstance(s.defenderNet.cardPlayWeights),
+		ramschNet:   createNetworkInstance(s.ramschNet.cardPlayWeights),
 		epsilon:     s.epsilon,
 	}
 }
@@ -261,7 +263,7 @@ func NewCardPlayNetworkNodes(g *gorgonia.ExprGraph) CardPlayNetworkWeights {
 	weights := make(CardPlayNetworkWeights)
 
 	// Shared layers (input -> 384 -> 384 -> 256)
-	weights["shared.0.weight"] = initWeight(g, tensor.Shape{384, encoding.NetworkInputSize}, "shared.0.weight")
+	weights["shared.0.weight"] = initWeight(g, tensor.Shape{384, encoding.CardPlayInputSize}, "shared.0.weight")
 	weights["shared.0.bias"] = initWeight(g, tensor.Shape{384}, "shared.0.bias")
 	weights["shared.2.weight"] = initWeight(g, tensor.Shape{384, 384}, "shared.2.weight")
 	weights["shared.2.bias"] = initWeight(g, tensor.Shape{384}, "shared.2.bias")

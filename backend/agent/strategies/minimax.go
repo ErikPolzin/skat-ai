@@ -8,10 +8,65 @@ import (
 
 // TranspositionEntry stores cached evaluation results
 type TranspositionEntry struct {
-	depth int
-	value float64
-	alpha float64
-	beta  float64
+	depth    int
+	value    float64
+	nodeType int
+	bestMove game.Card
+	hasBest  bool
+}
+
+const (
+	transExact = iota
+	transLower
+	transUpper
+)
+
+const (
+	minimaxWinProbIntercept = 1.202908
+)
+
+const (
+	minimaxFeaturePointMargin = iota
+	minimaxFeatureRemainingMaterial
+	minimaxFeatureHandPotential
+	minimaxFeatureCurrentTrick
+	minimaxFeatureTrumpControl
+	minimaxFeatureHighCardControl
+	minimaxFeatureSuitControl
+	minimaxFeatureWinnerControl
+	minimaxFeatureDefenderCoordination
+	minimaxFeatureTricksRemaining
+	minimaxFeatureDeclarerTurn
+	minimaxFeatureModeGrand
+	minimaxFeatureModeNull
+	minimaxFeatureCount
+)
+
+type minimaxEvaluationFeature struct {
+	name        string
+	coefficient float64
+}
+
+var minimaxEvaluationFeatures = []minimaxEvaluationFeature{
+	{name: "point_margin", coefficient: 4.569097},
+	{name: "remaining_material", coefficient: 0.525141},
+	{name: "hand_potential", coefficient: 1.262587},
+	{name: "current_trick", coefficient: 1.020750},
+	{name: "trump_control", coefficient: 3.308783},
+	{name: "high_card_control", coefficient: 0.562981},
+	{name: "suit_control", coefficient: -0.102827},
+	{name: "winner_control", coefficient: 0.062937},
+	{name: "defender_coordination", coefficient: 0.347723},
+	{name: "tricks_remaining", coefficient: 0.408757},
+	{name: "declarer_turn", coefficient: -0.007902},
+	{name: "mode_grand", coefficient: -0.083206},
+	{name: "mode_null", coefficient: 2.410103},
+}
+
+// MinimaxEvaluationFeatures contains scaled inputs for the calibrated win model.
+type MinimaxEvaluationFeatures struct {
+	Names  []string
+	Values []float64
 }
 
 // PerfectInfoMinimaxStrategy implements minimax search with perfect information
@@ -46,8 +101,8 @@ func DefaultMinimaxSearchConfig(maxDepth int) MinimaxSearchConfig {
 		UseMoveOrdering:   true,
 		UseTransTable:     true,
 		UseLateMoveRed:    true,
-		LateMoveThreshold: 3,
-		LateMoveReduction: 1,
+		LateMoveThreshold: 2,
+		LateMoveReduction: 2,
 	}
 }
 
@@ -59,7 +114,7 @@ func NewPerfectInfoMinimaxStrategy() *PerfectInfoMinimaxStrategy {
 		useMoveOrdering:   true,
 		useTransTable:     true,
 		useLateMoveRed:    true,
-		lateMoveThreshold: 3, // Start reducing after 3rd move
+		lateMoveThreshold: 2, // Start reducing after 2nd move
 		lateMoveReduction: 2, // Reduce depth by 2
 	}
 }
@@ -152,12 +207,7 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 	for _, move := range validMoves {
 		// Clone state and apply move
 		nextState := state.Clone()
-		nextState.PlayCard(move)
-
-		// Resolve trick if complete
-		if len(nextState.Trick) == 3 {
-			nextState.ResolveTrick()
-		}
+		m.playAndResolve(nextState, move)
 
 		// Evaluate this move
 		value := m.minimax(nextState, m.maxDepth-1, alpha, beta)
@@ -252,6 +302,10 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 		return m.evaluate(state)
 	}
 
+	originalAlpha, originalBeta := alpha, beta
+	var cachedBest game.Card
+	hasCachedBest := false
+
 	// Check transposition table
 	if m.useTransTable {
 		hash := m.hashState(state)
@@ -260,17 +314,19 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 		m.transMutex.RUnlock()
 
 		if found && entry.depth >= depth {
-			// Use cached value if it's valid for this alpha-beta window
-			if entry.value <= entry.alpha {
-				if entry.alpha >= beta {
-					return entry.alpha
-				}
-			} else if entry.value >= entry.beta {
-				if entry.beta <= alpha {
-					return entry.beta
-				}
-			} else {
+			switch entry.nodeType {
+			case transExact:
 				return entry.value
+			case transLower:
+				alpha = math.Max(alpha, entry.value)
+			case transUpper:
+				beta = math.Min(beta, entry.value)
+			}
+			if beta <= alpha {
+				return entry.value
+			}
+			if entry.hasBest {
+				cachedBest, hasCachedBest = entry.bestMove, true
 			}
 		}
 	}
@@ -287,18 +343,19 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 	}
 
 	isDeclarer := state.Declarer != nil && state.CurrentPlayer == *state.Declarer
+	if hasCachedBest {
+		prioritizeMove(validMoves, cachedBest)
+	}
 
 	var value float64
+	var bestMove game.Card
+	hasBest := false
 	if isDeclarer {
 		// Maximizing player (declarer)
 		maxValue := math.Inf(-1)
 		for i, move := range validMoves {
 			nextState := state.Clone()
-			nextState.PlayCard(move)
-
-			if len(nextState.Trick) == 3 {
-				nextState.ResolveTrick()
-			}
+			m.playAndResolve(nextState, move)
 
 			// Late move reduction: search less promising moves at reduced depth
 			searchDepth := depth - 1
@@ -307,7 +364,11 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 			}
 
 			value = m.minimax(nextState, searchDepth, alpha, beta)
-			maxValue = math.Max(maxValue, value)
+			if value > maxValue {
+				maxValue = value
+				bestMove = move
+				hasBest = true
+			}
 			alpha = math.Max(alpha, value)
 
 			if beta <= alpha {
@@ -320,11 +381,7 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 		minValue := math.Inf(1)
 		for i, move := range validMoves {
 			nextState := state.Clone()
-			nextState.PlayCard(move)
-
-			if len(nextState.Trick) == 3 {
-				nextState.ResolveTrick()
-			}
+			m.playAndResolve(nextState, move)
 
 			// Late move reduction
 			searchDepth := depth - 1
@@ -333,7 +390,11 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 			}
 
 			value = m.minimax(nextState, searchDepth, alpha, beta)
-			minValue = math.Min(minValue, value)
+			if value < minValue {
+				minValue = value
+				bestMove = move
+				hasBest = true
+			}
 			beta = math.Min(beta, value)
 
 			if beta <= alpha {
@@ -345,13 +406,20 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 
 	// Store in transposition table
 	if m.useTransTable {
+		nodeType := transExact
+		if value <= originalAlpha {
+			nodeType = transUpper
+		} else if value >= originalBeta {
+			nodeType = transLower
+		}
 		hash := m.hashState(state)
 		m.transMutex.Lock()
 		m.transTable[hash] = &TranspositionEntry{
-			depth: depth,
-			value: value,
-			alpha: alpha,
-			beta:  beta,
+			depth:    depth,
+			value:    value,
+			nodeType: nodeType,
+			bestMove: bestMove,
+			hasBest:  hasBest,
 		}
 		m.transMutex.Unlock()
 	}
@@ -364,6 +432,18 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 func (m *PerfectInfoMinimaxStrategy) orderMoves(state *game.GameState, moves []game.Card, isDeclarer bool) {
 	// Use heuristic-based move ordering for better pruning
 	heuristicOrder(state, moves, isDeclarer)
+}
+
+func prioritizeMove(moves []game.Card, move game.Card) {
+	for i := range moves {
+		if moves[i] == move {
+			if i > 0 {
+				copy(moves[1:i+1], moves[0:i])
+				moves[0] = move
+			}
+			return
+		}
+	}
 }
 
 // hashState creates a hash of the game state for transposition table
@@ -415,62 +495,124 @@ func hashGameMode(mode game.GameMode) uint64 {
 	return hash
 }
 
-// evaluate returns a heuristic score for the current state
-// Positive values favor the declarer, negative values favor defenders
-func (m *PerfectInfoMinimaxStrategy) evaluate(state *game.GameState) float64 {
-	if state.Declarer == nil {
-		return 0.0
-	}
-	if state.Phase == game.PhaseComplete {
-		return m.evaluateTerminal(state)
-	}
-
-	declarer := *state.Declarer
-
-	// Material score (points already won + projected points)
-	materialScore := m.evaluateMaterial(state, declarer)
-
-	// Positional score (hand strength, trick control, etc.)
-	positionalScore := m.evaluatePosition(state, declarer)
-
-	// Weighted combination
-	// Material dominates endgame, position matters in opening/midgame
-	tricksRemaining := 0
-	for p := 0; p < 3; p++ {
-		tricksRemaining += len(state.Players[p].Hand)
-	}
-	tricksRemaining = tricksRemaining / 3 // Total tricks remaining
-
-	materialWeight := 1.0
-	positionalWeight := float64(tricksRemaining) / 10.0 // Decreases as game progresses
-
-	return materialWeight*materialScore + positionalWeight*positionalScore
+// EvaluateState returns the calibrated declarer win probability for this state.
+func (m *PerfectInfoMinimaxStrategy) EvaluateState(state *game.GameState) float64 {
+	return m.evaluate(state)
 }
 
-func (m *PerfectInfoMinimaxStrategy) evaluateTerminal(state *game.GameState) float64 {
+// EvaluateFeatures exposes the calibrated model inputs for data-driven fitting.
+func (m *PerfectInfoMinimaxStrategy) EvaluateFeatures(state *game.GameState) MinimaxEvaluationFeatures {
+	return MinimaxEvaluationFeatures{
+		Names:  minimaxEvaluationFeatureNames(),
+		Values: m.evaluateFeatureValues(state),
+	}
+}
+
+// evaluate returns calibrated declarer win probability for the current state.
+func (m *PerfectInfoMinimaxStrategy) evaluate(state *game.GameState) float64 {
+	if state.Declarer == nil {
+		return 0.5
+	}
+	if state.Phase == game.PhaseComplete {
+		return m.evaluateTerminalProbability(state)
+	}
+
+	return calibratedMinimaxWinProbability(m.evaluateFeatureValues(state))
+}
+
+func calibratedMinimaxWinProbability(features []float64) float64 {
+	logit := minimaxWinProbIntercept
+	for i, value := range features {
+		if i >= len(minimaxEvaluationFeatures) {
+			break
+		}
+		logit += minimaxEvaluationFeatures[i].coefficient * value
+	}
+	return minimaxSigmoid(logit)
+}
+
+func minimaxEvaluationFeatureNames() []string {
+	names := make([]string, len(minimaxEvaluationFeatures))
+	for i, feature := range minimaxEvaluationFeatures {
+		names[i] = feature.name
+	}
+	return names
+}
+
+func minimaxSigmoid(x float64) float64 {
+	if x >= 0 {
+		z := math.Exp(-x)
+		return 1 / (1 + z)
+	}
+	z := math.Exp(x)
+	return z / (1 + z)
+}
+
+func (m *PerfectInfoMinimaxStrategy) evaluateTerminalProbability(state *game.GameState) float64 {
 	declarerWon, _, _ := state.GetGameResult()
 	if state.Overbid {
 		declarerWon = false
 	}
-
-	margin := float64(state.DeclarerCardScore() - state.OpponentCardScore())
-	if state.Mode == game.ModeNull {
-		if declarerWon {
-			return 1000.0
-		}
-		return -1000.0
-	}
 	if declarerWon {
-		return 1000.0 + margin
+		return 1.0
 	}
-	return -1000.0 + margin
+	return 0.0
 }
 
-// evaluateMaterial calculates material advantage (points)
-func (m *PerfectInfoMinimaxStrategy) evaluateMaterial(state *game.GameState, declarer game.GamePosition) float64 {
+func (m *PerfectInfoMinimaxStrategy) evaluateFeatureValues(state *game.GameState) []float64 {
+	values := make([]float64, minimaxFeatureCount)
+	if state.Declarer == nil {
+		return values
+	}
+	if state.Phase == game.PhaseComplete {
+		if m.evaluateTerminalProbability(state) == 1 {
+			for i := range values {
+				values[i] = 1
+			}
+		} else {
+			for i := range values {
+				values[i] = -1
+			}
+		}
+		return values
+	}
+
+	declarer := *state.Declarer
+	pointMargin, remainingMaterial, handPotential, currentTrick := m.evaluateMaterialParts(state, declarer)
+	tricksRemaining := 0
+	for p := 0; p < 3; p++ {
+		tricksRemaining += len(state.Players[p].Hand)
+	}
+	tricksRemaining /= 3
+
+	values[minimaxFeaturePointMargin] = pointMargin / 120.0
+	values[minimaxFeatureRemainingMaterial] = remainingMaterial / 120.0
+	values[minimaxFeatureHandPotential] = handPotential / 120.0
+	values[minimaxFeatureCurrentTrick] = currentTrick / 30.0
+	values[minimaxFeatureTrumpControl] = m.evaluateTrumpControl(state, declarer)
+	values[minimaxFeatureHighCardControl] = m.evaluateHighCardControl(state, declarer)
+	values[minimaxFeatureSuitControl] = m.evaluateSuitControl(state, declarer)
+	if state.CurrentPlayer == declarer {
+		values[minimaxFeatureWinnerControl] = m.evaluateWinnerControl(state, declarer)
+		values[minimaxFeatureDeclarerTurn] = 1
+	} else {
+		values[minimaxFeatureDefenderCoordination] = m.evaluateDefenderCoordination(state, declarer)
+		values[minimaxFeatureDeclarerTurn] = -1
+	}
+	values[minimaxFeatureTricksRemaining] = float64(tricksRemaining) / 10.0
+	if state.Mode == game.ModeGrand {
+		values[minimaxFeatureModeGrand] = 1
+	}
+	if state.Mode == game.ModeNull {
+		values[minimaxFeatureModeNull] = 1
+	}
+	return values
+}
+
+func (m *PerfectInfoMinimaxStrategy) evaluateMaterialParts(state *game.GameState, declarer game.GamePosition) (pointMargin, remainingMaterial, handPotential, currentTrick float64) {
 	// Start with the actual point margin. Using only the declarer's score made
 	// points already captured by defenders disappear from cutoff evaluation.
-	score := float64(state.DeclarerCardScore() - state.OpponentCardScore())
+	pointMargin = float64(state.DeclarerCardScore() - state.OpponentCardScore())
 
 	// Add remaining card values in hands
 	for p := 0; p < 3; p++ {
@@ -478,12 +620,14 @@ func (m *PerfectInfoMinimaxStrategy) evaluateMaterial(state *game.GameState, dec
 		for _, card := range state.Players[p].Hand {
 			cardValue := float64(card.Value())
 			if pos == declarer {
-				score += cardValue
+				remainingMaterial += cardValue
 			} else {
-				score -= cardValue
+				remainingMaterial -= cardValue
 			}
 		}
 	}
+
+	handPotential = m.evaluateHandPotential(state, declarer)
 
 	// Add cards in the current trick
 	if len(state.Trick) > 0 {
@@ -505,32 +649,191 @@ func (m *PerfectInfoMinimaxStrategy) evaluateMaterial(state *game.GameState, dec
 		actualWinner := (state.TrickStarter + winner) % 3
 
 		if actualWinner == declarer {
-			score += float64(trickValue)
+			currentTrick += float64(trickValue)
 		} else {
-			score -= float64(trickValue)
+			currentTrick -= float64(trickValue)
 		}
 	}
 
+	return pointMargin, remainingMaterial, handPotential, currentTrick
+}
+
+func (m *PerfectInfoMinimaxStrategy) evaluateHandPotential(state *game.GameState, declarer game.GamePosition) float64 {
+	if state.Mode == game.ModeNull {
+		return m.evaluateNullHandPotential(state, declarer)
+	}
+
+	score := 0.0
+	for pos := game.Dealer; pos <= game.Speaker; pos++ {
+		player := state.Players[pos]
+		if player == nil {
+			continue
+		}
+		side := -1.0
+		if pos == declarer {
+			side = 1.0
+		}
+		for _, card := range player.Hand {
+			value := float64(card.Value())
+			strongerAgainst := m.countStrongerCardsInOtherHands(state, pos, card)
+			weakerPartnerPoints := m.availablePartnerPointSupport(state, declarer, pos, card)
+			if strongerAgainst == 0 {
+				score += side * (value + 3.0 + weakerPartnerPoints*0.25)
+			} else if value >= 10 {
+				score -= side * (value * 0.35 * float64(strongerAgainst))
+			}
+		}
+	}
 	return score
 }
 
-// evaluatePosition calculates positional advantage (hand strength, control)
-func (m *PerfectInfoMinimaxStrategy) evaluatePosition(state *game.GameState, declarer game.GamePosition) float64 {
+func (m *PerfectInfoMinimaxStrategy) evaluateNullHandPotential(state *game.GameState, declarer game.GamePosition) float64 {
 	score := 0.0
-
-	// Evaluate trump control
-	trumpControl := m.evaluateTrumpControl(state, declarer)
-	score += trumpControl * 20.0 // Trump control is very important
-
-	// Evaluate high card control (Aces and Tens)
-	highCardControl := m.evaluateHighCardControl(state, declarer)
-	score += highCardControl * 15.0
-
-	// Evaluate suit length advantages
-	suitControl := m.evaluateSuitControl(state, declarer)
-	score += suitControl * 10.0
-
+	for pos := game.Dealer; pos <= game.Speaker; pos++ {
+		player := state.Players[pos]
+		if player == nil {
+			continue
+		}
+		side := -1.0
+		if pos == declarer {
+			side = 1.0
+		}
+		for _, card := range player.Hand {
+			strongerAgainst := m.countStrongerCardsInOtherHands(state, pos, card)
+			if strongerAgainst == 0 {
+				score -= side * 8.0
+			}
+			if card.NullRank() >= game.Queen.NullRank() {
+				score -= side * 2.0
+			}
+		}
+	}
 	return score
+}
+
+func (m *PerfectInfoMinimaxStrategy) evaluateWinnerControl(state *game.GameState, declarer game.GamePosition) float64 {
+	declarerWinners, defenderWinners := 0.0, 0.0
+	for pos := game.Dealer; pos <= game.Speaker; pos++ {
+		player := state.Players[pos]
+		if player == nil {
+			continue
+		}
+		for _, card := range player.Hand {
+			if m.countStrongerCardsInOtherHands(state, pos, card) != 0 {
+				continue
+			}
+			weight := 1.0 + float64(card.Value())/10.0
+			if state.TrumpValue(card) > 0 {
+				weight += float64(state.TrumpValue(card)) / 8.0
+			}
+			if pos == declarer {
+				declarerWinners += weight
+			} else {
+				defenderWinners += weight
+			}
+		}
+	}
+	total := declarerWinners + defenderWinners
+	if total == 0 {
+		return 0
+	}
+	return (declarerWinners - defenderWinners) / total
+}
+
+func (m *PerfectInfoMinimaxStrategy) evaluateDefenderCoordination(state *game.GameState, declarer game.GamePosition) float64 {
+	if state.Mode == game.ModeNull {
+		return 0
+	}
+	score := 0.0
+	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+		if state.Mode == game.ModeSuit && suit == state.TrumpSuit {
+			continue
+		}
+		declarerCount := m.countEffectiveSuit(state, declarer, suit)
+		defenderVoidCount := 0
+		defenderLongCount := 0
+		for pos := game.Dealer; pos <= game.Speaker; pos++ {
+			if pos == declarer {
+				continue
+			}
+			count := m.countEffectiveSuit(state, pos, suit)
+			if count == 0 {
+				defenderVoidCount++
+			}
+			if count >= 3 {
+				defenderLongCount++
+			}
+		}
+		if declarerCount >= 3 && defenderVoidCount > 0 {
+			score -= 0.25 * float64(defenderVoidCount)
+		}
+		if declarerCount == 0 {
+			score += 0.2
+		}
+		if defenderLongCount > 0 {
+			score -= 0.15 * float64(defenderLongCount)
+		}
+	}
+	return score
+}
+
+func (m *PerfectInfoMinimaxStrategy) countStrongerCardsInOtherHands(state *game.GameState, owner game.GamePosition, card game.Card) int {
+	count := 0
+	for pos := game.Dealer; pos <= game.Speaker; pos++ {
+		if pos == owner || state.Players[pos] == nil {
+			continue
+		}
+		for _, other := range state.Players[pos].Hand {
+			if m.effectiveSuit(state, other) == m.effectiveSuit(state, card) && state.CardBeats(other, card) {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func (m *PerfectInfoMinimaxStrategy) availablePartnerPointSupport(state *game.GameState, declarer, owner game.GamePosition, card game.Card) float64 {
+	if owner == declarer {
+		return 0
+	}
+	points := 0.0
+	for pos := game.Dealer; pos <= game.Speaker; pos++ {
+		if pos == declarer || pos == owner || state.Players[pos] == nil {
+			continue
+		}
+		for _, partnerCard := range state.Players[pos].Hand {
+			if m.effectiveSuit(state, partnerCard) == m.effectiveSuit(state, card) && !state.CardBeats(partnerCard, card) {
+				points += float64(partnerCard.Value())
+			}
+		}
+	}
+	return points
+}
+
+func (m *PerfectInfoMinimaxStrategy) countEffectiveSuit(state *game.GameState, pos game.GamePosition, suit game.Suit) int {
+	if state.Players[pos] == nil {
+		return 0
+	}
+	count := 0
+	for _, card := range state.Players[pos].Hand {
+		if m.effectiveSuit(state, card) == suit {
+			count++
+		}
+	}
+	return count
+}
+
+func (m *PerfectInfoMinimaxStrategy) effectiveSuit(state *game.GameState, card game.Card) game.Suit {
+	if state.Mode != game.ModeNull && card.Rank == game.Jack {
+		if state.Mode == game.ModeGrand {
+			return game.NoSuit
+		}
+		return state.TrumpSuit
+	}
+	if state.Mode == game.ModeSuit && card.Suit == state.TrumpSuit {
+		return state.TrumpSuit
+	}
+	return card.Suit
 }
 
 // evaluateTrumpControl returns -1 to +1 (negative favors defenders)

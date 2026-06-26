@@ -16,7 +16,7 @@ func TestEvaluateMaterialIncludesDefenderPoints(t *testing.T) {
 		PlayerScores: [3]int{12, 20, 10},
 	}
 
-	got := NewPerfectInfoMinimaxStrategyWithDepth(1).evaluateMaterial(state, declarer)
+	got, _, _, _ := NewPerfectInfoMinimaxStrategyWithDepth(1).evaluateMaterialParts(state, declarer)
 	if want := -18.0; got != want {
 		t.Fatalf("material score = %.1f, want point margin %.1f", got, want)
 	}
@@ -81,6 +81,7 @@ func TestMinimaxFinishesTrickAtDepthCutoff(t *testing.T) {
 		CurrentPlayer: game.Listener,
 		TrickStarter:  game.Dealer,
 		Trick:         game.Cards{seven},
+		PlayerScores:  [3]int{0, 40, 0},
 	}
 
 	strategy := NewPerfectInfoMinimaxStrategyWithConfig(MinimaxSearchConfig{MaxDepth: 1})
@@ -96,7 +97,7 @@ func TestMinimaxFinishesTrickAtDepthCutoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	value := strategy.minimax(next, 0, math.Inf(-1), math.Inf(1))
-	if math.Abs(value) < 900 {
-		t.Fatalf("cutoff value = %.1f, want terminal-scale evaluation after completing the trick", value)
+	if value != 1 {
+		t.Fatalf("cutoff value = %.3f, want exact terminal win probability after completing the trick", value)
 	}
 }

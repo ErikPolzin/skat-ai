@@ -79,7 +79,7 @@ func main() {
 	biddingThreshold := flag.Float64("bidding-threshold", 0.55, "Heuristic bidding threshold used for natural contract generation")
 	minWinProbability := flag.Float64("min-win-probability", 0.10, "Minimum pre-game win probability to collect")
 	maxWinProbability := flag.Float64("max-win-probability", 0.65, "Maximum pre-game win probability to collect")
-	acceptableGap := flag.Float64("acceptable-gap", 5.0, "Maximum minimax score gap from the best move to treat as an equally good target")
+	acceptableGap := flag.Float64("acceptable-gap", 0.05, "Maximum minimax probability gap from the best move to treat as an equally good target")
 	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel workers")
 	flag.Parse()
 
@@ -99,7 +99,7 @@ func main() {
 	fmt.Printf("  Contracts: natural bidding and game choice (threshold %.2f)\n", *biddingThreshold)
 	fmt.Printf("  Contract filtering: Minimax wins from %.2f-%.2f pre-game win probability; excluding overbids\n", *minWinProbability, *maxWinProbability)
 	fmt.Printf("  Ramsch filtering: winners from any starting hand\n")
-	fmt.Printf("  Multi-card targets: moves within %.2f evaluation points of best\n", *acceptableGap)
+	fmt.Printf("  Multi-card targets: moves within %.2f minimax score/probability of best\n", *acceptableGap)
 	fmt.Printf("Using %d parallel workers\n", *workers)
 
 	// Channel for collecting results

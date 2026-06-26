@@ -274,7 +274,7 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	case "minimax":
 		depth := config.MinimaxDepth
 		if depth == 0 {
-			depth = 10 // Best strength/runtime balance from the evaluation sweep
+			depth = 12 // Uses calibrated leaf evaluation plus aggressive late-move reduction
 		}
 		if config.MinimaxSearch != nil {
 			searchConfig := *config.MinimaxSearch

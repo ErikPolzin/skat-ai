@@ -10,6 +10,12 @@ on:
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
+# Firebase Hosting releases are not safe to run concurrently against one live
+# channel. Queue newer runs instead of racing two production deployments.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: us-central1
@@ -138,3 +144,6 @@ jobs:
           projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
           channelId: live
           entryPoint: "./frontend"
+          # 15.22.2 introduced an API retry that can re-submit a successful
+          # release after a premature connection close (fixed version: TBD).
+          firebaseToolsVersion: 15.22.1

@@ -784,7 +784,7 @@ func (m *PerfectInfoMinimaxStrategy) countStrongerCardsInOtherHands(state *game.
 			continue
 		}
 		for _, other := range state.Players[pos].Hand {
-			if m.effectiveSuit(state, other) == m.effectiveSuit(state, card) && state.CardBeats(other, card) {
+			if other.EffectiveSuit(state.Mode, state.TrumpSuit) == card.EffectiveSuit(state.Mode, state.TrumpSuit) && state.CardBeats(other, card) {
 				count++
 			}
 		}
@@ -802,7 +802,7 @@ func (m *PerfectInfoMinimaxStrategy) availablePartnerPointSupport(state *game.Ga
 			continue
 		}
 		for _, partnerCard := range state.Players[pos].Hand {
-			if m.effectiveSuit(state, partnerCard) == m.effectiveSuit(state, card) && !state.CardBeats(partnerCard, card) {
+			if partnerCard.EffectiveSuit(state.Mode, state.TrumpSuit) == card.EffectiveSuit(state.Mode, state.TrumpSuit) && !state.CardBeats(partnerCard, card) {
 				points += float64(partnerCard.Value())
 			}
 		}
@@ -816,24 +816,11 @@ func (m *PerfectInfoMinimaxStrategy) countEffectiveSuit(state *game.GameState, p
 	}
 	count := 0
 	for _, card := range state.Players[pos].Hand {
-		if m.effectiveSuit(state, card) == suit {
+		if card.EffectiveSuit(state.Mode, state.TrumpSuit) == suit {
 			count++
 		}
 	}
 	return count
-}
-
-func (m *PerfectInfoMinimaxStrategy) effectiveSuit(state *game.GameState, card game.Card) game.Suit {
-	if state.Mode != game.ModeNull && card.Rank == game.Jack {
-		if state.Mode == game.ModeGrand {
-			return game.NoSuit
-		}
-		return state.TrumpSuit
-	}
-	if state.Mode == game.ModeSuit && card.Suit == state.TrumpSuit {
-		return state.TrumpSuit
-	}
-	return card.Suit
 }
 
 // evaluateTrumpControl returns -1 to +1 (negative favors defenders)
@@ -844,8 +831,7 @@ func (m *PerfectInfoMinimaxStrategy) evaluateTrumpControl(state *game.GameState,
 	for p := 0; p < 3; p++ {
 		pos := game.GamePosition(p)
 		for _, card := range state.Players[p].Hand {
-			isTrump := card.Rank == game.Jack || (state.Mode == game.ModeSuit && card.Suit == state.TrumpSuit)
-			if isTrump {
+			if card.IsTrump(state.Mode, state.TrumpSuit) {
 				if pos == declarer {
 					declarerTrumps++
 					// Weight by card strength (Jacks more valuable)

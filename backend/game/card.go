@@ -1,6 +1,10 @@
 package game
 
-import "math/rand"
+import (
+	"cmp"
+	"math/rand"
+	"slices"
+)
 
 // Suit represents a card suit
 type Suit int
@@ -120,20 +124,22 @@ func (c Card) BeatsInNull(other Card, leadSuit Suit) bool {
 	return false
 }
 
-// SortByNullRank sorts cards by Null game rank (A > K > Q > J > 10 > 9 > 8 > 7)
-// Lower index = lower rank (7 is lowest)
-func SortByNullRank(cards []Card) {
-	for i := 0; i < len(cards); i++ {
-		for j := i + 1; j < len(cards); j++ {
-			if cards[i].NullRank() > cards[j].NullRank() {
-				cards[i], cards[j] = cards[j], cards[i]
-			}
-		}
-	}
-}
-
 type Cards []Card
 type SkatCards [2]Card
+
+// SortByValue sorts cards by point value, lowest first.
+func (c Cards) SortByValue() {
+	slices.SortStableFunc(c, func(a, b Card) int {
+		return cmp.Compare(a.Value(), b.Value())
+	})
+}
+
+// SortByNullRank sorts cards by Null game rank, lowest first.
+func (c Cards) SortByNullRank() {
+	slices.SortStableFunc(c, func(a, b Card) int {
+		return cmp.Compare(a.NullRank(), b.NullRank())
+	})
+}
 
 // TotalPoints returns the card-point total for the hand.
 func (c Cards) TotalPoints() int {
@@ -220,22 +226,56 @@ func (c Cards) MaxSuitLength() int {
 	return maxCount
 }
 
-// IsContractTrump reports whether card is trump in the given contract.
-func (c Cards) IsContractTrump(card Card, mode GameMode, trumpSuit Suit) bool {
+// IsTrump reports whether the card is trump in the given contract.
+func (c Card) IsTrump(mode GameMode, trumpSuit Suit) bool {
 	if mode == ModeNull {
 		return false
 	}
-	if card.Rank == Jack {
+	if c.Rank == Jack {
 		return true
 	}
-	return mode == ModeSuit && card.Suit == trumpSuit
+	return mode == ModeSuit && c.Suit == trumpSuit
+}
+
+// EffectiveSuit returns the suit used by the contract's follow-suit rules.
+func (c Card) EffectiveSuit(mode GameMode, trumpSuit Suit) Suit {
+	if mode != ModeNull && c.Rank == Jack {
+		if mode == ModeGrand {
+			return NoSuit
+		}
+		return trumpSuit
+	}
+	if mode == ModeSuit && c.Suit == trumpSuit {
+		return trumpSuit
+	}
+	return c.Suit
+}
+
+// ContractClass maps side suits to 0..3 and trumps to 4.
+func (c Card) ContractClass(mode GameMode, trumpSuit Suit) int {
+	if c.IsTrump(mode, trumpSuit) {
+		return 4
+	}
+	return int(c.Suit) - 1
+}
+
+// TrumpCount returns the number of trumps in the full deck for this mode.
+func (m GameMode) TrumpCount() int {
+	switch m {
+	case ModeGrand, ModeRamsch:
+		return 4
+	case ModeSuit:
+		return 11
+	default:
+		return 0
+	}
 }
 
 // ContractTrumpCount returns how many cards are trump in the given contract.
 func (c Cards) ContractTrumpCount(mode GameMode, trumpSuit Suit) int {
 	count := 0
 	for _, card := range c {
-		if c.IsContractTrump(card, mode, trumpSuit) {
+		if card.IsTrump(mode, trumpSuit) {
 			count++
 		}
 	}
@@ -246,11 +286,89 @@ func (c Cards) ContractTrumpCount(mode GameMode, trumpSuit Suit) int {
 func (c Cards) ContractTrumpPoints(mode GameMode, trumpSuit Suit) int {
 	total := 0
 	for _, card := range c {
-		if c.IsContractTrump(card, mode, trumpSuit) {
+		if card.IsTrump(mode, trumpSuit) {
 			total += card.Value()
 		}
 	}
 	return total
+}
+
+// TrumpValue returns the card's trump hierarchy value, or zero if it is not trump.
+func (c Card) TrumpValue(mode GameMode, trumpSuit Suit) int {
+	if mode != ModeNull && c.Rank == Jack {
+		switch c.Suit {
+		case Clubs:
+			return 11
+		case Spades:
+			return 10
+		case Hearts:
+			return 9
+		case Diamonds:
+			return 8
+		}
+	}
+	if mode == ModeSuit && c.Suit == trumpSuit && c.Rank != Jack {
+		switch c.Rank {
+		case Ace:
+			return 7
+		case Ten:
+			return 6
+		case King:
+			return 5
+		case Queen:
+			return 4
+		case Nine:
+			return 3
+		case Eight:
+			return 2
+		case Seven:
+			return 1
+		}
+	}
+	return 0
+}
+
+// Beats reports whether the card beats other under the contract rules.
+func (c Card) Beats(other Card, mode GameMode, trumpSuit Suit) bool {
+	if mode == ModeNull {
+		if c.Suit != other.Suit {
+			return false
+		}
+		return c.NullRank() > other.NullRank()
+	}
+
+	aValue := c.TrumpValue(mode, trumpSuit)
+	bValue := other.TrumpValue(mode, trumpSuit)
+	if aValue > 0 && bValue > 0 {
+		return aValue > bValue
+	}
+	if aValue > 0 {
+		return true
+	}
+	if bValue > 0 {
+		return false
+	}
+	if c.Suit == other.Suit {
+		return c.Rank.SkatRank() > other.Rank.SkatRank()
+	}
+	return false
+}
+
+// TrickWinner returns the player position that won a trick started by starter.
+func (c Cards) TrickWinner(starter GamePosition, mode GameMode, trumpSuit Suit) GamePosition {
+	if len(c) == 0 {
+		return starter
+	}
+
+	winnerOffset := 0
+	winningCard := c[0]
+	for i := 1; i < len(c); i++ {
+		if c[i].Beats(winningCard, mode, trumpSuit) {
+			winnerOffset = i
+			winningCard = c[i]
+		}
+	}
+	return (starter + GamePosition(winnerOffset)) % 3
 }
 
 // HasTopTrumpControl reports whether the hand has a top jack or trump ace.
@@ -273,7 +391,7 @@ func (c Cards) HasTopTrumpControl(mode GameMode, trumpSuit Suit) bool {
 func (c Cards) SideAceCount(mode GameMode, trumpSuit Suit) int {
 	count := 0
 	for _, card := range c {
-		if card.Rank != Ace || c.IsContractTrump(card, mode, trumpSuit) {
+		if card.Rank != Ace || card.IsTrump(mode, trumpSuit) {
 			continue
 		}
 		count++
@@ -309,7 +427,7 @@ func (c Cards) SingletonSuitCount(mode GameMode, trumpSuit Suit) int {
 func (c Cards) NonTrumpSuitCounts(mode GameMode, trumpSuit Suit) map[Suit]int {
 	counts := map[Suit]int{}
 	for _, card := range c {
-		if c.IsContractTrump(card, mode, trumpSuit) {
+		if card.IsTrump(mode, trumpSuit) {
 			continue
 		}
 		counts[card.Suit]++

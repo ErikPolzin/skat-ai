@@ -1,8 +1,10 @@
 package strategies
 
 import (
+	"cmp"
 	"math"
 	"skat/game"
+	"slices"
 )
 
 type heuristicContractWinProbabilityEstimator struct{}
@@ -99,10 +101,7 @@ func (h *HeuristicGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode g
 
 	// Separate trumps from non-trumps and count suits
 	for _, card := range hand {
-		isTrump := card.Rank == game.Jack ||
-			(mode == game.ModeSuit && card.Suit == trumpSuit)
-
-		if !isTrump {
+		if !card.IsTrump(mode, trumpSuit) {
 			nonTrump = append(nonTrump, card)
 			suitCounts[card.Suit]++
 		}
@@ -121,13 +120,9 @@ func (h *HeuristicGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode g
 	}
 
 	// Sort by discard score (descending - highest scores first)
-	for i := 0; i < len(scoredCards); i++ {
-		for j := i + 1; j < len(scoredCards); j++ {
-			if scoredCards[i].score < scoredCards[j].score {
-				scoredCards[i], scoredCards[j] = scoredCards[j], scoredCards[i]
-			}
-		}
-	}
+	slices.SortStableFunc(scoredCards, func(a, b cardScore) int {
+		return cmp.Compare(b.score, a.score)
+	})
 
 	// Discard top two scored cards if we have enough non-trumps
 	if len(scoredCards) >= 2 {
@@ -135,7 +130,7 @@ func (h *HeuristicGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode g
 	}
 
 	// Not enough non-trumps - fallback to lowest value cards
-	sortByValue(hand)
+	game.Cards(hand).SortByValue()
 	return hand[0], hand[1]
 }
 
@@ -243,8 +238,7 @@ func (m heuristicContractWinProbabilityEstimator) evaluateSuitStrength(cards gam
 	hasTopTrumps := false
 
 	for _, card := range cards {
-		isTrump := card.Rank == game.Jack || card.Suit == trumpSuit
-		if isTrump {
+		if card.IsTrump(game.ModeSuit, trumpSuit) {
 			trumpCount++
 			trumpPoints += card.Value()
 
@@ -362,13 +356,9 @@ func (h *HeuristicGameChoiceStrategy) chooseNullSkatDiscard(hand []game.Card) (g
 	}
 
 	// Sort by discard score (descending)
-	for i := 0; i < len(scoredCards); i++ {
-		for j := i + 1; j < len(scoredCards); j++ {
-			if scoredCards[i].score < scoredCards[j].score {
-				scoredCards[i], scoredCards[j] = scoredCards[j], scoredCards[i]
-			}
-		}
-	}
+	slices.SortStableFunc(scoredCards, func(a, b cardScore) int {
+		return cmp.Compare(b.score, a.score)
+	})
 
 	// Return top two cards to discard
 	if len(scoredCards) >= 2 {
@@ -376,7 +366,7 @@ func (h *HeuristicGameChoiceStrategy) chooseNullSkatDiscard(hand []game.Card) (g
 	}
 
 	// Fallback (shouldn't happen)
-	sortByValue(hand)
+	game.Cards(hand).SortByValue()
 	return hand[len(hand)-1], hand[len(hand)-2]
 }
 
@@ -526,7 +516,7 @@ func (h *HeuristicCardPlayStrategy) SelectMove(gs *game.GameState, validMoves []
 	}
 
 	// Sort moves by value (low to high)
-	sortByValue(validMoves)
+	game.Cards(validMoves).SortByValue()
 
 	currentPlayer := gs.CurrentPlayer
 	isDefender := gs.Declarer == nil || currentPlayer != *gs.Declarer
@@ -551,7 +541,7 @@ func (h *HeuristicCardPlayStrategy) selectNullDeclarerMove(gs *game.GameState, v
 	trick := gs.Trick
 
 	// Sort moves by Null card strength (in Null: A > K > Q > J > 10 > 9 > 8 > 7)
-	game.SortByNullRank(validMoves)
+	game.Cards(validMoves).SortByNullRank()
 
 	// Leading the trick
 	if len(trick) == 0 {
@@ -587,7 +577,7 @@ func (h *HeuristicCardPlayStrategy) selectNullDefenderMove(gs *game.GameState, v
 	trick := gs.Trick
 
 	// Sort moves by Null card strength
-	game.SortByNullRank(validMoves)
+	game.Cards(validMoves).SortByNullRank()
 
 	// Leading the trick
 	if len(trick) == 0 {
@@ -802,7 +792,7 @@ func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, valid
 
 	// Following in trick - try to win with lowest winning card
 	for _, move := range validMoves {
-		if h.wouldWinTrick(gs, move, trick) {
+		if wouldWinTrick(gs, move, trick) {
 			return move
 		}
 	}
@@ -899,8 +889,8 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 	// Following in trick
 	// Check if partner is winning (in 3rd position)
 	if len(trick) == 2 {
-		winner := h.getTrickWinner(gs, trick)
-		partner := h.getDefenderPartner(gs)
+		winner := trick.TrickWinner(gs.TrickStarter, gs.Mode, gs.TrumpSuit)
+		partner := getDefenderPartner(gs)
 		if winner == partner {
 			// Partner winning - play lowest card (don't waste high cards)
 			return validMoves[0]
@@ -909,7 +899,7 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 
 	// Try to beat the trick with LOWEST winning card (efficient)
 	for _, move := range validMoves {
-		if h.wouldWinTrick(gs, move, trick) {
+		if wouldWinTrick(gs, move, trick) {
 			return move // validMoves is sorted low to high, so first winner is lowest
 		}
 	}
@@ -933,55 +923,6 @@ func (h *HeuristicCardPlayStrategy) selectDefenderMove(gs *game.GameState, valid
 	return validMoves[0]
 }
 
-func (h *HeuristicCardPlayStrategy) wouldWinTrick(gs *game.GameState, card game.Card, trick []game.Card) bool {
-	for _, trickCard := range trick {
-		if !gs.CardBeats(card, trickCard) {
-			return false
-		}
-	}
-	return true
-}
-
-func (h *HeuristicCardPlayStrategy) getTrickWinner(gs *game.GameState, trick []game.Card) game.GamePosition {
-	if len(trick) == 0 {
-		return gs.CurrentPlayer
-	}
-
-	winner := gs.TrickStarter
-	winningCard := trick[0]
-
-	for i := 1; i < len(trick); i++ {
-		if gs.CardBeats(trick[i], winningCard) {
-			winner = (gs.TrickStarter + game.GamePosition(i)) % 3
-			winningCard = trick[i]
-		}
-	}
-
-	return winner
-}
-
-func (h *HeuristicCardPlayStrategy) getDefenderPartner(gs *game.GameState) game.GamePosition {
-	currentPlayer := gs.CurrentPlayer
-	for pos := game.Dealer; pos <= game.Speaker; pos++ {
-		if pos != currentPlayer && (gs.Declarer == nil || pos != *gs.Declarer) {
-			return pos
-		}
-	}
-	return game.Dealer
-}
-
-// Helper function to sort cards by value
-func sortByValue(cards []game.Card) {
-	// Simple bubble sort by card value
-	for i := 0; i < len(cards); i++ {
-		for j := i + 1; j < len(cards); j++ {
-			if cards[i].Value() > cards[j].Value() {
-				cards[i], cards[j] = cards[j], cards[i]
-			}
-		}
-	}
-}
-
 // heuristicOrder orders moves by the sequence the heuristic agent would play them
 // Optimized for minimax: avoids allocations and uses in-place sorting
 func heuristicOrder(gs *game.GameState, moves []game.Card, isDeclarer bool) {
@@ -994,7 +935,7 @@ func heuristicOrder(gs *game.GameState, moves []game.Card, isDeclarer bool) {
 
 	// Pre-compute trump status for all moves (avoid repeated checks)
 	for i, move := range moves {
-		isTrumpCache[i] = move.Rank == game.Jack || (gs.Mode == game.ModeSuit && move.Suit == gs.TrumpSuit)
+		isTrumpCache[i] = move.IsTrump(gs.Mode, gs.TrumpSuit)
 	}
 
 	// Compute scores for sorting
@@ -1006,24 +947,23 @@ func heuristicOrder(gs *game.GameState, moves []game.Card, isDeclarer bool) {
 		scoreDefenderMoves(gs, moves, trick, isTrumpCache, scores)
 	}
 
-	// Insertion sort (efficient for small arrays, which is typical in card games)
-	for i := 1; i < len(moves); i++ {
-		move := moves[i]
-		score := scores[i]
-		j := i - 1
-
-		// Move elements with lower scores to the right
-		for j >= 0 && scores[j] < score {
-			moves[j+1] = moves[j]
-			scores[j+1] = scores[j]
-			j--
-		}
-		moves[j+1] = move
-		scores[j+1] = score
+	type scoredMove struct {
+		card  game.Card
+		score float64
+	}
+	scoredMoves := make([]scoredMove, len(moves))
+	for i := range moves {
+		scoredMoves[i] = scoredMove{card: moves[i], score: scores[i]}
+	}
+	slices.SortStableFunc(scoredMoves, func(a, b scoredMove) int {
+		return cmp.Compare(b.score, a.score)
+	})
+	for i := range moves {
+		moves[i] = scoredMoves[i].card
 	}
 }
 
-func scoreDeclarerMoves(gs *game.GameState, moves []game.Card, trick []game.Card, isTrumpCache []bool, scores []float64) {
+func scoreDeclarerMoves(gs *game.GameState, moves []game.Card, trick game.Cards, isTrumpCache []bool, scores []float64) {
 	if len(trick) == 0 {
 		// Pre-compute suit counts and trump count once
 		var suitCounts [5]int // NoSuit, Clubs, Spades, Hearts, Diamonds
@@ -1081,7 +1021,7 @@ func scoreDeclarerMoves(gs *game.GameState, moves []game.Card, trick []game.Card
 	}
 }
 
-func scoreDefenderMoves(gs *game.GameState, moves []game.Card, trick []game.Card, isTrumpCache []bool, scores []float64) {
+func scoreDefenderMoves(gs *game.GameState, moves []game.Card, trick game.Cards, isTrumpCache []bool, scores []float64) {
 	if len(trick) == 0 {
 		// Pre-compute suit counts and trump count once
 		var suitCounts [5]int // NoSuit, Clubs, Spades, Hearts, Diamonds
@@ -1134,7 +1074,7 @@ func scoreDefenderMoves(gs *game.GameState, moves []game.Card, trick []game.Card
 		// Pre-check if partner is winning (in 3rd position)
 		partnerWinning := false
 		if len(trick) == 2 {
-			winner := getTrickWinner(gs, trick)
+			winner := trick.TrickWinner(gs.TrickStarter, gs.Mode, gs.TrumpSuit)
 			partner := getDefenderPartner(gs)
 			partnerWinning = (winner == partner)
 		}
@@ -1159,32 +1099,13 @@ func scoreDefenderMoves(gs *game.GameState, moves []game.Card, trick []game.Card
 	}
 }
 
-// Helper functions for move ordering (optimized versions without strategy object)
-func wouldWinTrick(gs *game.GameState, card game.Card, trick []game.Card) bool {
+func wouldWinTrick(gs *game.GameState, card game.Card, trick game.Cards) bool {
 	for _, trickCard := range trick {
 		if !gs.CardBeats(card, trickCard) {
 			return false
 		}
 	}
 	return true
-}
-
-func getTrickWinner(gs *game.GameState, trick []game.Card) game.GamePosition {
-	if len(trick) == 0 {
-		return gs.CurrentPlayer
-	}
-
-	winner := gs.TrickStarter
-	winningCard := trick[0]
-
-	for i := 1; i < len(trick); i++ {
-		if gs.CardBeats(trick[i], winningCard) {
-			winner = (gs.TrickStarter + game.GamePosition(i)) % 3
-			winningCard = trick[i]
-		}
-	}
-
-	return winner
 }
 
 func getDefenderPartner(gs *game.GameState) game.GamePosition {

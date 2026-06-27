@@ -175,8 +175,8 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 	cardsInHand := len(myHand)
 	encoding.TricksRemaining = float32(cardsInHand) / 10.0
 
-	if totalTrumps := getTotalTrumpCount(gs); totalTrumps > 0 {
-		encoding.MyTrumpCount = float32(countTrumps(gs, myHand)) / float32(totalTrumps)
+	if totalTrumps := gs.Mode.TrumpCount(); totalTrumps > 0 {
+		encoding.MyTrumpCount = float32(myHand.ContractTrumpCount(gs.Mode, gs.TrumpSuit)) / float32(totalTrumps)
 	}
 
 	// All unseen-card features use the same inventory, so trump and winner counts
@@ -185,7 +185,7 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 
 	trumpInTrick := 0
 	for _, card := range gs.Trick {
-		if isTrump(gs, card) {
+		if card.IsTrump(gs.Mode, gs.TrumpSuit) {
 			trumpInTrick++
 		}
 	}
@@ -195,9 +195,9 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 	// Number of legal followers is the useful part of the old four-slot lead-suit
 	// distribution; the led class itself is already present in TrickCards.
 	if len(gs.Trick) > 0 {
-		leadSuit := getEffectiveSuit(gs, gs.Trick[0])
+		leadSuit := gs.Trick[0].EffectiveSuit(gs.Mode, gs.TrumpSuit)
 		for _, card := range myHand {
-			if getEffectiveSuit(gs, card) == leadSuit {
+			if card.EffectiveSuit(gs.Mode, gs.TrumpSuit) == leadSuit {
 				encoding.FollowCount += 1.0 / 10.0
 			}
 		}
@@ -211,7 +211,7 @@ func EncodeNeuralCardPlay(gs *game.GameState, myPosition game.GamePosition, vali
 	}
 
 	encoding.TrickLeaderRelative[relativePosition(myPosition, gs.TrickStarter)] = 1.0
-	winner := currentTrickWinner(gs)
+	winner := gs.Trick.TrickWinner(gs.TrickStarter, gs.Mode, gs.TrumpSuit)
 	encoding.CurrentWinnerRelative[relativePosition(myPosition, winner)] = 1.0
 
 	trickPoints := 0
@@ -244,44 +244,29 @@ func relativePosition(from, to game.GamePosition) int {
 	return int((to - from + 3) % 3)
 }
 
-func currentTrickWinner(gs *game.GameState) game.GamePosition {
-	if len(gs.Trick) == 0 {
-		return gs.TrickStarter
-	}
-
-	winnerOffset := 0
-	winningCard := gs.Trick[0]
-	for i := 1; i < len(gs.Trick); i++ {
-		if gs.CardBeats(gs.Trick[i], winningCard) {
-			winnerOffset = i
-			winningCard = gs.Trick[i]
-		}
-	}
-	return (gs.TrickStarter + game.GamePosition(winnerOffset)) % 3
-}
-
 func inferVoids(gs *game.GameState, myPosition game.GamePosition) [3][5]float32 {
 	var voidClasses [3][5]float32
 
 	starter := game.Listener
 	for _, trick := range gs.CardsPlayed {
-		markVoidsForTrick(gs, myPosition, starter, trick, &voidClasses)
-		starter = completedTrickWinner(gs, starter, trick)
+		cards := game.Cards(trick)
+		markVoidsForTrick(gs, myPosition, starter, cards, &voidClasses)
+		starter = completedTrickWinner(gs, starter, cards)
 	}
 	markVoidsForTrick(gs, myPosition, gs.TrickStarter, gs.Trick, &voidClasses)
 
 	return voidClasses
 }
 
-func markVoidsForTrick(gs *game.GameState, myPosition, starter game.GamePosition, trick []game.Card, voidClasses *[3][5]float32) {
+func markVoidsForTrick(gs *game.GameState, myPosition, starter game.GamePosition, trick game.Cards, voidClasses *[3][5]float32) {
 	if len(trick) < 2 {
 		return
 	}
 
-	leadClass := cardClass(gs, trick[0])
+	leadClass := trick[0].ContractClass(gs.Mode, gs.TrumpSuit)
 	for i := 1; i < len(trick); i++ {
 		card := trick[i]
-		if cardClass(gs, card) == leadClass {
+		if card.ContractClass(gs.Mode, gs.TrumpSuit) == leadClass {
 			continue
 		}
 
@@ -291,22 +276,14 @@ func markVoidsForTrick(gs *game.GameState, myPosition, starter game.GamePosition
 	}
 }
 
-func completedTrickWinner(gs *game.GameState, starter game.GamePosition, trick []game.Card) game.GamePosition {
+func completedTrickWinner(gs *game.GameState, starter game.GamePosition, trick game.Cards) game.GamePosition {
 	if len(trick) == 0 {
 		return starter
 	}
-	winnerOffset := 0
-	winningCard := trick[0]
-	for i := 1; i < len(trick); i++ {
-		if gs.CardBeats(trick[i], winningCard) {
-			winnerOffset = i
-			winningCard = trick[i]
-		}
-	}
-	return (starter + game.GamePosition(winnerOffset)) % 3
+	return trick.TrickWinner(starter, gs.Mode, gs.TrumpSuit)
 }
 
-func cardCounts(gs *game.GameState, myPosition game.GamePosition, myHand []game.Card) ([5]float32, [32]float32) {
+func cardCounts(gs *game.GameState, myPosition game.GamePosition, myHand game.Cards) ([5]float32, [32]float32) {
 	var known [32]bool
 	for _, card := range myHand {
 		known[CardToIndex(card)] = true
@@ -330,33 +307,25 @@ func cardCounts(gs *game.GameState, myPosition game.GamePosition, myHand []game.
 	var byClass [5]float32
 	var higherUnseen [32]float32
 	deck := game.NewDeck()
+	totalTrumps := gs.Mode.TrumpCount()
 	for _, card := range deck {
 		if known[CardToIndex(card)] {
 			continue
 		}
-		class := cardClass(gs, card)
+		class := card.ContractClass(gs.Mode, gs.TrumpSuit)
 		if class == 4 {
-			byClass[class] += 1.0 / float32(getTotalTrumpCount(gs))
+			byClass[class] += 1.0 / float32(totalTrumps)
 		} else {
 			byClass[class] += 1.0 / 8.0
 		}
 		for _, candidate := range deck {
-			if gs.CardBeats(card, candidate) {
+			if card.Beats(candidate, gs.Mode, gs.TrumpSuit) {
 				higherUnseen[CardToIndex(candidate)] += 1.0 / 31.0
 			}
 		}
 	}
 
 	return byClass, higherUnseen
-}
-
-// cardClass maps the four followable side suits to 0..3 and all trumps to 4.
-// Unlike printed suit, these classes match the game's follow-suit rules.
-func cardClass(gs *game.GameState, card game.Card) int {
-	if isTrump(gs, card) {
-		return 4
-	}
-	return int(card.Suit) - 1
 }
 
 func clamp01(value float32) float32 {
@@ -367,51 +336,6 @@ func clamp01(value float32) float32 {
 		return 1
 	}
 	return value
-}
-
-func countTrumps(gs *game.GameState, hand []game.Card) int {
-	count := 0
-	for _, card := range hand {
-		if isTrump(gs, card) {
-			count++
-		}
-	}
-	return count
-}
-
-func isTrump(gs *game.GameState, card game.Card) bool {
-	if gs.Mode == game.ModeNull {
-		return false
-	}
-	if card.Rank == game.Jack {
-		return true
-	}
-	if gs.Mode == game.ModeSuit && card.Suit == gs.TrumpSuit {
-		return true
-	}
-	return false
-}
-
-func getTotalTrumpCount(gs *game.GameState) int {
-	if gs.Mode == game.ModeGrand || gs.Mode == game.ModeRamsch {
-		return 4 // Only jacks
-	} else if gs.Mode == game.ModeSuit {
-		return 11 // 4 jacks + 7 suit cards
-	}
-	return 0
-}
-
-func getEffectiveSuit(gs *game.GameState, card game.Card) game.Suit {
-	if gs.Mode != game.ModeNull && card.Rank == game.Jack {
-		if gs.Mode == game.ModeGrand {
-			return game.NoSuit
-		}
-		return gs.TrumpSuit
-	}
-	if gs.Mode == game.ModeSuit && card.Suit == gs.TrumpSuit {
-		return gs.TrumpSuit
-	}
-	return card.Suit
 }
 
 func CardToIndex(card game.Card) int {

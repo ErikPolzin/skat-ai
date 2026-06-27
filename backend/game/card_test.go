@@ -48,10 +48,51 @@ func TestCardsSummaryHelpers(t *testing.T) {
 	if got := cards.SingletonSuitCount(ModeSuit, Hearts); got != 1 {
 		t.Fatalf("SingletonSuitCount(hearts) = %d, want 1", got)
 	}
-	if !cards.IsContractTrump(Card{Suit: Clubs, Rank: Jack}, ModeSuit, Hearts) {
+	if !(Card{Suit: Clubs, Rank: Jack}).IsTrump(ModeSuit, Hearts) {
 		t.Fatal("club jack should be trump in suit games")
 	}
-	if cards.IsContractTrump(Card{Suit: Clubs, Rank: Jack}, ModeNull, NoSuit) {
+	if (Card{Suit: Clubs, Rank: Jack}).IsTrump(ModeNull, NoSuit) {
 		t.Fatal("jack should not be trump in null games")
+	}
+}
+
+func TestCardContractRules(t *testing.T) {
+	clubJack := Card{Suit: Clubs, Rank: Jack}
+	spadeJack := Card{Suit: Spades, Rank: Jack}
+	heartAce := Card{Suit: Hearts, Rank: Ace}
+	heartSeven := Card{Suit: Hearts, Rank: Seven}
+	diamondAce := Card{Suit: Diamonds, Rank: Ace}
+
+	if got := clubJack.EffectiveSuit(ModeGrand, NoSuit); got != NoSuit {
+		t.Fatalf("grand jack effective suit = %v, want NoSuit", got)
+	}
+	if got := clubJack.EffectiveSuit(ModeNull, NoSuit); got != Clubs {
+		t.Fatalf("null jack effective suit = %v, want Clubs", got)
+	}
+	if got := clubJack.TrumpValue(ModeNull, NoSuit); got != 0 {
+		t.Fatalf("null jack trump value = %d, want 0", got)
+	}
+	if got := heartAce.TrumpValue(ModeSuit, Hearts); got != 7 {
+		t.Fatalf("heart ace trump value = %d, want 7", got)
+	}
+	if !spadeJack.Beats(heartAce, ModeSuit, Hearts) {
+		t.Fatal("spade jack should beat heart ace in hearts")
+	}
+	if diamondAce.Beats(heartSeven, ModeSuit, Hearts) {
+		t.Fatal("off-suit diamond ace should not beat heart seven without being trump")
+	}
+	if got := ModeSuit.TrumpCount(); got != 11 {
+		t.Fatalf("suit trump count = %d, want 11", got)
+	}
+	if got := ModeGrand.TrumpCount(); got != 4 {
+		t.Fatalf("grand trump count = %d, want 4", got)
+	}
+	if got := ModeNull.TrumpCount(); got != 0 {
+		t.Fatalf("null trump count = %d, want 0", got)
+	}
+
+	trick := Cards{heartAce, spadeJack, clubJack}
+	if got := trick.TrickWinner(Listener, ModeSuit, Hearts); got != Dealer {
+		t.Fatalf("trick winner = %v, want dealer", got)
 	}
 }

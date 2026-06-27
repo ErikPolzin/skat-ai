@@ -367,28 +367,11 @@ func (m *MCTSCardPlayStrategy) getTrickWinner(state *game.GameState) game.GamePo
 	if len(state.Trick) == 0 {
 		return state.CurrentPlayer
 	}
-
-	winner := state.TrickStarter
-	winningCard := state.Trick[0]
-
-	for i := 1; i < len(state.Trick); i++ {
-		if state.CardBeats(state.Trick[i], winningCard) {
-			winner = (state.TrickStarter + game.GamePosition(i)) % 3
-			winningCard = state.Trick[i]
-		}
-	}
-
-	return winner
+	return state.Trick.TrickWinner(state.TrickStarter, state.Mode, state.TrumpSuit)
 }
 
 func (m *MCTSCardPlayStrategy) isTrump(state *game.GameState, card game.Card) bool {
-	if card.Rank == game.Jack {
-		return true
-	}
-	if state.Mode == game.ModeSuit && card.Suit == state.TrumpSuit {
-		return true
-	}
-	return false
+	return card.IsTrump(state.Mode, state.TrumpSuit)
 }
 
 func (m *MCTSCardPlayStrategy) evaluateTerminalState(state *game.GameState, playerID game.GamePosition) float64 {

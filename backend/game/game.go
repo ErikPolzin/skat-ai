@@ -302,107 +302,18 @@ func (gs *GameState) GetValidMoves() Cards {
 
 // effectiveSuit returns the effective suit for following rules
 func (gs *GameState) effectiveSuit(card Card) Suit {
-	// Jacks are their own "suit" (trump) in Grand and Suit games
-	if gs.Mode != ModeNull && card.Rank == Jack {
-		// In Grand mode, use a special marker for all Jacks
-		// In Suit mode, use the trump suit
-		if gs.Mode == ModeGrand {
-			return NoSuit // All Jacks have same effective suit in Grand
-		}
-		return gs.TrumpSuit
-	}
-
-	// In Suit games, trump suit cards are considered trump suit
-	if gs.Mode == ModeSuit && card.Suit == gs.TrumpSuit {
-		return gs.TrumpSuit
-	}
-
-	// Otherwise return actual suit
-	return card.Suit
+	return card.EffectiveSuit(gs.Mode, gs.TrumpSuit)
 }
 
 // CardBeats returns true if card a beats card b in the current game context
 func (gs *GameState) CardBeats(a, b Card) bool {
-	// Null games: no trumps, must follow suit, A > K > Q > J > 10 > 9 > 8 > 7
-	if gs.Mode == ModeNull {
-		// Must follow suit - if different suits, can't beat
-		if a.Suit != b.Suit {
-			return false
-		}
-		// Use the Card.NullRank() method for consistent ranking
-		return a.NullRank() > b.NullRank()
-	}
-
-	// Get trump values (higher = stronger)
-	aValue := gs.TrumpValue(a)
-	bValue := gs.TrumpValue(b)
-
-	// If both are trump, compare trump values
-	if aValue > 0 && bValue > 0 {
-		return aValue > bValue
-	}
-
-	// Trump beats non-trump
-	if aValue > 0 {
-		return true
-	}
-	if bValue > 0 {
-		return false
-	}
-
-	// Neither is trump - must follow suit
-	aSuit := a.Suit
-	bSuit := b.Suit
-
-	// Same suit: compare by rank order (Ace > Ten > King > Queen > Nine > Eight > Seven)
-	if aSuit == bSuit {
-		return a.Rank.SkatRank() > b.Rank.SkatRank()
-	}
-
-	// Different non-trump suits: first card wins
-	return false
+	return a.Beats(b, gs.Mode, gs.TrumpSuit)
 }
 
 // TrumpValue returns the trump hierarchy value (0 = not trump)
 // In Skat: ♣J (11) > ♠J (10) > ♥J (9) > ♦J (8) > trump suit cards (by rank)
 func (gs *GameState) TrumpValue(card Card) int {
-	// Jacks are always trump (except in Null games)
-	if gs.Mode != ModeNull && card.Rank == Jack {
-		// Jack trump hierarchy: Clubs > Spades > Hearts > Diamonds
-		switch card.Suit {
-		case Clubs:
-			return 11
-		case Spades:
-			return 10
-		case Hearts:
-			return 9
-		case Diamonds:
-			return 8
-		}
-	}
-
-	// In Suit games, trump suit cards (non-Jacks) are trump
-	if gs.Mode == ModeSuit && card.Suit == gs.TrumpSuit && card.Rank != Jack {
-		// Trump suit hierarchy by rank: Ace (7) > Ten (6) > King (5) > Queen (4) > Nine (3) > Eight (2) > Seven (1)
-		switch card.Rank {
-		case Ace:
-			return 7
-		case Ten:
-			return 6
-		case King:
-			return 5
-		case Queen:
-			return 4
-		case Nine:
-			return 3
-		case Eight:
-			return 2
-		case Seven:
-			return 1
-		}
-	}
-
-	return 0 // Not trump
+	return card.TrumpValue(gs.Mode, gs.TrumpSuit)
 }
 
 // Clone creates a deep copy of the game state

@@ -1199,7 +1199,14 @@ func (s *Server) handleChooseGame(w http.ResponseWriter, r *http.Request) {
 			return "", fmt.Errorf("invalid trump suit: %v", err)
 		}
 
-		return gs.DeclareGame(mode, trump, req.AnnounceSchneider, req.AnnounceSchwarz)
+		response, err := gs.DeclareGame(mode, trump, req.AnnounceSchneider, req.AnnounceSchwarz)
+		if err == nil {
+			// Declaring may end the game when overbid
+			if err := s.maybeSaveGameResults(gs); err != nil {
+				logger.Warning("Failed to save game results: %e", err)
+			}
+		}
+		return response, err
 	})
 }
 

@@ -42,7 +42,10 @@ func (gs *GameState) Result() GameResult {
 		result.IsSchwarz = false
 		result.PlayedHand = gs.PlayedHand
 		result.Value = result.BaseValue
-		if !result.DeclarerWon {
+		if gs.Overbid {
+			result.DeclarerWon = false
+			result.Value = -2 * int(gs.BidValue)
+		} else if !result.DeclarerWon {
 			result.Value = -2 * result.BaseValue // Null lost is doubled
 		}
 		return result
@@ -95,8 +98,8 @@ func (gs *GameState) Result() GameResult {
 	gameValue := result.BaseValue * result.Multiplier
 
 	// If declarer overbid (game value < bid value), they automatically lose
-	// and lose double the BID value (not game value)
-	if gs.Overbid && !result.DeclarerWon {
+	// and lose double the BID value (not game value), regardless of card points.
+	if gs.Overbid {
 		result.DeclarerWon = false
 		result.Value = -2 * int(gs.BidValue)
 		return result
@@ -155,7 +158,7 @@ func (gs *GameState) PlayerResults() *[3]PlayerResultState {
 		playerPoints := gs.CalculatePlayerPoints(pos)
 		if gs.Mode == ModeRamsch {
 			isWinner = gs.PlayerScores[pos] == lowestRamschScore
-			playerPoints = -gs.PlayerScores[pos]
+			playerPoints = -2 * gs.PlayerScores[pos]
 		}
 		results[int(pos)] = PlayerResultState{
 			GameID:         gs.ID,

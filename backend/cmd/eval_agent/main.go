@@ -17,9 +17,9 @@ import (
 
 func main() {
 	evalMode := flag.String("eval-mode", "agent", "Evaluation mode: agent or contract")
-	agentType := flag.String("agent-type", "", "Agent type: heuristic, mcts, minimax, neural, or random (if not set, uses component flags)")
+	agentType := flag.String("agent-type", "", "Agent type: heuristic, minimax, neural, or random (if not set, uses component flags)")
 	biddingType := flag.String("bidding-type", "heuristic", "Bidding & game choice strategy: heuristic or contract")
-	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, mcts, minimax, or neural")
+	cardPlayType := flag.String("card-play-type", "heuristic", "Card play strategy: heuristic, minimax, or neural")
 	biddingMode := flag.String("bidding-mode", "5050", "Bidding mode: 5050 (all test agents bid, alternate declarer) or 2v1 (test vs 2 baseline)")
 	games := flag.Int("games", 500, "Number of evaluation games")
 	cardplayWeights := flag.String("cardplay-weights", ".data/models/cardplay.weights", "Path to card play neural network weights")
@@ -35,7 +35,6 @@ func main() {
 	minimaxLMRThreshold := flag.Int("minimax-lmr-threshold", 2, "Apply late-move reduction starting at this zero-based move index")
 	minimaxLMRReduction := flag.Int("minimax-lmr-reduction", 2, "Number of additional plies removed by late-move reduction")
 	evalSeed := flag.Int64("seed", 0, "Random seed for reproducible evaluation deals (0 uses the current default)")
-	mctsSimulations := flag.Int("mcts-simulations", 500, "MCTS simulation count")
 	skipGameplayExamples := flag.Bool("skip-gameplay-examples", true, "Skip slow example game-play section after evaluation")
 	flag.Parse()
 	if *evalSeed != 0 {
@@ -60,7 +59,7 @@ func main() {
 		LateMoveThreshold: *minimaxLMRThreshold,
 		LateMoveReduction: *minimaxLMRReduction,
 	}
-	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *contractEstimator, *contractWeights, *threshold, *minimaxDepth, *mctsSimulations, *skipGameplayExamples, &minimaxSearch)
+	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *contractEstimator, *contractWeights, *threshold, *minimaxDepth, *skipGameplayExamples, &minimaxSearch)
 }
 
 func runContractEstimatorEvaluation(games int, estimatorType, weightsPath, selection string, biddingThreshold, binWidth float64) {
@@ -108,14 +107,14 @@ func createContractEstimator(estimatorType, weightsPath string) (strategies.Cont
 	}
 }
 
-func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights, contractEstimator, contractWeights string, threshold float64, minimaxDepth, mctsSimulations int, skipGameplayExamples bool, minimaxSearch *strategies.MinimaxSearchConfig) {
+func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights, contractEstimator, contractWeights string, threshold float64, minimaxDepth int, skipGameplayExamples bool, minimaxSearch *strategies.MinimaxSearchConfig) {
 	var testAgent *agent.SkatAgent
 	var err error
 
 	// Create agent based on type or component configuration
 	if agentType != "" {
 		// Use predefined agent type
-		testAgent, err = createAgentByType(agentType, cardplayWeights, contractEstimator, contractWeights, threshold, minimaxDepth, mctsSimulations, minimaxSearch)
+		testAgent, err = createAgentByType(agentType, cardplayWeights, contractEstimator, contractWeights, threshold, minimaxDepth, minimaxSearch)
 		if err != nil {
 			fmt.Printf("Error creating agent: %v\n", err)
 			os.Exit(1)
@@ -133,7 +132,6 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 			NeuralWeightsPath:     cardplayWeights,
 			MinimaxDepth:          minimaxDepth,
 			MinimaxSearch:         minimaxSearch,
-			MCTSSimulations:       mctsSimulations,
 		}
 		testAgent, err = agent.NewHybridAgent("Test", config)
 		if err != nil {
@@ -463,7 +461,7 @@ func formatGameChoice(mode game.GameMode, suit game.Suit) string {
 }
 
 // createAgentByType creates an agent using predefined agent type
-func createAgentByType(agentType, cardplayWeights, contractEstimator, contractWeights string, threshold float64, minimaxDepth, mctsSimulations int, minimaxSearch *strategies.MinimaxSearchConfig) (*agent.SkatAgent, error) {
+func createAgentByType(agentType, cardplayWeights, contractEstimator, contractWeights string, threshold float64, minimaxDepth int, minimaxSearch *strategies.MinimaxSearchConfig) (*agent.SkatAgent, error) {
 	switch agentType {
 	case "heuristic":
 		config := agent.HybridAgentConfig{
@@ -477,17 +475,6 @@ func createAgentByType(agentType, cardplayWeights, contractEstimator, contractWe
 		return agent.NewHybridAgent("Test", config)
 	case "random":
 		return agent.NewRandomAgent("Test"), nil
-	case "mcts":
-		config := agent.HybridAgentConfig{
-			BiddingType:           "heuristic",
-			BiddingThreshold:      threshold,
-			ContractEstimatorType: contractEstimator,
-			ContractWeightsPath:   contractWeights,
-			GameChoiceType:        "heuristic",
-			CardPlayType:          "mcts",
-			MCTSSimulations:       mctsSimulations,
-		}
-		return agent.NewHybridAgent("Test", config)
 	case "minimax":
 		config := agent.HybridAgentConfig{
 			BiddingType:           "heuristic",

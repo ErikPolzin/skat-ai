@@ -7,6 +7,13 @@ import (
 
 type Action func() (string, error)
 
+// ErrorAction returns an action whose response contains the error message.
+func ErrorAction(err error) Action {
+	return func() (string, error) {
+		return err.Error(), err
+	}
+}
+
 // gameLoop manages the game flow
 func NextAction(gs *game.GameState) Action {
 	if gs.Phase == game.PhaseComplete {
@@ -54,7 +61,10 @@ func generateAgentDealAction(gs *game.GameState, player *game.PlayerState) Actio
 		if err == nil {
 			for i := range gs.Players {
 				if gs.Players[i].IsAgent {
-					agent := GetAgentForPlayer(gs.Players[i])
+					agent, loadErr := GetAgentForPlayer(gs.Players[i])
+					if loadErr != nil {
+						return loadErr.Error(), loadErr
+					}
 					if agent != nil {
 						agent.OnGameStart()
 					}
@@ -78,7 +88,10 @@ func generateResolveTrickAction(gs *game.GameState) Action {
 		if err == nil && len(trick) == 3 {
 			for i := range gs.Players {
 				if gs.Players[i].IsAgent {
-					agent := GetAgentForPlayer(gs.Players[i])
+					agent, loadErr := GetAgentForPlayer(gs.Players[i])
+					if loadErr != nil {
+						return loadErr.Error(), loadErr
+					}
 					if agent != nil {
 						agent.OnTrickComplete(trick)
 					}
@@ -97,7 +110,10 @@ func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerStat
 		// Use game-aware discard strategy: pre-decide game mode, then discard optimally
 
 		// Get shared agent instance for game mode decision
-		agentInstance := GetAgentForPlayer(player)
+		agentInstance, err := GetAgentForPlayer(player)
+		if err != nil {
+			return ErrorAction(err)
+		}
 
 		// Agent will use Q-learning to choose game mode
 		mode, trumpSuit := agentInstance.ChooseGame(gs)
@@ -119,7 +135,10 @@ func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerStat
 // processAgentDeclaration handles an AI agent's declaration
 func generateAgentDeclarationAction(gs *game.GameState, player *game.PlayerState) Action {
 	// Get shared agent instance for Q-learning game choice
-	agentInstance := GetAgentForPlayer(player)
+	agentInstance, err := GetAgentForPlayer(player)
+	if err != nil {
+		return ErrorAction(err)
+	}
 
 	// Use Q-learning to choose the best game mode and trump suit
 	mode, trumpSuit := agentInstance.ChooseGame(gs)
@@ -143,10 +162,9 @@ func generateAgentPlayAction(gs *game.GameState, player *game.PlayerState) Actio
 	}
 
 	// Get the agent for this player
-	agent := GetAgentForPlayer(player)
-	if agent == nil {
-		logger.Warning("No agent found for player %s", player.Name)
-		return nil
+	agent, err := GetAgentForPlayer(player)
+	if err != nil {
+		return ErrorAction(err)
 	}
 	move := agent.SelectMove(gs, validMoves)
 
@@ -157,10 +175,9 @@ func generateAgentPlayAction(gs *game.GameState, player *game.PlayerState) Actio
 
 func generateAgentBidAction(gs *game.GameState, player *game.PlayerState) Action {
 	// Get the agent for this player
-	agent := GetAgentForPlayer(player)
-	if agent == nil {
-		logger.Warning("No agent found for player %s", player.Name)
-		return nil
+	agent, err := GetAgentForPlayer(player)
+	if err != nil {
+		return ErrorAction(err)
 	}
 	// Get a copy of the game state for the agent
 	stateCopy := gs // Make a copy

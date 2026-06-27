@@ -342,7 +342,7 @@ func collectDeclarerExamples(g *game.GameState, searchAgent, heuristicAgent *age
 	for g.Phase == game.PhasePlaying {
 		validMoves := g.GetValidMoves()
 		currentPlayer := g.CurrentPlayer
-		currentAgent := agent.GetAgentForPlayer(g.GetCurrentPlayer())
+		currentAgent := agent.MustGetAgentForPlayer(g.GetCurrentPlayer())
 
 		if currentPlayer == declarer {
 			// Encode state
@@ -440,7 +440,7 @@ func collectDefenderExamples(g *game.GameState, defenderSearchAgent, heuristicAg
 			}
 		} else {
 			// Opponent declarer plays
-			currentAgent := agent.GetAgentForPlayer(g.GetCurrentPlayer())
+			currentAgent := agent.MustGetAgentForPlayer(g.GetCurrentPlayer())
 			card := currentAgent.SelectMove(g, validMoves)
 			if _, err := g.PlayCard(card); err != nil {
 				panic(fmt.Sprintf("PlayCard error: %v", err))
@@ -467,8 +467,8 @@ func resolveTrickAndNotify(g *game.GameState) {
 	}
 	for i := range g.Players {
 		if g.Players[i].IsAgent {
-			if agent := agent.GetAgentForPlayer(g.Players[i]); agent != nil {
-				agent.OnTrickComplete(trick)
+			if playerAgent := agent.MustGetAgentForPlayer(g.Players[i]); playerAgent != nil {
+				playerAgent.OnTrickComplete(trick)
 			}
 		}
 	}

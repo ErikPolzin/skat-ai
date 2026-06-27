@@ -3,7 +3,6 @@ package agent
 import (
 	"fmt"
 	"skat/game"
-	"skat/logger"
 	"sync"
 )
 
@@ -17,7 +16,6 @@ type AgentConfigData struct {
 	BiddingThreshold    float64
 	GameChoiceType      string
 	CardPlayType        string
-	MCTSSimulations     int
 	CardplayWeightsPath string
 }
 
@@ -47,7 +45,6 @@ func BuildAgentFromConfig(config *AgentConfigData) (*SkatAgent, error) {
 		BiddingThreshold:  config.BiddingThreshold,
 		GameChoiceType:    config.GameChoiceType,
 		CardPlayType:      config.CardPlayType,
-		MCTSSimulations:   config.MCTSSimulations,
 		NeuralWeightsPath: config.CardplayWeightsPath,
 	}
 
@@ -55,20 +52,35 @@ func BuildAgentFromConfig(config *AgentConfigData) (*SkatAgent, error) {
 }
 
 // GetAgentForPlayer creates an agent instance based on the player's configuration
-func GetAgentForPlayer(player *game.PlayerState) *SkatAgent {
+func GetAgentForPlayer(player *game.PlayerState) (*SkatAgent, error) {
+	if player == nil {
+		return nil, fmt.Errorf("player is nil")
+	}
 	if !player.IsAgent {
-		return nil
+		return nil, nil
 	}
 	return GetAgentForPlayerID(player.ID)
 }
 
-func GetAgentForPlayerID(playerID string) *SkatAgent {
+// MustGetAgentForPlayer returns the configured agent or panics when it cannot
+// be loaded. It is intended for offline simulations and data-generation tools.
+func MustGetAgentForPlayer(player *game.PlayerState) *SkatAgent {
+	agent, err := GetAgentForPlayer(player)
+	if err != nil {
+		panic(fmt.Sprintf("failed to load agent: %v", err))
+	}
+	return agent
+}
+
+// GetAgentForPlayerID loads and builds an agent, returning any failure to the
+// caller. Only successfully loaded agents are cached.
+func GetAgentForPlayerID(playerID string) (*SkatAgent, error) {
 
 	// Check cache first
 	agentCacheMu.RLock()
 	if cached, ok := agentCache[playerID]; ok {
 		agentCacheMu.RUnlock()
-		return cached
+		return cached, nil
 	}
 	agentCacheMu.RUnlock()
 
@@ -78,30 +90,17 @@ func GetAgentForPlayerID(playerID string) *SkatAgent {
 	configLoaderMu.RUnlock()
 
 	if loader == nil {
-		logger.Warning("No agent config loader set, using default heuristic agent")
-		agent := NewHeuristicAgent(playerID)
-		agentCacheMu.Lock()
-		agentCache[playerID] = agent
-		agentCacheMu.Unlock()
-		return agent
+		return nil, fmt.Errorf("no agent config loader configured")
 	}
 
 	config, err := loader(playerID)
 	if err != nil {
-		logger.Error("Failed to load agent config for profile %s", playerID)
-		logger.Warning("Using default heuristic agent")
-		agent := NewHeuristicAgent(playerID)
-		agentCacheMu.Lock()
-		agentCache[playerID] = agent
-		agentCacheMu.Unlock()
-		return agent
+		return nil, fmt.Errorf("failed to load agent config for profile %s: %w", playerID, err)
 	}
 
 	agent, err := BuildAgentFromConfig(config)
 	if err != nil {
-		logger.Error("Failed to build agent from config: %e", err)
-		logger.Warning("Using default heuristic agent")
-		agent = NewHeuristicAgent(playerID)
+		return nil, fmt.Errorf("failed to build agent for profile %s: %w", playerID, err)
 	}
 
 	// Cache the agent
@@ -109,7 +108,7 @@ func GetAgentForPlayerID(playerID string) *SkatAgent {
 	agentCache[playerID] = agent
 	agentCacheMu.Unlock()
 
-	return agent
+	return agent, nil
 }
 
 func SetAgentForPlayer(player *game.PlayerState, agent *SkatAgent) {

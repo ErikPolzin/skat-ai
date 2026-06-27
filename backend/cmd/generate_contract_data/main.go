@@ -123,7 +123,7 @@ func playForcedContract(agentConfig agent.AgentConfig, mode game.GameMode, suit 
 	g := agent.WithAgentPlayers(game.NewGame(), agentConfig).WithCardsDealt()
 
 	for _, player := range g.Players {
-		agent.GetAgentForPlayer(player).OnGameStart()
+		agent.MustGetAgentForPlayer(player).OnGameStart()
 	}
 
 	declarer := game.GamePosition(rand.Intn(3))
@@ -132,7 +132,7 @@ func playForcedContract(agentConfig agent.AgentConfig, mode game.GameMode, suit 
 		panic(fmt.Sprintf("SkatDecision error: %v", err))
 	}
 
-	declarerAgent := agent.GetAgentForPlayer(g.Players[declarer])
+	declarerAgent := agent.MustGetAgentForPlayer(g.Players[declarer])
 	card1, card2 := declarerAgent.ChooseSkatDiscard(g.Players[declarer].Hand, mode, suit)
 	if _, err := g.Discard(card1, card2); err != nil {
 		panic(fmt.Sprintf("Discard error: %v", err))

@@ -21,7 +21,6 @@ interface AIPlayerSelectorProps {
 
 const getAgentTypeLabel = (agent: AgentInfo): string => {
   if (agent.card_play_type === "neural") return "Neural";
-  if (agent.card_play_type === "mcts") return "MCTS";
   return "Heuristic";
 };
 
@@ -29,7 +28,6 @@ const getAgentTypeColor = (
   agent: AgentInfo,
 ): "primary" | "secondary" | "default" => {
   if (agent.card_play_type === "neural") return "primary";
-  if (agent.card_play_type === "mcts") return "secondary";
   return "default";
 };
 

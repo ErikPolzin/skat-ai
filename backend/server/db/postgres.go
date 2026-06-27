@@ -952,14 +952,14 @@ func (d *PgDatabase) GetAgentConfig(profileID string) (*AgentConfig, error) {
 	err := d.DB.QueryRow(`
 		SELECT profile_id, bidding_type, bidding_threshold,
 		       game_choice_type,
-		       card_play_type, mcts_simulations, cardplay_weights_path,
+		       card_play_type, cardplay_weights_path,
 		       created_at, updated_at
 		FROM agent_configs
 		WHERE profile_id = $1
 	`, profileID).Scan(
 		&config.ProfileID, &config.BiddingType, &config.BiddingThreshold,
 		&config.GameChoiceType,
-		&config.CardPlayType, &config.MCTSSimulations, &config.CardplayWeightsPath,
+		&config.CardPlayType, &config.CardplayWeightsPath,
 		&config.CreatedAt, &config.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -976,20 +976,19 @@ func (d *PgDatabase) SaveAgentConfig(config AgentConfig) error {
 		INSERT INTO agent_configs (
 			profile_id, bidding_type, bidding_threshold,
 			game_choice_type,
-			card_play_type, mcts_simulations, cardplay_weights_path,
+			card_play_type, cardplay_weights_path,
 			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (profile_id) DO UPDATE SET
 			bidding_type = $2,
 			bidding_threshold = $3,
 			game_choice_type = $4,
 			card_play_type = $5,
-			mcts_simulations = $6,
-			cardplay_weights_path = $7,
-			updated_at = $9
+			cardplay_weights_path = $6,
+			updated_at = $8
 	`, config.ProfileID, config.BiddingType, config.BiddingThreshold,
 		config.GameChoiceType,
-		config.CardPlayType, config.MCTSSimulations, config.CardplayWeightsPath,
+		config.CardPlayType, config.CardplayWeightsPath,
 		config.CreatedAt, config.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to save agent config: %w", err)

@@ -16,9 +16,6 @@ INSERT INTO profiles (id, name, is_agent, profile_icon, is_online) VALUES
     -- Heuristic agents
     ('550e8400-e29b-41d4-a716-446655440001', 'Bill', TRUE, '/res/profile_icons/bill.svg', TRUE),
     ('550e8400-e29b-41d4-a716-446655440002', 'Dave', TRUE, '/res/profile_icons/dave.svg', TRUE),
-    -- MCTS agents
-    ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', TRUE, '/res/profile_icons/lisa.svg', TRUE),
-    ('550e8400-e29b-41d4-a716-446655440004', 'Max', TRUE, '/res/profile_icons/max.svg', TRUE),
     -- Neural agents
     ('550e8400-e29b-41d4-a716-446655440005', 'Emma', TRUE, '/res/profile_icons/emma.svg', TRUE),
     ('550e8400-e29b-41d4-a716-446655440006', 'Sam', TRUE, '/res/profile_icons/sam.svg', TRUE)
@@ -134,7 +131,6 @@ CREATE TABLE IF NOT EXISTS agent_configs (
     bidding_threshold DOUBLE PRECISION DEFAULT 0.65,
     game_choice_type VARCHAR(50) NOT NULL DEFAULT 'heuristic',
     card_play_type VARCHAR(50) NOT NULL DEFAULT 'heuristic',
-    mcts_simulations INT DEFAULT 500,
     cardplay_weights_path VARCHAR(255),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -142,15 +138,12 @@ CREATE TABLE IF NOT EXISTS agent_configs (
 );
 
 -- Insert initial agent configs for agent profiles
-INSERT INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, mcts_simulations, cardplay_weights_path)
+INSERT INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, cardplay_weights_path)
 VALUES
     -- Heuristic agents (Bill, Dave)
-    ('550e8400-e29b-41d4-a716-446655440001', 'heuristic', 0.65, 'heuristic', 'heuristic', NULL, NULL),
-    ('550e8400-e29b-41d4-a716-446655440002', 'heuristic', 0.70, 'heuristic', 'heuristic', NULL, NULL),
-    -- MCTS agents (Lisa, Max)
-    ('550e8400-e29b-41d4-a716-446655440003', 'heuristic', 0.65, 'heuristic', 'mcts', 500, NULL),
-    ('550e8400-e29b-41d4-a716-446655440004', 'heuristic', 0.65, 'heuristic', 'mcts', 1000, NULL),
+    ('550e8400-e29b-41d4-a716-446655440001', 'heuristic', 0.65, 'heuristic', 'heuristic', NULL),
+    ('550e8400-e29b-41d4-a716-446655440002', 'heuristic', 0.70, 'heuristic', 'heuristic', NULL),
     -- Neural agents (Emma, Sam) - using combined weights file
-    ('550e8400-e29b-41d4-a716-446655440005', 'heuristic', 0.65, 'heuristic', 'neural', NULL, '.data/models/cardplay.weights'),
-    ('550e8400-e29b-41d4-a716-446655440006', 'heuristic', 0.70, 'heuristic', 'neural', NULL, '.data/models/cardplay.weights')
+    ('550e8400-e29b-41d4-a716-446655440005', 'heuristic', 0.65, 'heuristic', 'neural', '.data/models/cardplay.weights'),
+    ('550e8400-e29b-41d4-a716-446655440006', 'heuristic', 0.70, 'heuristic', 'neural', '.data/models/cardplay.weights')
 ON CONFLICT (profile_id) DO NOTHING;

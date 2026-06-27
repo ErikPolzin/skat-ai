@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"skat/agent"
 	"skat/game"
 	"skat/game/rating"
 	"skat/logger"
@@ -729,6 +730,12 @@ func (s *Server) handleAddAgent(w http.ResponseWriter, r *http.Request) {
 
 		// Pick a random available agent
 		agentProfile = availableProfiles[rand.Int()%len(availableProfiles)]
+	}
+
+	// Validate that the agent can be loaded before changing or saving the game.
+	if _, err := agent.GetAgentForPlayerID(agentProfile.ID); err != nil {
+		http.Error(w, fmt.Sprintf("failed to load agent: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	response, err := gs.AddPlayer(&game.PlayerState{
@@ -1591,7 +1598,6 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 		BiddingThreshold float64 `json:"bidding_threshold"`
 		GameChoiceType   string  `json:"game_choice_type"`
 		CardPlayType     string  `json:"card_play_type"`
-		MCTSSimulations  int     `json:"mcts_simulations,omitempty"`
 	}
 
 	agentInfos := make([]AgentInfo, 0)
@@ -1602,11 +1608,6 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		mctsSimulations := 0
-		if config.MCTSSimulations != nil {
-			mctsSimulations = *config.MCTSSimulations
-		}
-
 		agentInfos = append(agentInfos, AgentInfo{
 			ID:               agent.ID,
 			Name:             agent.Name,
@@ -1615,7 +1616,6 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 			BiddingThreshold: config.BiddingThreshold,
 			GameChoiceType:   config.GameChoiceType,
 			CardPlayType:     config.CardPlayType,
-			MCTSSimulations:  mctsSimulations,
 		})
 	}
 

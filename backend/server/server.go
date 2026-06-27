@@ -88,11 +88,6 @@ func configureAgentLoader(database db.Database) {
 		}
 
 		// Convert db.AgentConfig to agent.AgentConfigData
-		mctsSimulations := 0
-		if config.MCTSSimulations != nil {
-			mctsSimulations = *config.MCTSSimulations
-		}
-
 		cardplayWeightsPath := ""
 		if config.CardplayWeightsPath != nil {
 			cardplayWeightsPath = *config.CardplayWeightsPath
@@ -104,7 +99,6 @@ func configureAgentLoader(database db.Database) {
 			BiddingThreshold:    config.BiddingThreshold,
 			GameChoiceType:      config.GameChoiceType,
 			CardPlayType:        config.CardPlayType,
-			MCTSSimulations:     mctsSimulations,
 			CardplayWeightsPath: cardplayWeightsPath,
 		}, nil
 	})

@@ -587,7 +587,6 @@ export interface AgentInfo {
   bidding_threshold: number;
   game_choice_type: string;
   card_play_type: string;
-  mcts_simulations?: number;
 }
 
 export async function getAvailableAgents(): Promise<AgentInfo[]> {

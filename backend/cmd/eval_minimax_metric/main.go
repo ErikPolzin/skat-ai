@@ -60,7 +60,7 @@ func collectObservations(targetGames int, setup string, metric *strategies.Perfe
 			features := metric.EvaluateFeatures(g)
 			gameFeatures = append(gameFeatures, features.Values)
 			moves := g.GetValidMoves()
-			currentAgent := agent.GetAgentForPlayer(g.GetCurrentPlayer())
+			currentAgent := agent.MustGetAgentForPlayer(g.GetCurrentPlayer())
 			move := currentAgent.SelectMove(g, moves)
 			if _, err := g.PlayCard(move); err != nil {
 				panic(err)
@@ -71,7 +71,7 @@ func collectObservations(targetGames int, setup string, metric *strategies.Perfe
 					panic(err)
 				}
 				for _, player := range g.Players {
-					playerAgent := agent.GetAgentForPlayer(player)
+					playerAgent := agent.MustGetAgentForPlayer(player)
 					if playerAgent != nil {
 						playerAgent.OnTrickComplete(trick)
 					}

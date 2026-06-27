@@ -217,7 +217,7 @@ func WithAgentBidding(gs *game.GameState, config AgentConfig) *game.GameState {
 			panic("Cannot seed with game type, game is not in bidding phase")
 		}
 		for gs.Phase == game.PhaseBidding {
-			currentAgent := GetAgentForPlayer(gs.GetCurrentPlayer())
+			currentAgent := MustGetAgentForPlayer(gs.GetCurrentPlayer())
 			accept := currentAgent.Bid(gs)
 			_, err := gs.Bid(accept)
 			if err != nil {
@@ -266,7 +266,7 @@ func WithAgentSkatDecision(gs *game.GameState) *game.GameState {
 		panic("Cannot run agent skat decision, game is not in skat exchange phase")
 	}
 	declarer := gs.GetCurrentPlayer()
-	declarerAgent := GetAgentForPlayer(declarer)
+	declarerAgent := MustGetAgentForPlayer(declarer)
 	// Agent always picks up skat
 	if _, err := gs.SkatDecision(true); err != nil {
 		panic(fmt.Sprintf("Skat decision error: %v", err))
@@ -283,7 +283,7 @@ func WithAgentGameChoice(gs *game.GameState) (*game.GameState, bool) {
 	if gs.Phase != game.PhaseDeclarerChoice {
 		panic("Cannot run agent skat decision, game is not in skat exchange phase")
 	}
-	declarerAgent := GetAgentForPlayer(gs.GetCurrentPlayer())
+	declarerAgent := MustGetAgentForPlayer(gs.GetCurrentPlayer())
 	mode, trumpSuit := declarerAgent.ChooseGame(gs)
 	if _, err := gs.DeclareGame(mode, trumpSuit, false, false); err != nil {
 		panic(fmt.Sprintf("DeclareGame error: %v", err))
@@ -292,7 +292,7 @@ func WithAgentGameChoice(gs *game.GameState) (*game.GameState, bool) {
 	declarerHand := gs.Players[declarerPosition].Hand
 	declarerExpectation := strategies.EstimateContractWinProbability(declarerHand, mode, trumpSuit)
 	for position := game.Dealer; position <= game.Speaker; position++ {
-		playerAgent := GetAgentForPlayer(gs.Players[position])
+		playerAgent := MustGetAgentForPlayer(gs.Players[position])
 		if playerAgent == nil {
 			continue
 		}
@@ -315,7 +315,7 @@ func WithAgentCardPlay(gs *game.GameState) *game.GameState {
 		if len(validMoves) == 0 {
 			panic("Cannot play game, no valid moves")
 		}
-		currentAgent := GetAgentForPlayer(gs.GetCurrentPlayer())
+		currentAgent := MustGetAgentForPlayer(gs.GetCurrentPlayer())
 		move := currentAgent.SelectMove(gs, validMoves)
 		if _, err := gs.PlayCard(move); err != nil {
 			panic(fmt.Sprintf("PlayCard error: %v", err))
@@ -328,7 +328,7 @@ func WithAgentCardPlay(gs *game.GameState) *game.GameState {
 			}
 			for i := range gs.Players {
 				if gs.Players[i].IsAgent {
-					if agent := GetAgentForPlayer(gs.Players[i]); agent != nil {
+					if agent := MustGetAgentForPlayer(gs.Players[i]); agent != nil {
 						agent.OnTrickComplete(trick)
 					}
 				}
@@ -383,7 +383,10 @@ func recordGameResults(g *game.GameState) {
 		playerResults := g.PlayerResults()
 		if playerResults != nil {
 			for _, r := range playerResults {
-				agent := GetAgentForPlayerID(r.PlayerID)
+				agent, err := GetAgentForPlayerID(r.PlayerID)
+				if err != nil {
+					panic(fmt.Sprintf("failed to load agent: %v", err))
+				}
 				if agent != nil {
 					agent.RecordGameResult(g, r)
 				}

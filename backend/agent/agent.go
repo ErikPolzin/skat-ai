@@ -16,13 +16,11 @@ type (
 	HeuristicGameChoiceStrategy = strategies.HeuristicGameChoiceStrategy
 	RandomCardPlayStrategy      = strategies.RandomCardPlayStrategy
 	HeuristicCardPlayStrategy   = strategies.HeuristicCardPlayStrategy
-	MCTSCardPlayStrategy        = strategies.MCTSCardPlayStrategy
 	PerfectInfoMinimaxStrategy  = strategies.PerfectInfoMinimaxStrategy
 )
 
 // Re-export constructor functions
 var (
-	NewMCTSCardPlayStrategyWithParams      = strategies.NewMCTSCardPlayStrategyWithParams
 	NewHeuristicCardPlayStrategy           = strategies.NewHeuristicCardPlayStrategy
 	NewPerfectInfoMinimaxStrategyWithDepth = strategies.NewPerfectInfoMinimaxStrategyWithDepth
 )
@@ -226,7 +224,6 @@ type HybridAgentConfig struct {
 	GameChoiceQTable map[int]map[int]float64 // For Q-learning game choice
 
 	CardPlayType      string
-	MCTSSimulations   int // For MCTS card play
 	MinimaxDepth      int // For minimax card play
 	MinimaxSearch     *strategies.MinimaxSearchConfig
 	NeuralWeightsPath string // For neural network card play (combined declarer+defender weights)
@@ -272,12 +269,6 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	switch config.CardPlayType {
 	case "heuristic":
 		agent.cardPlayStrategy = NewHeuristicCardPlayStrategy()
-	case "mcts":
-		simulations := config.MCTSSimulations
-		if simulations == 0 {
-			simulations = 500 // Default simulations
-		}
-		agent.cardPlayStrategy = NewMCTSCardPlayStrategyWithParams(simulations, 1.41, 10)
 	case "minimax":
 		depth := config.MinimaxDepth
 		if depth == 0 {

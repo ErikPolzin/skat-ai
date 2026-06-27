@@ -16,9 +16,6 @@ INSERT OR IGNORE INTO profiles (id, name, is_agent, profile_icon, is_online) VAL
     -- Heuristic agents
     ('550e8400-e29b-41d4-a716-446655440001', 'Bill', 1, '/res/profile_icons/bill.svg', 1),
     ('550e8400-e29b-41d4-a716-446655440002', 'Dave', 1, '/res/profile_icons/dave.svg', 1),
-    -- MCTS agents
-    ('550e8400-e29b-41d4-a716-446655440003', 'Lisa', 1, '/res/profile_icons/lisa.svg', 1),
-    ('550e8400-e29b-41d4-a716-446655440004', 'Max', 1, '/res/profile_icons/max.svg', 1),
     -- Neural agents
     ('550e8400-e29b-41d4-a716-446655440005', 'Emma', 1, '/res/profile_icons/emma.svg', 1),
     ('550e8400-e29b-41d4-a716-446655440006', 'Sam', 1, '/res/profile_icons/sam.svg', 1);
@@ -133,7 +130,6 @@ CREATE TABLE IF NOT EXISTS agent_configs (
     bidding_threshold REAL DEFAULT 0.65,
     game_choice_type TEXT NOT NULL DEFAULT 'heuristic',
     card_play_type TEXT NOT NULL DEFAULT 'heuristic',
-    mcts_simulations INTEGER DEFAULT 500,
     cardplay_weights_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -141,14 +137,11 @@ CREATE TABLE IF NOT EXISTS agent_configs (
 );
 
 -- Insert initial agent configs for agent profiles
-INSERT OR IGNORE INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, mcts_simulations, cardplay_weights_path)
+INSERT OR IGNORE INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, cardplay_weights_path)
 VALUES
     -- Heuristic agents (Bill, Dave)
-    ('550e8400-e29b-41d4-a716-446655440001', 'heuristic', 0.65, 'heuristic', 'heuristic', NULL, NULL),
-    ('550e8400-e29b-41d4-a716-446655440002', 'heuristic', 0.70, 'heuristic', 'heuristic', NULL, NULL),
-    -- MCTS agents (Lisa, Max)
-    ('550e8400-e29b-41d4-a716-446655440003', 'heuristic', 0.65, 'heuristic', 'mcts', 500, NULL),
-    ('550e8400-e29b-41d4-a716-446655440004', 'heuristic', 0.65, 'heuristic', 'mcts', 1000, NULL),
+    ('550e8400-e29b-41d4-a716-446655440001', 'heuristic', 0.65, 'heuristic', 'heuristic', NULL),
+    ('550e8400-e29b-41d4-a716-446655440002', 'heuristic', 0.70, 'heuristic', 'heuristic', NULL),
     -- Neural agents (Emma, Sam) - using GCS bucket path for combined weights
-    ('550e8400-e29b-41d4-a716-446655440005', 'heuristic', 0.65, 'heuristic', 'neural', NULL, 'gs://skat-ai-weights/cardplay.weights'),
-    ('550e8400-e29b-41d4-a716-446655440006', 'heuristic', 0.70, 'heuristic', 'neural', NULL, 'gs://skat-ai-weights/cardplay.weights');
+    ('550e8400-e29b-41d4-a716-446655440005', 'heuristic', 0.65, 'heuristic', 'neural', 'gs://skat-ai-weights/cardplay.weights'),
+    ('550e8400-e29b-41d4-a716-446655440006', 'heuristic', 0.70, 'heuristic', 'neural', 'gs://skat-ai-weights/cardplay.weights');

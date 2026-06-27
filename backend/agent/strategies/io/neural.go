@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"cloud.google.com/go/storage"
 	"gorgonia.org/gorgonia"
@@ -69,6 +70,14 @@ func SaveWeights(path string, weights map[string]*gorgonia.Node) error {
 
 // LoadWeightsIntoNodes loads weights from a binary file into existing nodes
 func LoadWeightsIntoNodes(path string, nodes []*gorgonia.Node) error {
+	if strings.HasPrefix(path, "gs://") {
+		bucket, objectPath, ok := strings.Cut(strings.TrimPrefix(path, "gs://"), "/")
+		if !ok || bucket == "" || objectPath == "" {
+			return fmt.Errorf("invalid GCS path: %s", path)
+		}
+		return LoadWeightsFromGCS(context.Background(), bucket, objectPath, nodes)
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return err

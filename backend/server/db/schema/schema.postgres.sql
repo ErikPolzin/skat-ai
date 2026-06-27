@@ -131,19 +131,22 @@ CREATE TABLE IF NOT EXISTS agent_configs (
     bidding_threshold DOUBLE PRECISION DEFAULT 0.65,
     game_choice_type VARCHAR(50) NOT NULL DEFAULT 'heuristic',
     card_play_type VARCHAR(50) NOT NULL DEFAULT 'heuristic',
+    contract_weights_path VARCHAR(255),
     cardplay_weights_path VARCHAR(255),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
 
+ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS contract_weights_path VARCHAR(255);
+
 -- Insert initial agent configs for agent profiles
-INSERT INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, cardplay_weights_path)
+INSERT INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, contract_weights_path, cardplay_weights_path)
 VALUES
     -- Heuristic agents (Bill, Dave)
-    ('550e8400-e29b-41d4-a716-446655440001', 'heuristic', 0.65, 'heuristic', 'heuristic', NULL),
-    ('550e8400-e29b-41d4-a716-446655440002', 'heuristic', 0.70, 'heuristic', 'heuristic', NULL),
+    ('550e8400-e29b-41d4-a716-446655440001', 'heuristic', 0.65, 'heuristic', 'heuristic', NULL, NULL),
+    ('550e8400-e29b-41d4-a716-446655440002', 'heuristic', 0.70, 'heuristic', 'heuristic', NULL, NULL),
     -- Neural agents (Emma, Sam) - using combined weights file
-    ('550e8400-e29b-41d4-a716-446655440005', 'heuristic', 0.65, 'heuristic', 'neural', '.data/models/cardplay.weights'),
-    ('550e8400-e29b-41d4-a716-446655440006', 'heuristic', 0.70, 'heuristic', 'neural', '.data/models/cardplay.weights')
+    ('550e8400-e29b-41d4-a716-446655440005', 'heuristic', 0.65, 'heuristic', 'neural', '.data/models/contract.weights', '.data/models/cardplay.weights'),
+    ('550e8400-e29b-41d4-a716-446655440006', 'heuristic', 0.70, 'heuristic', 'neural', '.data/models/contract.weights', '.data/models/cardplay.weights')
 ON CONFLICT (profile_id) DO NOTHING;

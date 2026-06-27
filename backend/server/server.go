@@ -92,6 +92,10 @@ func configureAgentLoader(database db.Database) {
 		if config.CardplayWeightsPath != nil {
 			cardplayWeightsPath = *config.CardplayWeightsPath
 		}
+		contractWeightsPath := ""
+		if config.ContractWeightsPath != nil {
+			contractWeightsPath = *config.ContractWeightsPath
+		}
 
 		return &agent.AgentConfigData{
 			ProfileID:           config.ProfileID,
@@ -99,6 +103,7 @@ func configureAgentLoader(database db.Database) {
 			BiddingThreshold:    config.BiddingThreshold,
 			GameChoiceType:      config.GameChoiceType,
 			CardPlayType:        config.CardPlayType,
+			ContractWeightsPath: contractWeightsPath,
 			CardplayWeightsPath: cardplayWeightsPath,
 		}, nil
 	})

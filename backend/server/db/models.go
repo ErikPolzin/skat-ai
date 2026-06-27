@@ -86,13 +86,14 @@ func NewPlayerRating(pr *rating.PlayerRating) PlayerRating {
 type AgentConfig struct {
 	ProfileID string
 	// Bidding strategy configuration
-	BiddingType      string
-	BiddingThreshold float64
+	BiddingType         string
+	BiddingThreshold    float64
+	ContractWeightsPath *string // Path to neural contract-estimator weights (nullable)
 	// Game choice strategy configuration
 	GameChoiceType string
 	// Card play strategy configuration
 	CardPlayType        string
-	CardplayWeightsPath *string // Path to combined neural network weights (nullable)
+	CardplayWeightsPath *string // Path to combined neural card-play weights (nullable)
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }

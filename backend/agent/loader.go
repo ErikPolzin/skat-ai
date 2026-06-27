@@ -16,6 +16,7 @@ type AgentConfigData struct {
 	BiddingThreshold    float64
 	GameChoiceType      string
 	CardPlayType        string
+	ContractWeightsPath string
 	CardplayWeightsPath string
 }
 
@@ -40,12 +41,19 @@ func BuildAgentFromConfig(config *AgentConfigData) (*SkatAgent, error) {
 		return nil, fmt.Errorf("config is nil")
 	}
 
+	contractEstimatorType := "heuristic"
+	if config.ContractWeightsPath != "" {
+		contractEstimatorType = "neural"
+	}
+
 	hybridConfig := HybridAgentConfig{
-		BiddingType:       config.BiddingType,
-		BiddingThreshold:  config.BiddingThreshold,
-		GameChoiceType:    config.GameChoiceType,
-		CardPlayType:      config.CardPlayType,
-		NeuralWeightsPath: config.CardplayWeightsPath,
+		BiddingType:           config.BiddingType,
+		BiddingThreshold:      config.BiddingThreshold,
+		ContractEstimatorType: contractEstimatorType,
+		ContractWeightsPath:   config.ContractWeightsPath,
+		GameChoiceType:        config.GameChoiceType,
+		CardPlayType:          config.CardPlayType,
+		NeuralWeightsPath:     config.CardplayWeightsPath,
 	}
 
 	return NewHybridAgent(config.ProfileID, hybridConfig)

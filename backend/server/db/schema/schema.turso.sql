@@ -130,18 +130,21 @@ CREATE TABLE IF NOT EXISTS agent_configs (
     bidding_threshold REAL DEFAULT 0.65,
     game_choice_type TEXT NOT NULL DEFAULT 'heuristic',
     card_play_type TEXT NOT NULL DEFAULT 'heuristic',
+    contract_weights_path TEXT,
     cardplay_weights_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
 
+ALTER TABLE agent_configs ADD COLUMN contract_weights_path TEXT;
+
 -- Insert initial agent configs for agent profiles
-INSERT OR IGNORE INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, cardplay_weights_path)
+INSERT OR IGNORE INTO agent_configs (profile_id, bidding_type, bidding_threshold, game_choice_type, card_play_type, contract_weights_path, cardplay_weights_path)
 VALUES
     -- Heuristic agents (Bill, Dave)
-    ('550e8400-e29b-41d4-a716-446655440001', 'heuristic', 0.65, 'heuristic', 'heuristic', NULL),
-    ('550e8400-e29b-41d4-a716-446655440002', 'heuristic', 0.70, 'heuristic', 'heuristic', NULL),
+    ('550e8400-e29b-41d4-a716-446655440001', 'heuristic', 0.65, 'heuristic', 'heuristic', NULL, NULL),
+    ('550e8400-e29b-41d4-a716-446655440002', 'heuristic', 0.70, 'heuristic', 'heuristic', NULL, NULL),
     -- Neural agents (Emma, Sam) - using GCS bucket path for combined weights
-    ('550e8400-e29b-41d4-a716-446655440005', 'heuristic', 0.65, 'heuristic', 'neural', 'gs://skat-ai-weights/cardplay.weights'),
-    ('550e8400-e29b-41d4-a716-446655440006', 'heuristic', 0.70, 'heuristic', 'neural', 'gs://skat-ai-weights/cardplay.weights');
+    ('550e8400-e29b-41d4-a716-446655440005', 'heuristic', 0.65, 'heuristic', 'neural', 'gs://skat-ai-weights/contract.weights', 'gs://skat-ai-weights/cardplay.weights'),
+    ('550e8400-e29b-41d4-a716-446655440006', 'heuristic', 0.70, 'heuristic', 'neural', 'gs://skat-ai-weights/contract.weights', 'gs://skat-ai-weights/cardplay.weights');

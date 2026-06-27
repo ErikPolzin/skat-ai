@@ -14,7 +14,6 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import CheckIcon from "@mui/icons-material/Check";
 import WarningIcon from "@mui/icons-material/Warning";
 import {
   type Card as CardType,
@@ -644,12 +643,6 @@ export function MotionCardTable() {
                     {formattedTime}
                   </div>
                 )}
-              {(game.topPlayer.ready_for_next ||
-                (game.gameOver && game.topPlayer.is_agent)) && (
-                <div className="avatar-ready-check" aria-label="Ready">
-                  <CheckIcon fontSize="inherit" />
-                </div>
-              )}
             </div>
             <div className="avatar-info">
               <Chip
@@ -723,12 +716,6 @@ export function MotionCardTable() {
                     {formattedTime}
                   </div>
                 )}
-              {(game.leftPlayer.ready_for_next ||
-                (game.gameOver && game.leftPlayer.is_agent)) && (
-                <div className="avatar-ready-check" aria-label="Ready">
-                  <CheckIcon fontSize="inherit" />
-                </div>
-              )}
             </div>
             <div className="avatar-info">
               <Chip
@@ -797,11 +784,6 @@ export function MotionCardTable() {
                   className={`avatar-deadline-countdown ${secondsRemaining <= 10 ? "urgent" : ""}`}
                 >
                   {formattedTime}
-                </div>
-              )}
-              {game.player.ready_for_next && (
-                <div className="avatar-ready-check" aria-label="Ready">
-                  <CheckIcon fontSize="inherit" />
                 </div>
               )}
             </div>

@@ -272,11 +272,11 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	case "minimax":
 		depth := config.MinimaxDepth
 		if depth == 0 {
-			depth = 12 // Uses calibrated leaf evaluation plus aggressive late-move reduction
+			depth = 15 // Uses calibrated leaf evaluation plus aggressive late-move reduction
 		}
 		if config.MinimaxSearch != nil {
 			searchConfig := *config.MinimaxSearch
-			searchConfig.MaxDepth = depth
+			searchConfig.BaseDepth = depth
 			agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxStrategyWithConfig(searchConfig)
 		} else {
 			agent.cardPlayStrategy = strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth)

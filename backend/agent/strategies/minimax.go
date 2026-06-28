@@ -72,74 +72,83 @@ type MinimaxEvaluationFeatures struct {
 // PerfectInfoMinimaxStrategy implements minimax search with perfect information
 // This is suitable for generating optimal training data where all hands are known
 type PerfectInfoMinimaxStrategy struct {
-	maxDepth          int
-	transTable        map[uint64]*TranspositionEntry
-	transMutex        sync.RWMutex
-	useMoveOrdering   bool
-	useTransTable     bool
-	useLateMoveRed    bool
-	lateMoveThreshold int
-	lateMoveReduction int
+	baseDepth             int
+	maxDepth              int
+	depthIncreasePerTrick int
+	currentDepth          int
+	transTable            map[uint64]*TranspositionEntry
+	transMutex            sync.RWMutex
+	useMoveOrdering       bool
+	useTransTable         bool
+	useLateMoveRed        bool
+	lateMoveThreshold     int
+	lateMoveReduction     int
 }
 
 // MinimaxSearchConfig controls search depth and optional tree-pruning aids.
 // Late-move reduction is approximate: later ordered moves are searched fewer plies.
 type MinimaxSearchConfig struct {
-	MaxDepth          int
-	UseMoveOrdering   bool
-	UseTransTable     bool
-	UseLateMoveRed    bool
-	LateMoveThreshold int
-	LateMoveReduction int
+	BaseDepth             int
+	MaxDepth              int
+	DepthIncreasePerTrick int
+	UseMoveOrdering       bool
+	UseTransTable         bool
+	UseLateMoveRed        bool
+	LateMoveThreshold     int
+	LateMoveReduction     int
 }
 
 // DefaultMinimaxSearchConfig returns the strongest settings from the
 // reproducible minimax-vs-heuristic evaluation sweep.
-func DefaultMinimaxSearchConfig(maxDepth int) MinimaxSearchConfig {
+func DefaultMinimaxSearchConfig(depth int) MinimaxSearchConfig {
 	return MinimaxSearchConfig{
-		MaxDepth:          maxDepth,
-		UseMoveOrdering:   true,
-		UseTransTable:     true,
-		UseLateMoveRed:    true,
-		LateMoveThreshold: 2,
-		LateMoveReduction: 2,
-	}
-}
-
-// NewPerfectInfoMinimaxStrategy creates a new perfect-info minimax strategy
-func NewPerfectInfoMinimaxStrategy() *PerfectInfoMinimaxStrategy {
-	return &PerfectInfoMinimaxStrategy{
-		maxDepth:          30, // Search full game tree
-		transTable:        make(map[uint64]*TranspositionEntry),
-		useMoveOrdering:   true,
-		useTransTable:     true,
-		useLateMoveRed:    true,
-		lateMoveThreshold: 2, // Start reducing after 2nd move
-		lateMoveReduction: 2, // Reduce depth by 2
+		BaseDepth:             depth,
+		MaxDepth:              30,
+		DepthIncreasePerTrick: 3,
+		UseMoveOrdering:       true,
+		UseTransTable:         true,
+		UseLateMoveRed:        true,
+		LateMoveThreshold:     1,
+		LateMoveReduction:     6,
 	}
 }
 
 // NewPerfectInfoMinimaxStrategyWithDepth creates a strategy with custom depth
-func NewPerfectInfoMinimaxStrategyWithDepth(maxDepth int) *PerfectInfoMinimaxStrategy {
-	return NewPerfectInfoMinimaxStrategyWithConfig(DefaultMinimaxSearchConfig(maxDepth))
+func NewPerfectInfoMinimaxStrategyWithDepth(depth int) *PerfectInfoMinimaxStrategy {
+	return NewPerfectInfoMinimaxStrategyWithConfig(DefaultMinimaxSearchConfig(depth))
 }
 
 // NewPerfectInfoMinimaxStrategyWithConfig creates a strategy with explicit
 // search and pruning settings.
 func NewPerfectInfoMinimaxStrategyWithConfig(config MinimaxSearchConfig) *PerfectInfoMinimaxStrategy {
 	return &PerfectInfoMinimaxStrategy{
-		maxDepth:          config.MaxDepth,
-		transTable:        make(map[uint64]*TranspositionEntry),
-		useMoveOrdering:   config.UseMoveOrdering,
-		useTransTable:     config.UseTransTable,
-		useLateMoveRed:    config.UseLateMoveRed,
-		lateMoveThreshold: config.LateMoveThreshold,
-		lateMoveReduction: config.LateMoveReduction,
+		baseDepth:             config.BaseDepth,
+		depthIncreasePerTrick: config.DepthIncreasePerTrick,
+		currentDepth:          config.BaseDepth,
+		maxDepth:              config.MaxDepth,
+		transTable:            make(map[uint64]*TranspositionEntry),
+		useMoveOrdering:       config.UseMoveOrdering,
+		useTransTable:         config.UseTransTable,
+		useLateMoveRed:        config.UseLateMoveRed,
+		lateMoveThreshold:     config.LateMoveThreshold,
+		lateMoveReduction:     config.LateMoveReduction,
 	}
 }
 
 func (m *PerfectInfoMinimaxStrategy) GetName() string {
 	return "PerfectInfoMinimax"
+}
+
+func (d *PerfectInfoMinimaxStrategy) SearchDepth(state *game.GameState) int {
+	depth := d.baseDepth + len(state.CardsPlayed)*d.depthIncreasePerTrick
+	remaining := 0
+	for _, player := range state.Players {
+		if player != nil {
+			remaining += len(player.Hand)
+		}
+	}
+	depth = min(depth, d.maxDepth, remaining)
+	return max(1, depth)
 }
 
 // ScoreMoves evaluates every legal root move independently. Normal-game scores
@@ -150,6 +159,7 @@ func (m *PerfectInfoMinimaxStrategy) GetName() string {
 func (m *PerfectInfoMinimaxStrategy) ScoreMoves(state *game.GameState, validMoves []game.Card) []float64 {
 	scores := make([]float64, len(validMoves))
 	root := state.CurrentPlayer
+	m.currentDepth = m.SearchDepth(state)
 
 	for i, move := range validMoves {
 		if m.useTransTable {
@@ -161,9 +171,9 @@ func (m *PerfectInfoMinimaxStrategy) ScoreMoves(state *game.GameState, validMove
 		next := state.Clone()
 		m.playAndResolve(next, move)
 		if state.Mode == game.ModeRamsch {
-			scores[i] = m.minimaxRamsch(next, m.maxDepth-1, math.Inf(-1), math.Inf(1), root)
+			scores[i] = m.minimaxRamsch(next, m.currentDepth-1, math.Inf(-1), math.Inf(1), root)
 		} else {
-			scores[i] = m.minimax(next, m.maxDepth-1, math.Inf(-1), math.Inf(1))
+			scores[i] = m.minimax(next, m.currentDepth-1, math.Inf(-1), math.Inf(1))
 		}
 	}
 
@@ -210,7 +220,7 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 		m.playAndResolve(nextState, move)
 
 		// Evaluate this move
-		value := m.minimax(nextState, m.maxDepth-1, alpha, beta)
+		value := m.minimax(nextState, m.currentDepth-1, alpha, beta)
 
 		// Declarer maximizes, defenders minimize
 		if isDeclarer {
@@ -236,7 +246,7 @@ func (m *PerfectInfoMinimaxStrategy) selectRamschMove(state *game.GameState, val
 	for _, move := range validMoves {
 		next := state.Clone()
 		m.playAndResolve(next, move)
-		value := m.minimaxRamsch(next, m.maxDepth-1, math.Inf(-1), math.Inf(1), root)
+		value := m.minimaxRamsch(next, m.currentDepth-1, math.Inf(-1), math.Inf(1), root)
 		if value > bestValue {
 			bestMove, bestValue = move, value
 		}

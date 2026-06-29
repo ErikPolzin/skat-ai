@@ -28,12 +28,14 @@ func main() {
 	contractSelection := flag.String("contract-selection", "heuristic", "Contract selection model for contract eval: heuristic or neural")
 	contractBinWidth := flag.Float64("contract-bin-width", 0.1, "Probability width for contract calibration buckets")
 	threshold := flag.Float64("threshold", 0.0, "Bidding threshold (0=use strategy default, heuristic default=0.55)")
-	minimaxDepth := flag.Int("minimax-depth", 12, "Minimax search depth for perfect-info minimax")
+	minimaxDepth := flag.Int("minimax-depth", strategies.DefaultMinimaxBaseDepth, "Minimax base search depth; depth grows as tricks complete")
 	minimaxMoveOrdering := flag.Bool("minimax-move-ordering", true, "Order minimax moves to improve alpha-beta pruning")
 	minimaxTransTable := flag.Bool("minimax-transposition-table", true, "Enable the minimax transposition table")
 	minimaxLMR := flag.Bool("minimax-lmr", true, "Enable minimax late-move reduction")
 	minimaxLMRThreshold := flag.Int("minimax-lmr-threshold", 2, "Apply late-move reduction starting at this zero-based move index")
 	minimaxLMRReduction := flag.Int("minimax-lmr-reduction", 2, "Number of additional plies removed by late-move reduction")
+	handWinPredictorPath := flag.String("hand-win-predictor", "", "Optional small-hand win predictor")
+	handWinMinSamples := flag.Uint64("hand-win-min-samples", 8, "Minimum predictor samples required for a lookup")
 	evalSeed := flag.Int64("seed", 0, "Random seed for reproducible evaluation deals (0 uses the current default)")
 	skipGameplayExamples := flag.Bool("skip-gameplay-examples", true, "Skip slow example game-play section after evaluation")
 	flag.Parse()
@@ -51,13 +53,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	var handWinPredictor *strategies.HandWinPredictor
+	if *handWinPredictorPath != "" {
+		var err error
+		handWinPredictor, err = strategies.LoadHandWinPredictor(*handWinPredictorPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading hand win predictor: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Loaded hand win predictor: %d buckets, up to %d cards/hand\n", len(handWinPredictor.Buckets), handWinPredictor.MaxCards)
+	}
 	minimaxSearch := strategies.MinimaxSearchConfig{
-		MaxDepth:          *minimaxDepth,
-		UseMoveOrdering:   *minimaxMoveOrdering,
-		UseTransTable:     *minimaxTransTable,
-		UseLateMoveRed:    *minimaxLMR,
-		LateMoveThreshold: *minimaxLMRThreshold,
-		LateMoveReduction: *minimaxLMRReduction,
+		BaseDepth:             *minimaxDepth,
+		MaxDepth:              30,
+		DepthIncreasePerTrick: strategies.DefaultMinimaxDepthIncreasePerTrick,
+		UseMoveOrdering:       *minimaxMoveOrdering,
+		UseTransTable:         *minimaxTransTable,
+		UseLateMoveRed:        *minimaxLMR,
+		LateMoveThreshold:     *minimaxLMRThreshold,
+		LateMoveReduction:     *minimaxLMRReduction,
+		HandWinPredictor:      handWinPredictor,
+		HandWinMinSamples:     *handWinMinSamples,
 	}
 	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *contractEstimator, *contractWeights, *threshold, *minimaxDepth, *skipGameplayExamples, &minimaxSearch)
 }

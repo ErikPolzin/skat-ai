@@ -2,9 +2,28 @@ package agent
 
 import (
 	"errors"
+	"skat/game"
 	"strings"
 	"testing"
 )
+
+func TestRemoveAgentForPlayer(t *testing.T) {
+	ClearAgentCache()
+	t.Cleanup(ClearAgentCache)
+
+	player := &game.PlayerState{ID: "transient-agent", IsAgent: true}
+	want := NewHeuristicAgent(player.ID)
+	SetAgentForPlayer(player, want)
+
+	got, err := GetAgentForPlayer(player)
+	if err != nil || got != want {
+		t.Fatalf("expected cached agent before removal, got %p, %v", got, err)
+	}
+	RemoveAgentForPlayer(player)
+	if _, err := GetAgentForPlayer(player); err == nil {
+		t.Fatal("expected removed agent to require an unavailable config loader")
+	}
+}
 
 func TestGetAgentForPlayerIDReturnsLoadErrorWithoutFallback(t *testing.T) {
 	ClearAgentCache()

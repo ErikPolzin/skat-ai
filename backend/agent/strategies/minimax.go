@@ -23,6 +23,9 @@ const (
 
 const (
 	minimaxWinProbIntercept = 1.202908
+
+	DefaultMinimaxBaseDepth             = 12
+	DefaultMinimaxDepthIncreasePerTrick = 2
 )
 
 const (
@@ -75,7 +78,6 @@ type PerfectInfoMinimaxStrategy struct {
 	baseDepth             int
 	maxDepth              int
 	depthIncreasePerTrick int
-	currentDepth          int
 	transTable            map[uint64]*TranspositionEntry
 	transMutex            sync.RWMutex
 	useMoveOrdering       bool
@@ -83,6 +85,8 @@ type PerfectInfoMinimaxStrategy struct {
 	useLateMoveRed        bool
 	lateMoveThreshold     int
 	lateMoveReduction     int
+	handWinPredictor      *HandWinPredictor
+	handWinMinSamples     uint64
 }
 
 // MinimaxSearchConfig controls search depth and optional tree-pruning aids.
@@ -96,6 +100,8 @@ type MinimaxSearchConfig struct {
 	UseLateMoveRed        bool
 	LateMoveThreshold     int
 	LateMoveReduction     int
+	HandWinPredictor      *HandWinPredictor
+	HandWinMinSamples     uint64
 }
 
 // DefaultMinimaxSearchConfig returns the strongest settings from the
@@ -104,12 +110,13 @@ func DefaultMinimaxSearchConfig(depth int) MinimaxSearchConfig {
 	return MinimaxSearchConfig{
 		BaseDepth:             depth,
 		MaxDepth:              30,
-		DepthIncreasePerTrick: 3,
+		DepthIncreasePerTrick: DefaultMinimaxDepthIncreasePerTrick,
 		UseMoveOrdering:       true,
 		UseTransTable:         true,
 		UseLateMoveRed:        true,
-		LateMoveThreshold:     1,
-		LateMoveReduction:     6,
+		LateMoveThreshold:     2,
+		LateMoveReduction:     4,
+		HandWinMinSamples:     8,
 	}
 }
 
@@ -121,10 +128,12 @@ func NewPerfectInfoMinimaxStrategyWithDepth(depth int) *PerfectInfoMinimaxStrate
 // NewPerfectInfoMinimaxStrategyWithConfig creates a strategy with explicit
 // search and pruning settings.
 func NewPerfectInfoMinimaxStrategyWithConfig(config MinimaxSearchConfig) *PerfectInfoMinimaxStrategy {
+	if config.HandWinPredictor != nil && config.HandWinMinSamples == 0 {
+		config.HandWinMinSamples = 8
+	}
 	return &PerfectInfoMinimaxStrategy{
 		baseDepth:             config.BaseDepth,
 		depthIncreasePerTrick: config.DepthIncreasePerTrick,
-		currentDepth:          config.BaseDepth,
 		maxDepth:              config.MaxDepth,
 		transTable:            make(map[uint64]*TranspositionEntry),
 		useMoveOrdering:       config.UseMoveOrdering,
@@ -132,11 +141,24 @@ func NewPerfectInfoMinimaxStrategyWithConfig(config MinimaxSearchConfig) *Perfec
 		useLateMoveRed:        config.UseLateMoveRed,
 		lateMoveThreshold:     config.LateMoveThreshold,
 		lateMoveReduction:     config.LateMoveReduction,
+		handWinPredictor:      config.HandWinPredictor,
+		handWinMinSamples:     config.HandWinMinSamples,
 	}
 }
 
 func (m *PerfectInfoMinimaxStrategy) GetName() string {
 	return "PerfectInfoMinimax"
+}
+
+func (m *PerfectInfoMinimaxStrategy) Clone() *PerfectInfoMinimaxStrategy {
+	return NewPerfectInfoMinimaxStrategyWithConfig(MinimaxSearchConfig{
+		BaseDepth: m.baseDepth, MaxDepth: m.maxDepth,
+		DepthIncreasePerTrick: m.depthIncreasePerTrick,
+		UseMoveOrdering:       m.useMoveOrdering, UseTransTable: m.useTransTable,
+		UseLateMoveRed: m.useLateMoveRed, LateMoveThreshold: m.lateMoveThreshold,
+		LateMoveReduction: m.lateMoveReduction, HandWinPredictor: m.handWinPredictor,
+		HandWinMinSamples: m.handWinMinSamples,
+	})
 }
 
 func (d *PerfectInfoMinimaxStrategy) SearchDepth(state *game.GameState) int {
@@ -159,7 +181,7 @@ func (d *PerfectInfoMinimaxStrategy) SearchDepth(state *game.GameState) int {
 func (m *PerfectInfoMinimaxStrategy) ScoreMoves(state *game.GameState, validMoves []game.Card) []float64 {
 	scores := make([]float64, len(validMoves))
 	root := state.CurrentPlayer
-	m.currentDepth = m.SearchDepth(state)
+	currentDepth := m.SearchDepth(state)
 
 	for i, move := range validMoves {
 		if m.useTransTable {
@@ -171,9 +193,9 @@ func (m *PerfectInfoMinimaxStrategy) ScoreMoves(state *game.GameState, validMove
 		next := state.Clone()
 		m.playAndResolve(next, move)
 		if state.Mode == game.ModeRamsch {
-			scores[i] = m.minimaxRamsch(next, m.currentDepth-1, math.Inf(-1), math.Inf(1), root)
+			scores[i] = m.minimaxRamsch(next, currentDepth-1, math.Inf(-1), math.Inf(1), root)
 		} else {
-			scores[i] = m.minimax(next, m.currentDepth-1, math.Inf(-1), math.Inf(1))
+			scores[i] = m.minimax(next, currentDepth-1, math.Inf(-1), math.Inf(1))
 		}
 	}
 
@@ -184,6 +206,7 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 	if len(validMoves) == 1 {
 		return validMoves[0]
 	}
+	currentDepth := m.SearchDepth(state)
 
 	// Clear transposition table for new move selection
 	if m.useTransTable {
@@ -194,7 +217,7 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 
 	currentPlayer := state.CurrentPlayer
 	if state.Mode == game.ModeRamsch {
-		return m.selectRamschMove(state, validMoves, currentPlayer)
+		return m.selectRamschMove(state, validMoves, currentPlayer, currentDepth)
 	}
 	isDeclarer := state.Declarer != nil && currentPlayer == *state.Declarer
 
@@ -220,7 +243,7 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 		m.playAndResolve(nextState, move)
 
 		// Evaluate this move
-		value := m.minimax(nextState, m.currentDepth-1, alpha, beta)
+		value := m.minimax(nextState, currentDepth-1, alpha, beta)
 
 		// Declarer maximizes, defenders minimize
 		if isDeclarer {
@@ -229,24 +252,34 @@ func (m *PerfectInfoMinimaxStrategy) SelectMove(state *game.GameState, validMove
 				bestMove = move
 			}
 			alpha = math.Max(alpha, value)
+			// Win probabilities cannot exceed one, so no remaining move can
+			// improve on a proven declarer win.
+			if bestValue >= 1.0 {
+				break
+			}
 		} else {
 			if value < bestValue {
 				bestValue = value
 				bestMove = move
 			}
 			beta = math.Min(beta, value)
+			// Defenders minimize declarer win probability. Zero is therefore
+			// a proven defender win and cannot be improved upon.
+			if bestValue <= 0.0 {
+				break
+			}
 		}
 	}
 
 	return bestMove
 }
 
-func (m *PerfectInfoMinimaxStrategy) selectRamschMove(state *game.GameState, validMoves []game.Card, root game.GamePosition) game.Card {
+func (m *PerfectInfoMinimaxStrategy) selectRamschMove(state *game.GameState, validMoves []game.Card, root game.GamePosition, depth int) game.Card {
 	bestMove, bestValue := validMoves[0], math.Inf(-1)
 	for _, move := range validMoves {
 		next := state.Clone()
 		m.playAndResolve(next, move)
-		value := m.minimaxRamsch(next, m.currentDepth-1, math.Inf(-1), math.Inf(1), root)
+		value := m.minimaxRamsch(next, depth-1, math.Inf(-1), math.Inf(1), root)
 		if value > bestValue {
 			bestMove, bestValue = move, value
 		}
@@ -360,6 +393,7 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 	var value float64
 	var bestMove game.Card
 	hasBest := false
+	provenResult := false
 	if isDeclarer {
 		// Maximizing player (declarer)
 		maxValue := math.Inf(-1)
@@ -381,6 +415,10 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 			}
 			alpha = math.Max(alpha, value)
 
+			if maxValue >= 1.0 {
+				provenResult = true
+				break // No sibling can improve on a proven declarer win.
+			}
 			if beta <= alpha {
 				break // Beta cutoff
 			}
@@ -407,6 +445,10 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 			}
 			beta = math.Min(beta, value)
 
+			if minValue <= 0.0 {
+				provenResult = true
+				break // No sibling can improve on a proven defender win.
+			}
 			if beta <= alpha {
 				break // Alpha cutoff
 			}
@@ -417,7 +459,9 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 	// Store in transposition table
 	if m.useTransTable {
 		nodeType := transExact
-		if value <= originalAlpha {
+		if provenResult {
+			nodeType = transExact
+		} else if value <= originalAlpha {
 			nodeType = transUpper
 		} else if value >= originalBeta {
 			nodeType = transLower
@@ -505,9 +549,37 @@ func hashGameMode(mode game.GameMode) uint64 {
 	return hash
 }
 
-// EvaluateState returns the calibrated declarer win probability for this state.
+// EvaluateState returns estimated declarer win probability for this state.
 func (m *PerfectInfoMinimaxStrategy) EvaluateState(state *game.GameState) float64 {
-	return m.evaluate(state)
+	return m.EvaluateStateEstimate(state).WinProbability
+}
+
+// MinimaxWinEstimate reports win probability and empirical confidence error.
+type MinimaxWinEstimate struct {
+	WinProbability       float64
+	Error                float64
+	Samples              uint64
+	PredictorLevel       int
+	FromHandWinPredictor bool
+}
+
+func (m *PerfectInfoMinimaxStrategy) EvaluateStateEstimate(state *game.GameState) MinimaxWinEstimate {
+	if state.Declarer == nil {
+		return MinimaxWinEstimate{WinProbability: 0.5, Error: 0.5}
+	}
+	if state.Phase == game.PhaseComplete {
+		return MinimaxWinEstimate{WinProbability: m.evaluateTerminalProbability(state)}
+	}
+	if m.handWinPredictor != nil {
+		if estimate, ok := m.handWinPredictor.Lookup(state, m.handWinMinSamples); ok {
+			return MinimaxWinEstimate{
+				WinProbability: estimate.WinProbability, Error: estimate.Error,
+				Samples: estimate.Samples, PredictorLevel: estimate.Level, FromHandWinPredictor: true,
+			}
+		}
+	}
+	probability := calibratedMinimaxWinProbability(m.evaluateFeatureValues(state))
+	return MinimaxWinEstimate{WinProbability: probability, Error: math.Sqrt(probability * (1 - probability))}
 }
 
 // EvaluateFeatures exposes the calibrated model inputs for data-driven fitting.
@@ -518,16 +590,9 @@ func (m *PerfectInfoMinimaxStrategy) EvaluateFeatures(state *game.GameState) Min
 	}
 }
 
-// evaluate returns calibrated declarer win probability for the current state.
+// evaluate returns declarer win probability.
 func (m *PerfectInfoMinimaxStrategy) evaluate(state *game.GameState) float64 {
-	if state.Declarer == nil {
-		return 0.5
-	}
-	if state.Phase == game.PhaseComplete {
-		return m.evaluateTerminalProbability(state)
-	}
-
-	return calibratedMinimaxWinProbability(m.evaluateFeatureValues(state))
+	return m.EvaluateStateEstimate(state).WinProbability
 }
 
 func calibratedMinimaxWinProbability(features []float64) float64 {
@@ -574,19 +639,6 @@ func (m *PerfectInfoMinimaxStrategy) evaluateFeatureValues(state *game.GameState
 	if state.Declarer == nil {
 		return values
 	}
-	if state.Phase == game.PhaseComplete {
-		if m.evaluateTerminalProbability(state) == 1 {
-			for i := range values {
-				values[i] = 1
-			}
-		} else {
-			for i := range values {
-				values[i] = -1
-			}
-		}
-		return values
-	}
-
 	declarer := *state.Declarer
 	pointMargin, remainingMaterial, handPotential, currentTrick := m.evaluateMaterialParts(state, declarer)
 	tricksRemaining := 0

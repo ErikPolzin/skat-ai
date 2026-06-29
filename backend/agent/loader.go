@@ -125,6 +125,18 @@ func SetAgentForPlayer(player *game.PlayerState, agent *SkatAgent) {
 	agentCacheMu.Unlock()
 }
 
+// RemoveAgentForPlayer removes a transient player's cached agent. Offline
+// simulations create unique player IDs for every game, so callers should use
+// this when the game is complete rather than retaining every simulated agent.
+func RemoveAgentForPlayer(player *game.PlayerState) {
+	if player == nil {
+		return
+	}
+	agentCacheMu.Lock()
+	delete(agentCache, player.ID)
+	agentCacheMu.Unlock()
+}
+
 // ClearAgentCache clears the agent cache (useful for testing or hot-reloading configs)
 func ClearAgentCache() {
 	agentCacheMu.Lock()

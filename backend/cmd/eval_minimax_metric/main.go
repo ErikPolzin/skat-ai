@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"runtime"
 	"skat/agent"
 	"skat/agent/strategies"
 	"skat/game"
 	"sort"
+	"sync"
 )
 
 type observation struct {
@@ -31,76 +33,109 @@ type logisticModel struct {
 func main() {
 	games := flag.Int("games", 500, "number of completed non-Ramsch games to sample")
 	seed := flag.Int64("seed", 1, "random seed")
-	setup := flag.String("setup", "heuristic", "game setup: heuristic or random-contract")
+	setup := flag.String("setup", "heuristic", "card-play sampling policy: heuristic, minimax, or random-contract")
+	minimaxDepth := flag.Int("minimax-depth", strategies.DefaultMinimaxBaseDepth, "base search depth used by minimax sampling")
+	workers := flag.Int("workers", runtime.NumCPU(), "parallel game-sampling workers")
 	binWidth := flag.Float64("bin-width", 0.1, "probability width for calibration buckets")
 	flag.Parse()
 
 	rand.Seed(*seed)
 	metric := strategies.NewPerfectInfoMinimaxStrategyWithDepth(1)
-	observations := collectObservations(*games, *setup, metric)
+	observations := collectObservations(*games, *setup, *minimaxDepth, *workers, metric)
 	printSummary(observations, *binWidth)
 }
 
-func collectObservations(targetGames int, setup string, metric *strategies.PerfectInfoMinimaxStrategy) []observation {
-	var observations []observation
-	completed := 0
-	attempts := 0
-
-	for completed < targetGames {
-		attempts++
-		g := newSampleGame(setup)
-		if g == nil {
-			continue
-		}
-
-		var gamePredictions []float64
-		var gameFeatures [][]float64
-		for g.Phase == game.PhasePlaying {
-			gamePredictions = append(gamePredictions, metric.EvaluateState(g))
-			features := metric.EvaluateFeatures(g)
-			gameFeatures = append(gameFeatures, features.Values)
-			moves := g.GetValidMoves()
-			currentAgent := agent.MustGetAgentForPlayer(g.GetCurrentPlayer())
-			move := currentAgent.SelectMove(g, moves)
-			if _, err := g.PlayCard(move); err != nil {
-				panic(err)
-			}
-			if len(g.Trick) == 3 {
-				trick := append([]game.Card{}, g.Trick...)
-				if _, err := g.ResolveTrick(); err != nil {
-					panic(err)
-				}
-				for _, player := range g.Players {
-					playerAgent := agent.MustGetAgentForPlayer(player)
-					if playerAgent != nil {
-						playerAgent.OnTrickComplete(trick)
+func collectObservations(targetGames int, setup string, minimaxDepth, workers int, metric *strategies.PerfectInfoMinimaxStrategy) []observation {
+	if targetGames <= 0 {
+		return nil
+	}
+	workers = max(1, min(workers, targetGames))
+	jobs := make(chan struct{})
+	results := make(chan []observation, workers)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range jobs {
+				for {
+					g := newSampleGame(setup, minimaxDepth)
+					if g != nil {
+						results <- collectGameObservations(g, metric)
+						break
 					}
 				}
 			}
+		}()
+	}
+	go func() {
+		for range targetGames {
+			jobs <- struct{}{}
 		}
+		close(jobs)
+		wg.Wait()
+		close(results)
+	}()
 
-		declarerWon, _, _ := g.GetGameResult()
-		for i, prediction := range gamePredictions {
-			observations = append(observations, observation{
-				predicted:   prediction,
-				features:    gameFeatures[i],
-				declarerWon: declarerWon,
-			})
-		}
-		completed++
-		if attempts > targetGames*20 {
-			break
-		}
+	observations := make([]observation, 0, targetGames*30)
+	for gameObservations := range results {
+		observations = append(observations, gameObservations...)
 	}
 	return observations
 }
 
-func newSampleGame(setup string) *game.GameState {
+func collectGameObservations(g *game.GameState, metric *strategies.PerfectInfoMinimaxStrategy) []observation {
+	var predictions []float64
+	var featureValues [][]float64
+	for g.Phase == game.PhasePlaying {
+		predictions = append(predictions, metric.EvaluateState(g))
+		featureValues = append(featureValues, metric.EvaluateFeatures(g).Values)
+		moves := g.GetValidMoves()
+		currentAgent := agent.MustGetAgentForPlayer(g.GetCurrentPlayer())
+		move := currentAgent.SelectMove(g, moves)
+		if _, err := g.PlayCard(move); err != nil {
+			panic(err)
+		}
+		if len(g.Trick) == 3 {
+			trick := append([]game.Card{}, g.Trick...)
+			if _, err := g.ResolveTrick(); err != nil {
+				panic(err)
+			}
+			for _, player := range g.Players {
+				if playerAgent := agent.MustGetAgentForPlayer(player); playerAgent != nil {
+					playerAgent.OnTrickComplete(trick)
+				}
+			}
+		}
+	}
+
+	declarerWon, _, _ := g.GetGameResult()
+	if g.Overbid {
+		declarerWon = false
+	}
+	observations := make([]observation, len(predictions))
+	for i, prediction := range predictions {
+		observations[i] = observation{predicted: prediction, features: featureValues[i], declarerWon: declarerWon}
+	}
+	return observations
+}
+
+func newSampleGame(setup string, minimaxDepth int) *game.GameState {
 	base := agent.NewHeuristicAgent("heuristic")
+	if setup == "minimax" {
+		var err error
+		base, err = agent.NewHybridAgent("minimax-self-play", agent.HybridAgentConfig{
+			BiddingType: "heuristic", GameChoiceType: "heuristic", CardPlayType: "minimax",
+			MinimaxDepth: minimaxDepth, MinimaxSearch: minimaxSelfPlaySearchConfig(minimaxDepth),
+		})
+		if err != nil {
+			panic(err)
+		}
+	}
 	config := agent.NewThreeWayConfig(base, base.Clone(), base.Clone())
 	g := agent.WithAgentPlayers(game.NewGame(), config).WithCardsDealt()
 
-	if setup == "heuristic" {
+	if setup == "heuristic" || setup == "minimax" {
 		g = agent.WithAgentBidding(g, config)
 		if g.Declarer == nil || g.Phase != game.PhaseSkatExchange {
 			return nil
@@ -113,24 +148,29 @@ func newSampleGame(setup string) *game.GameState {
 		}
 		return g
 	}
+	if setup != "random-contract" {
+		panic(fmt.Sprintf("unknown setup %q", setup))
+	}
 
 	declarer := game.GamePosition(rand.Intn(3))
 	g.Declarer = &declarer
 	switch rand.Intn(6) {
 	case 0:
-		g.Mode = game.ModeGrand
-		g.TrumpSuit = game.NoSuit
+		g.Mode, g.TrumpSuit = game.ModeGrand, game.NoSuit
 	case 1:
-		g.Mode = game.ModeNull
-		g.TrumpSuit = game.NoSuit
+		g.Mode, g.TrumpSuit = game.ModeNull, game.NoSuit
 	default:
 		g.Mode = game.ModeSuit
 		g.TrumpSuit = []game.Suit{game.Clubs, game.Spades, game.Hearts, game.Diamonds}[rand.Intn(4)]
 	}
 	g.Phase = game.PhasePlaying
-	g.CurrentPlayer = game.Listener
-	g.TrickStarter = game.Listener
+	g.CurrentPlayer, g.TrickStarter = game.Listener, game.Listener
 	return g
+}
+
+func minimaxSelfPlaySearchConfig(depth int) *strategies.MinimaxSearchConfig {
+	config := strategies.DefaultMinimaxSearchConfig(depth)
+	return &config
 }
 
 func printSummary(observations []observation, binWidth float64) {
@@ -141,14 +181,11 @@ func printSummary(observations []observation, binWidth float64) {
 	if binWidth <= 0 {
 		binWidth = 0.1
 	}
-
 	buckets := make(map[int]*bucketStats)
 	fitted := fitLogisticModel(observations)
 	wins := 0
-	directBrier := 0.0
-	directLogLoss := 0.0
-	fittedBrier := 0.0
-	fittedLogLoss := 0.0
+	directBrier, directLogLoss := 0.0, 0.0
+	fittedBrier, fittedLogLoss := 0.0, 0.0
 	for _, obs := range observations {
 		key := int(math.Floor(obs.predicted / binWidth))
 		bucket := buckets[key]
@@ -156,29 +193,30 @@ func printSummary(observations []observation, binWidth float64) {
 			bucket = &bucketStats{}
 			buckets[key] = bucket
 		}
-		bucket.count++
 		actual := 0.0
 		if obs.declarerWon {
+			actual = 1
 			wins++
 			bucket.wins++
-			actual = 1
 		}
+		bucket.count++
 		bucket.sumPredicted += obs.predicted
 		err := obs.predicted - actual
 		directBrier += err * err
 		directLogLoss += binaryLogLoss(obs.predicted, actual)
-		fittedPredicted := fitted.predict(obs.features)
-		fittedErr := fittedPredicted - actual
+		fittedPrediction := fitted.predict(obs.features)
+		fittedErr := fittedPrediction - actual
 		fittedBrier += fittedErr * fittedErr
-		fittedLogLoss += binaryLogLoss(fittedPredicted, actual)
+		fittedLogLoss += binaryLogLoss(fittedPrediction, actual)
 	}
 
+	n := float64(len(observations))
 	fmt.Printf("observations: %d\n", len(observations))
-	fmt.Printf("declarer win rate: %.3f\n", float64(wins)/float64(len(observations)))
-	fmt.Printf("direct probability brier score: %.4f\n", directBrier/float64(len(observations)))
-	fmt.Printf("direct probability log loss: %.4f\n", directLogLoss/float64(len(observations)))
-	fmt.Printf("fitted feature brier score: %.4f\n", fittedBrier/float64(len(observations)))
-	fmt.Printf("fitted feature log loss: %.4f\n\n", fittedLogLoss/float64(len(observations)))
+	fmt.Printf("declarer win rate: %.3f\n", float64(wins)/n)
+	fmt.Printf("direct probability brier score: %.4f\n", directBrier/n)
+	fmt.Printf("direct probability log loss: %.4f\n", directLogLoss/n)
+	fmt.Printf("fitted feature brier score: %.4f\n", fittedBrier/n)
+	fmt.Printf("fitted feature log loss: %.4f\n\n", fittedLogLoss/n)
 	printFittedModel(fitted, observations)
 	fmt.Println("bucket_low,bucket_high,count,avg_predicted_win_rate,observed_win_rate")
 
@@ -189,35 +227,23 @@ func printSummary(observations []observation, binWidth float64) {
 	sort.Ints(keys)
 	for _, key := range keys {
 		bucket := buckets[key]
-		low := float64(key) * binWidth
-		high := low + binWidth
-		fmt.Printf("%.2f,%.2f,%d,%.3f,%.3f\n",
-			low,
-			high,
-			bucket.count,
-			bucket.sumPredicted/float64(bucket.count),
-			float64(bucket.wins)/float64(bucket.count),
-		)
+		fmt.Printf("%.2f,%.2f,%d,%.3f,%.3f\n", float64(key)*binWidth, float64(key+1)*binWidth,
+			bucket.count, bucket.sumPredicted/float64(bucket.count), float64(bucket.wins)/float64(bucket.count))
 	}
 }
 
 func fitLogisticModel(observations []observation) logisticModel {
-	if len(observations) == 0 {
-		return logisticModel{}
-	}
 	featureCount := len(observations[0].features)
 	model := logisticModel{coefficients: make([]float64, featureCount)}
-	winRate := 0.0
+	wins := 0.0
 	for _, obs := range observations {
 		if obs.declarerWon {
-			winRate++
+			wins++
 		}
 	}
-	winRate = clampProbability(winRate / float64(len(observations)))
+	winRate := clampProbability(wins / float64(len(observations)))
 	model.intercept = math.Log(winRate / (1 - winRate))
-
-	learningRate := 0.25
-	l2 := 0.001
+	const learningRate, l2 = 0.25, 0.001
 	for step := 0; step < 2500; step++ {
 		gradIntercept := 0.0
 		gradCoefficients := make([]float64, featureCount)
@@ -236,12 +262,9 @@ func fitLogisticModel(observations []observation) logisticModel {
 		model.intercept -= learningRate * gradIntercept * scale
 		maxStep := math.Abs(learningRate * gradIntercept * scale)
 		for i := range model.coefficients {
-			grad := gradCoefficients[i]*scale + l2*model.coefficients[i]
-			update := learningRate * grad
+			update := learningRate * (gradCoefficients[i]*scale + l2*model.coefficients[i])
 			model.coefficients[i] -= update
-			if math.Abs(update) > maxStep {
-				maxStep = math.Abs(update)
-			}
+			maxStep = math.Max(maxStep, math.Abs(update))
 		}
 		if maxStep < 1e-7 {
 			break
@@ -258,22 +281,15 @@ func (m logisticModel) predict(features []float64) float64 {
 		}
 		logit += m.coefficients[i] * value
 	}
-	return sigmoid(logit)
-}
-
-func sigmoid(x float64) float64 {
-	if x >= 0 {
-		z := math.Exp(-x)
+	if logit >= 0 {
+		z := math.Exp(-logit)
 		return 1 / (1 + z)
 	}
-	z := math.Exp(x)
+	z := math.Exp(logit)
 	return z / (1 + z)
 }
 
 func printFittedModel(model logisticModel, observations []observation) {
-	if len(observations) == 0 {
-		return
-	}
 	metric := strategies.NewPerfectInfoMinimaxStrategyWithDepth(1)
 	names := metric.EvaluateFeatures(&game.GameState{}).Names
 	fmt.Printf("fitted intercept: %.6f\n", model.intercept)
@@ -307,13 +323,7 @@ func binaryLogLoss(predicted, actual float64) float64 {
 	return -math.Log(1 - p)
 }
 
-func clampProbability(p float64) float64 {
+func clampProbability(probability float64) float64 {
 	const epsilon = 1e-9
-	if p < epsilon {
-		return epsilon
-	}
-	if p > 1-epsilon {
-		return 1 - epsilon
-	}
-	return p
+	return math.Max(epsilon, math.Min(1-epsilon, probability))
 }

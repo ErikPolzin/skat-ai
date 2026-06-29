@@ -101,3 +101,13 @@ func TestMinimaxFinishesTrickAtDepthCutoff(t *testing.T) {
 		t.Fatalf("cutoff value = %.3f, want exact terminal win probability after completing the trick", value)
 	}
 }
+
+func TestDefaultMinimaxSearchDepthSettings(t *testing.T) {
+	config := DefaultMinimaxSearchConfig(DefaultMinimaxBaseDepth)
+	if config.BaseDepth != 12 {
+		t.Fatalf("base depth = %d, want 12", config.BaseDepth)
+	}
+	if config.DepthIncreasePerTrick != 2 {
+		t.Fatalf("depth increase = %d, want 2", config.DepthIncreasePerTrick)
+	}
+}

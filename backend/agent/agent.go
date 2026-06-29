@@ -156,6 +156,8 @@ func (sa *SkatAgent) Clone() *SkatAgent {
 		clone.cardPlayStrategy = neuralCard.Clone()
 	} else if heuristicCard, ok := sa.cardPlayStrategy.(*strategies.HeuristicCardPlayStrategy); ok {
 		clone.cardPlayStrategy = heuristicCard.Clone()
+	} else if minimaxCard, ok := sa.cardPlayStrategy.(*strategies.PerfectInfoMinimaxStrategy); ok {
+		clone.cardPlayStrategy = minimaxCard.Clone()
 	} else {
 		clone.cardPlayStrategy = sa.cardPlayStrategy // Share strategy if not cloneable
 	}
@@ -272,7 +274,7 @@ func NewHybridAgent(name string, config HybridAgentConfig) (*SkatAgent, error) {
 	case "minimax":
 		depth := config.MinimaxDepth
 		if depth == 0 {
-			depth = 15 // Uses calibrated leaf evaluation plus aggressive late-move reduction
+			depth = strategies.DefaultMinimaxBaseDepth
 		}
 		if config.MinimaxSearch != nil {
 			searchConfig := *config.MinimaxSearch

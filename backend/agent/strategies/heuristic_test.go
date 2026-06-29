@@ -108,3 +108,67 @@ func TestDefender_DoesNotLeadTrump(t *testing.T) {
 		t.Errorf("Defender should not lead trump with weak holdings, got %v", move)
 	}
 }
+
+func TestNullDefenderLeavesDeclarerWinning(t *testing.T) {
+	declarer := game.Listener
+	strategy := NewHeuristicCardPlayStrategy()
+	clubsEight := game.Card{Suit: game.Clubs, Rank: game.Eight}
+	clubsTen := game.Card{Suit: game.Clubs, Rank: game.Ten}
+	gs := nullTestState(declarer, game.Speaker, game.Dealer, game.Cards{
+		{Suit: game.Clubs, Rank: game.Seven},
+		{Suit: game.Clubs, Rank: game.Nine},
+	})
+	gs.Players[game.Speaker].Hand = game.Cards{clubsEight, clubsTen}
+
+	move := strategy.selectNullDefenderMove(gs, gs.GetValidMoves())
+	if move != clubsEight {
+		t.Fatalf("defender move = %v, want %v to leave declarer winning", move, clubsEight)
+	}
+}
+
+func TestNullDefenderPlaysUnderPartnerBeforeDeclarer(t *testing.T) {
+	declarer := game.Speaker
+	strategy := NewHeuristicCardPlayStrategy()
+	clubsSeven := game.Card{Suit: game.Clubs, Rank: game.Seven}
+	clubsTen := game.Card{Suit: game.Clubs, Rank: game.Ten}
+	gs := nullTestState(declarer, game.Listener, game.Dealer, game.Cards{
+		{Suit: game.Clubs, Rank: game.Eight},
+	})
+	gs.Players[game.Listener].Hand = game.Cards{clubsSeven, clubsTen}
+	gs.Players[game.Speaker].Hand = game.Cards{{Suit: game.Clubs, Rank: game.Nine}}
+
+	move := strategy.selectNullDefenderMove(gs, gs.GetValidMoves())
+	if move != clubsSeven {
+		t.Fatalf("defender move = %v, want %v to force declarer over partner", move, clubsSeven)
+	}
+}
+
+func TestNullDefenderLeadsLowFromLongestSuit(t *testing.T) {
+	declarer := game.Listener
+	strategy := NewHeuristicCardPlayStrategy()
+	clubsSeven := game.Card{Suit: game.Clubs, Rank: game.Seven}
+	clubsNine := game.Card{Suit: game.Clubs, Rank: game.Nine}
+	spadesEight := game.Card{Suit: game.Spades, Rank: game.Eight}
+	gs := nullTestState(declarer, game.Dealer, game.Dealer, nil)
+	gs.Players[game.Dealer].Hand = game.Cards{spadesEight, clubsNine, clubsSeven}
+
+	move := strategy.selectNullDefenderMove(gs, gs.GetValidMoves())
+	if move != clubsSeven {
+		t.Fatalf("defender lead = %v, want low card %v from longest suit", move, clubsSeven)
+	}
+}
+
+func nullTestState(declarer, current, starter game.GamePosition, trick game.Cards) *game.GameState {
+	gs := &game.GameState{
+		Mode:          game.ModeNull,
+		Phase:         game.PhasePlaying,
+		Declarer:      &declarer,
+		CurrentPlayer: current,
+		TrickStarter:  starter,
+		Trick:         trick,
+	}
+	for position := game.Dealer; position <= game.Speaker; position++ {
+		gs.Players[position] = &game.PlayerState{Hand: game.Cards{}}
+	}
+	return gs
+}

@@ -403,7 +403,7 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 
 			// Late move reduction: search less promising moves at reduced depth
 			searchDepth := depth - 1
-			if m.useLateMoveRed && i >= m.lateMoveThreshold && depth >= m.lateMoveReduction+1 {
+			if m.useLateMoveRed && state.Mode != game.ModeNull && i >= m.lateMoveThreshold && depth >= m.lateMoveReduction+1 {
 				searchDepth = depth - 1 - m.lateMoveReduction
 			}
 
@@ -433,7 +433,7 @@ func (m *PerfectInfoMinimaxStrategy) minimax(state *game.GameState, depth int, a
 
 			// Late move reduction
 			searchDepth := depth - 1
-			if m.useLateMoveRed && i >= m.lateMoveThreshold && depth >= m.lateMoveReduction+1 {
+			if m.useLateMoveRed && state.Mode != game.ModeNull && i >= m.lateMoveThreshold && depth >= m.lateMoveReduction+1 {
 				searchDepth = depth - 1 - m.lateMoveReduction
 			}
 
@@ -570,6 +570,10 @@ func (m *PerfectInfoMinimaxStrategy) EvaluateStateEstimate(state *game.GameState
 	if state.Phase == game.PhaseComplete {
 		return MinimaxWinEstimate{WinProbability: m.evaluateTerminalProbability(state)}
 	}
+	if state.Mode == game.ModeNull {
+		probability := m.evaluateNullStateProbability(state)
+		return MinimaxWinEstimate{WinProbability: probability, Error: math.Sqrt(probability * (1 - probability))}
+	}
 	if m.handWinPredictor != nil {
 		if estimate, ok := m.handWinPredictor.Lookup(state, m.handWinMinSamples); ok {
 			return MinimaxWinEstimate{
@@ -580,6 +584,26 @@ func (m *PerfectInfoMinimaxStrategy) EvaluateStateEstimate(state *game.GameState
 	}
 	probability := calibratedMinimaxWinProbability(m.evaluateFeatureValues(state))
 	return MinimaxWinEstimate{WinProbability: probability, Error: math.Sqrt(probability * (1 - probability))}
+}
+
+// evaluateNullStateProbability avoids applying point-game calibration to Null.
+// Card points, trump control, and a positive high-card balance all have either
+// no meaning or the opposite meaning when taking a single trick loses. The
+// hand estimator supplies a null-specific risk model; surviving later into the
+// game adds a modest bonus without overwhelming the remaining hand shape.
+func (m *PerfectInfoMinimaxStrategy) evaluateNullStateProbability(state *game.GameState) float64 {
+	declarerHand := state.Players[*state.Declarer].Hand
+	probability := NewHeuristicContractWinProbabilityEstimator().EstimateWinProbability(
+		declarerHand, game.ModeNull, game.NoSuit,
+	)
+	progress := 1.0 - float64(len(declarerHand))/10.0
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 1 {
+		progress = 1
+	}
+	return probability + (1-probability)*0.35*progress
 }
 
 // EvaluateFeatures exposes the calibrated model inputs for data-driven fitting.

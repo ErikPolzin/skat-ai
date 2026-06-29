@@ -581,8 +581,7 @@ func (h *HeuristicCardPlayStrategy) selectNullDefenderMove(gs *game.GameState, v
 
 	// Leading the trick
 	if len(trick) == 0 {
-		// Lead highest card to try to force declarer to win
-		return validMoves[len(validMoves)-1]
+		return nullDefenderPressureLead(validMoves)
 	}
 
 	// Following in trick
@@ -602,7 +601,9 @@ func (h *HeuristicCardPlayStrategy) selectNullDefenderMove(gs *game.GameState, v
 	}
 
 	if declarerPlayed {
-		// Declarer already played - check if they're winning
+		// If the declarer is already losing, safely unload our strongest card.
+		// If they are winning, play the highest card that stays underneath them
+		// instead of overtaking and rescuing them.
 		declarerWinning := true
 		for _, card := range trick {
 			if card != declarerCard && card.BeatsInNull(declarerCard, leadSuit) {
@@ -611,48 +612,38 @@ func (h *HeuristicCardPlayStrategy) selectNullDefenderMove(gs *game.GameState, v
 			}
 		}
 
-		if declarerWinning {
-			// Declarer is winning - try to take the trick with lowest winning card
-			for _, move := range validMoves {
-				if move.BeatsInNull(declarerCard, leadSuit) {
-					return move
-				}
-			}
-			// Can't beat - play lowest
-			return validMoves[0]
-		} else {
-			// Declarer is losing - play lowest card to not interfere
-			return validMoves[0]
-		}
-	} else {
-		// Declarer hasn't played yet
-		// Check if partner is already winning with a high card
-		// Find highest card currently in trick
-		highestInTrick := trick[0]
-		for _, card := range trick[1:] {
-			if card.BeatsInNull(highestInTrick, leadSuit) {
-				highestInTrick = card
-			}
-		}
-
-		// Check if any of our cards can beat partner's high card
-		// If not, play low to let partner force declarer
-		canBeatPartner := false
-		for _, move := range validMoves {
-			if move.BeatsInNull(highestInTrick, leadSuit) {
-				canBeatPartner = true
-				break
-			}
-		}
-
-		if canBeatPartner {
-			// We can beat partner - play our highest to force declarer even more
+		if !declarerWinning {
 			return validMoves[len(validMoves)-1]
-		} else {
-			// Can't beat partner's high card - play lowest to let partner win and force declarer
-			return validMoves[0]
+		}
+		for i := len(validMoves) - 1; i >= 0; i-- {
+			if !validMoves[i].BeatsInNull(declarerCard, leadSuit) {
+				return validMoves[i]
+			}
+		}
+		return validMoves[0]
+	}
+
+	// Before the declarer plays, a low card applies pressure; a high card merely
+	// gives them more room to duck under the trick.
+	return validMoves[0]
+}
+
+// nullDefenderPressureLead leads low from the defender's longest suit. It uses
+// only the defender's own cards, preserving imperfect-information play.
+func nullDefenderPressureLead(moves []game.Card) game.Card {
+	var suitCounts [5]int
+	for _, move := range moves {
+		suitCounts[move.Suit]++
+	}
+	best := moves[0]
+	bestScore := suitCounts[best.Suit]*10 - best.NullRank()
+	for _, move := range moves {
+		score := suitCounts[move.Suit]*10 - move.NullRank()
+		if score > bestScore {
+			best, bestScore = move, score
 		}
 	}
+	return best
 }
 
 func (h *HeuristicCardPlayStrategy) selectDeclarerMove(gs *game.GameState, validMoves []game.Card) game.Card {
@@ -929,6 +920,10 @@ func heuristicOrder(gs *game.GameState, moves []game.Card, isDeclarer bool) {
 	if len(moves) <= 1 {
 		return
 	}
+	if gs.Mode == game.ModeNull {
+		scoreNullMoves(gs, moves, isDeclarer)
+		return
+	}
 
 	trick := gs.Trick
 	isTrumpCache := make([]bool, len(moves))
@@ -960,6 +955,44 @@ func heuristicOrder(gs *game.GameState, moves []game.Card, isDeclarer bool) {
 	})
 	for i := range moves {
 		moves[i] = scoredMoves[i].card
+	}
+}
+
+// scoreNullMoves orders moves according to the inverted objective of a Null
+// game. The generic point-game ordering prioritizes taking tricks for both
+// sides, which is exactly backwards for the declarer and often backwards for
+// defenders trying to leave the declarer on lead.
+func scoreNullMoves(gs *game.GameState, moves []game.Card, isDeclarer bool) {
+	type scoredMove struct {
+		card  game.Card
+		score int
+	}
+	scored := make([]scoredMove, len(moves))
+	for i, move := range moves {
+		next := gs.Clone()
+		_, _ = next.PlayCard(move)
+		winner := next.Trick.TrickWinner(next.TrickStarter, next.Mode, next.TrumpSuit)
+		declarerWinning := next.Declarer != nil && winner == *next.Declarer
+
+		score := -move.NullRank()
+		if isDeclarer {
+			if declarerWinning {
+				score -= 1000
+			} else {
+				// Safely unload the highest card that still loses the trick.
+				score = 1000 + move.NullRank()
+			}
+		} else if declarerWinning {
+			// Search forcing continuations before lines that rescue the declarer.
+			score += 1000
+		}
+		scored[i] = scoredMove{card: move, score: score}
+	}
+	slices.SortStableFunc(scored, func(a, b scoredMove) int {
+		return cmp.Compare(b.score, a.score)
+	})
+	for i := range moves {
+		moves[i] = scored[i].card
 	}
 }
 

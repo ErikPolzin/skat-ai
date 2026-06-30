@@ -3,18 +3,13 @@ import CardSpade from "../assets/Card_spade.svg";
 import CardHeart from "../assets/Card_heart.svg";
 import CardDiamond from "../assets/Card_diamond.svg";
 
-import {
-  motion,
-  useMotionValueEvent,
-  useTime,
-  useTransform,
-} from "motion/react";
+import { motion, useMotionValueEvent, useTime } from "motion/react";
 import { useState } from "react";
 
 const ThemedLoader = ({ size }: { size?: number }) => {
   const [shape, setShape] = useState<string>(CardClub);
   const time = useTime();
-  const rotateY = useTransform(time, [0, 1000], [0, 180], { clamp: false });
+  const isDarkSuit = shape === CardClub || shape === CardSpade;
 
   useMotionValueEvent(time, "change", (latest) => {
     switch (Math.floor((latest + 500) / 1000) % 4) {
@@ -36,8 +31,24 @@ const ThemedLoader = ({ size }: { size?: number }) => {
   });
 
   return (
-    <motion.div style={{ rotateY }}>
-      <img src={shape} alt="CardClub" style={{ width: size, height: size }} />
+    <motion.div
+      animate={{ rotateY: [0, 180] }}
+      transition={{
+        duration: 1,
+        ease: "easeInOut",
+        repeat: Infinity,
+        repeatType: "reverse",
+      }}
+    >
+      <img
+        src={shape}
+        alt="Card suit"
+        style={{
+          width: size,
+          height: size,
+          filter: `brightness(0) invert(${isDarkSuit ? "20%" : "35%"})`,
+        }}
+      />
     </motion.div>
   );
 };

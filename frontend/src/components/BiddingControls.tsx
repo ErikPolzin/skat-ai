@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Box, Button, Stack, Typography } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
 import { WaitingNotice } from "./WaitingNotice";
+import ThemedLoader from "./ThemedLoader";
 
 // Legal named bid values in Skat. The backend uses 0 as the "no bid yet"
 // sentinel, but players never accept a bid value of 0.
@@ -76,24 +77,28 @@ export function BiddingControls() {
           justifyContent: "center",
         }}
       >
-        <Button
-          variant="contained"
-          color="success"
-          onClick={() => game.controls.bid(true)}
-          disabled={isPositiveBidDisabled}
-          loading={game.controls.isLoading}
-        >
-          {positiveBidButtonText}
-        </Button>
-        <Button
-          variant="outlined"
-          color="warning"
-          onClick={() => game.controls.bid(false)}
-          disabled={isDisabled}
-          loading={game.controls.isLoading}
-        >
-          Pass
-        </Button>
+        {game.controls.isLoading ? (
+          <ThemedLoader size={50} />
+        ) : (
+          <>
+            <Button
+              variant="contained"
+              color="success"
+              onClick={() => game.controls.bid(true)}
+              disabled={isPositiveBidDisabled}
+            >
+              {positiveBidButtonText}
+            </Button>
+            <Button
+              variant="outlined"
+              color="warning"
+              onClick={() => game.controls.bid(false)}
+              disabled={isDisabled}
+            >
+              Pass
+            </Button>
+          </>
+        )}
       </Stack>
     </Box>
   );

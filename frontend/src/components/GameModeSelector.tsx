@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
-import { CircularProgress } from "@mui/material";
 import { useGameContext } from "../context/GameContext";
+import ThemedLoader from "./ThemedLoader";
 import {
   SUITS,
   calculatePotentialGameValue,
@@ -27,11 +27,7 @@ export function GameModeSelector() {
   );
   const effectiveAnnounceSchneider =
     schneiderCanBeAnnounced && announceSchneider;
-  const effectiveAnnounceSchwarz =
-    schwarzCanBeAnnounced && announceSchwarz;
-
-  // Check if everyone passed and forehand was forced to play.
-  const everyonePassed = game.bidValue === 0;
+  const effectiveAnnounceSchwarz = schwarzCanBeAnnounced && announceSchwarz;
 
   // Calculate game value for current selection
   const gameValue = useMemo(() => {
@@ -76,12 +72,16 @@ export function GameModeSelector() {
     }
   };
 
+  if (game.controls.isLoading) {
+    return (
+      <div className="game-mode-selector">
+        <ThemedLoader size={50} />
+      </div>
+    );
+  }
+
   return (
     <div className="game-mode-selector">
-      {everyonePassed && (
-        <div className="everyone-passed-notice">All players passed.</div>
-      )}
-
       <div className="game-value-info">
         <span>Game Value: {gameValue}</span>
         {isOverbidDeclaration && (
@@ -177,24 +177,18 @@ export function GameModeSelector() {
           cursor: isDisabled ? "not-allowed" : "pointer",
         }}
       >
-        {game.controls.isLoading ? (
-          <CircularProgress size={20} />
-        ) : (
-          <>
-            Declare{" "}
-            {selectedMode === "grand"
-              ? "Grand"
-              : selectedMode === "null"
-                ? "Null"
-                : `${selectedTrump} Suit`}
-            {effectiveAnnounceSchwarz
-              ? " (Schwarz)"
-              : effectiveAnnounceSchneider
-                ? " (Schneider)"
-                : ""}
-            {isOverbidDeclaration ? " and lose" : ""}
-          </>
-        )}
+        Declare{" "}
+        {selectedMode === "grand"
+          ? "Grand"
+          : selectedMode === "null"
+            ? "Null"
+            : `${selectedTrump} Suit`}
+        {effectiveAnnounceSchwarz
+          ? " (Schwarz)"
+          : effectiveAnnounceSchneider
+            ? " (Schneider)"
+            : ""}
+        {isOverbidDeclaration ? " and lose" : ""}
       </button>
     </div>
   );

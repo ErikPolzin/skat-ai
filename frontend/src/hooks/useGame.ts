@@ -30,8 +30,8 @@ export function useGame(
       session_id: "",
       game_number: 0,
       max_games: 10,
-      pass_policy: "reshuffle",
-      timer_enabled: true,
+      pass_policy: "ramsch",
+      timer_enabled: false,
       completion_policy: "flexible",
       players: [null, null, null],
       current_player: 0,
@@ -255,6 +255,10 @@ export function useGame(
               discardedCard.suit === handCard.suit,
           ),
       ),
+      state: {
+        ...prev.state,
+        phase: "declarer_choice",
+      },
     }));
   }, []);
 
@@ -262,6 +266,10 @@ export function useGame(
     setGameInfo((prev) => ({
       ...prev,
       hand: [...(prev.hand || []), ...cards],
+      state: {
+        ...prev.state,
+        phase: "skat_exchange",
+      },
     }));
   }, []);
 
@@ -287,8 +295,8 @@ export function useGame(
         session_id: "",
         game_number: 0,
         max_games: 10,
-        pass_policy: "reshuffle",
-        timer_enabled: true,
+        pass_policy: "ramsch",
+        timer_enabled: false,
         completion_policy: "flexible",
         players: [null, null, null],
         current_player: 0,

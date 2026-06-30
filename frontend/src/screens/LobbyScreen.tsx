@@ -204,8 +204,8 @@ const Header = () => {
 
 const GamesTab = () => {
   const [maxGames, setMaxGames] = useState<number>(10);
-  const [passPolicy, setPassPolicy] = useState<PassPolicy>("reshuffle");
-  const [timerEnabled, setTimerEnabled] = useState<boolean>(true);
+  const [passPolicy, setPassPolicy] = useState<PassPolicy>("ramsch");
+  const [timerEnabled, setTimerEnabled] = useState<boolean>(false);
   const [completionPolicy, setCompletionPolicy] =
     useState<CompletionPolicy>("flexible");
   const [isLoading, setIsLoading] = useState<boolean>(false);

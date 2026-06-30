@@ -544,9 +544,9 @@ export function MotionCardTable() {
       <GameOverScreen />
     ) : game.isLoading ? (
       <Box sx={{ textAlign: "center" }}>
-        <ThemedLoader size={60} />
-        <Typography variant="h6" sx={{ mt: 2 }}>
-          Loading game...
+        <ThemedLoader size={50} />
+        <Typography variant="subtitle1" color="textDisabled">
+          Loading...
         </Typography>
       </Box>
     ) : game.error ? (

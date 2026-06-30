@@ -34,8 +34,10 @@ type BiddingStrategy interface {
 // GameChoiceStrategy interface for game choice decisions
 type GameChoiceStrategy interface {
 	GetName() string
+	// ChooseGame handles declaration-only paths where the hand is already final.
 	ChooseGame(hand []game.Card, bidValue int) (game.GameMode, game.Suit)
-	ChooseSkatDiscard(hand []game.Card, mode game.GameMode, trumpSuit game.Suit) (game.Card, game.Card)
+	// ChooseGameAndSkatDiscard makes the normal 12-card post-skat decision atomically.
+	ChooseGameAndSkatDiscard(hand []game.Card, bidValue int) strategies.GameChoice
 }
 
 // CardPlayStrategy interface for card play decisions
@@ -129,6 +131,14 @@ func (sa *SkatAgent) ChooseGame(state *game.GameState) (game.GameMode, game.Suit
 	return mode, suit
 }
 
+func (sa *SkatAgent) ChooseGameAndSkatDiscard(state *game.GameState) strategies.GameChoice {
+	if state.Declarer == nil {
+		return strategies.GameChoice{Mode: game.ModeGrand, TrumpSuit: game.NoSuit}
+	}
+	hand := state.Players[*state.Declarer].Hand
+	return sa.gameChoiceStrategy.ChooseGameAndSkatDiscard(hand, int(state.BidValue))
+}
+
 func (sa *SkatAgent) SelectMove(state *game.GameState, validMoves []game.Card) game.Card {
 	return sa.cardPlayStrategy.SelectMove(state, validMoves)
 }
@@ -177,11 +187,6 @@ func (sa *SkatAgent) CachedClone() *SkatAgent {
 		sa.cachedClone = sa.Clone()
 	}
 	return sa.cachedClone
-}
-
-// ChooseSkatDiscard selects which 2 cards to discard
-func (sa *SkatAgent) ChooseSkatDiscard(hand []game.Card, mode game.GameMode, trumpSuit game.Suit) (game.Card, game.Card) {
-	return sa.gameChoiceStrategy.ChooseSkatDiscard(hand, mode, trumpSuit)
 }
 
 // NewAgentWithStrategies creates an agent with custom strategies

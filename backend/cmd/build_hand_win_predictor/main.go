@@ -188,9 +188,8 @@ func playHeuristicRollout(maxCards int) (completedRollout, bool) {
 	if g.Declarer == nil || g.Phase != game.PhaseSkatExchange {
 		return completedRollout{}, false
 	}
-	g = agent.WithAgentSkatDecision(g)
 	var overbid bool
-	g, overbid = agent.WithAgentGameChoice(g)
+	g, overbid = agent.WithAgentSkatExchange(g)
 	if overbid || g.Phase != game.PhasePlaying || (g.Mode != game.ModeSuit && g.Mode != game.ModeGrand) {
 		return completedRollout{}, false
 	}

@@ -261,7 +261,10 @@ func WithAgentBidding(gs *game.GameState, config AgentConfig) *game.GameState {
 	return gs
 }
 
-func WithAgentSkatDecision(gs *game.GameState) *game.GameState {
+// WithAgentSkatExchange picks up the skat and applies one atomic contract and
+// discard decision. The declared contract is therefore the same contract the
+// discard was optimized for.
+func WithAgentSkatExchange(gs *game.GameState) (*game.GameState, bool) {
 	if gs.Phase != game.PhaseSkatExchange {
 		panic("Cannot run agent skat decision, game is not in skat exchange phase")
 	}
@@ -271,26 +274,16 @@ func WithAgentSkatDecision(gs *game.GameState) *game.GameState {
 	if _, err := gs.SkatDecision(true); err != nil {
 		panic(fmt.Sprintf("Skat decision error: %v", err))
 	}
-	mode, trumpSuit := declarerAgent.ChooseGame(gs)
-	card1, card2 := declarerAgent.ChooseSkatDiscard(declarer.Hand, mode, trumpSuit)
-	if _, err := gs.Discard(card1, card2); err != nil {
+	choice := declarerAgent.ChooseGameAndSkatDiscard(gs)
+	if _, err := gs.Discard(choice.Discard[0], choice.Discard[1]); err != nil {
 		panic(fmt.Sprintf("Skat decision error: %v", err))
 	}
-	return gs
-}
-
-func WithAgentGameChoice(gs *game.GameState) (*game.GameState, bool) {
-	if gs.Phase != game.PhaseDeclarerChoice {
-		panic("Cannot run agent skat decision, game is not in skat exchange phase")
-	}
-	declarerAgent := MustGetAgentForPlayer(gs.GetCurrentPlayer())
-	mode, trumpSuit := declarerAgent.ChooseGame(gs)
-	if _, err := gs.DeclareGame(mode, trumpSuit, false, false); err != nil {
+	if _, err := gs.DeclareGame(choice.Mode, choice.TrumpSuit, false, false); err != nil {
 		panic(fmt.Sprintf("DeclareGame error: %v", err))
 	}
 	declarerPosition := *gs.Declarer
 	declarerHand := gs.Players[declarerPosition].Hand
-	declarerExpectation := strategies.EstimateContractWinProbability(declarerHand, mode, trumpSuit)
+	declarerExpectation := strategies.EstimateContractWinProbability(declarerHand, choice.Mode, choice.TrumpSuit)
 	for position := game.Dealer; position <= game.Speaker; position++ {
 		playerAgent := MustGetAgentForPlayer(gs.Players[position])
 		if playerAgent == nil {
@@ -357,8 +350,7 @@ func PlayFullGame(gs *game.GameState, config AgentConfig) {
 		}
 		panic(fmt.Sprintf("Cannot continue game without declarer in phase: %s", gs.Phase))
 	}
-	gs = WithAgentSkatDecision(gs)
-	gs, overbid := WithAgentGameChoice(gs)
+	gs, overbid := WithAgentSkatExchange(gs)
 	if !overbid {
 		gs = WithAgentCardPlay(gs)
 	}

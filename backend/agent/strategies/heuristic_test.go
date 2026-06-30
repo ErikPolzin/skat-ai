@@ -37,7 +37,7 @@ func TestCardTracking(t *testing.T) {
 	// Create a hand to test remaining trump counting
 	hand := []game.Card{
 		{Suit: game.Hearts, Rank: game.Ace}, // Trump
-		{Suit: game.Clubs, Rank: game.Jack},  // Trump (Jack)
+		{Suit: game.Clubs, Rank: game.Jack}, // Trump (Jack)
 	}
 
 	// Count remaining trumps (should not count our trumps or played cards)
@@ -69,9 +69,9 @@ func TestDeclarer_CashesAcesFirst(t *testing.T) {
 
 	// Hand with Ace and trumps
 	validMoves := []game.Card{
-		{Suit: game.Clubs, Rank: game.Ace},   // Should lead this first
-		{Suit: game.Hearts, Rank: game.Ace},  // Trump ace
-		{Suit: game.Hearts, Rank: game.Ten},  // Trump
+		{Suit: game.Clubs, Rank: game.Ace},  // Should lead this first
+		{Suit: game.Hearts, Rank: game.Ace}, // Trump ace
+		{Suit: game.Hearts, Rank: game.Ten}, // Trump
 		{Suit: game.Diamonds, Rank: game.Ten},
 	}
 
@@ -155,6 +155,49 @@ func TestNullDefenderLeadsLowFromLongestSuit(t *testing.T) {
 	move := strategy.selectNullDefenderMove(gs, gs.GetValidMoves())
 	if move != clubsSeven {
 		t.Fatalf("defender lead = %v, want low card %v from longest suit", move, clubsSeven)
+	}
+}
+
+func TestNullDiscardCanEliminateDangerousSuit(t *testing.T) {
+	strategy := NewHeuristicGameChoiceStrategy()
+	clubsAce := game.Card{Suit: game.Clubs, Rank: game.Ace}
+	clubsKing := game.Card{Suit: game.Clubs, Rank: game.King}
+	hand := game.Cards{
+		clubsAce, clubsKing,
+		{Suit: game.Spades, Rank: game.Ace}, {Suit: game.Spades, Rank: game.Queen},
+		{Suit: game.Hearts, Rank: game.Seven}, {Suit: game.Hearts, Rank: game.Eight},
+		{Suit: game.Hearts, Rank: game.Nine}, {Suit: game.Hearts, Rank: game.Ten},
+		{Suit: game.Diamonds, Rank: game.Seven}, {Suit: game.Diamonds, Rank: game.Eight},
+		{Suit: game.Diamonds, Rank: game.Nine}, {Suit: game.Diamonds, Rank: game.Ten},
+	}
+
+	first, second := strategy.chooseNullSkatDiscard(hand)
+	if !((first == clubsAce && second == clubsKing) || (first == clubsKing && second == clubsAce)) {
+		t.Fatalf("Null discard = %v/%v, want to eliminate clubs with %v/%v", first, second, clubsAce, clubsKing)
+	}
+}
+
+func TestNullEstimatorRewardsEscapableSuitShape(t *testing.T) {
+	estimator := NewHeuristicContractWinProbabilityEstimator()
+	safe := game.Cards{
+		{Suit: game.Clubs, Rank: game.Seven}, {Suit: game.Clubs, Rank: game.Eight},
+		{Suit: game.Spades, Rank: game.Seven}, {Suit: game.Spades, Rank: game.Nine},
+		{Suit: game.Spades, Rank: game.Jack}, {Suit: game.Hearts, Rank: game.Seven},
+		{Suit: game.Hearts, Rank: game.Eight}, {Suit: game.Hearts, Rank: game.Ten},
+		{Suit: game.Hearts, Rank: game.Queen}, {Suit: game.Hearts, Rank: game.King},
+	}
+	unsafe := game.Cards{
+		{Suit: game.Clubs, Rank: game.Seven}, {Suit: game.Clubs, Rank: game.Queen},
+		{Suit: game.Spades, Rank: game.Eight}, {Suit: game.Spades, Rank: game.King},
+		{Suit: game.Hearts, Rank: game.Seven}, {Suit: game.Hearts, Rank: game.Ten},
+		{Suit: game.Diamonds, Rank: game.Eight}, {Suit: game.Diamonds, Rank: game.Nine},
+		{Suit: game.Diamonds, Rank: game.Jack}, {Suit: game.Diamonds, Rank: game.King},
+	}
+
+	safeProbability := estimator.EstimateWinProbability(safe, game.ModeNull, game.NoSuit)
+	unsafeProbability := estimator.EstimateWinProbability(unsafe, game.ModeNull, game.NoSuit)
+	if safeProbability <= unsafeProbability {
+		t.Fatalf("escapable Null hand probability %.3f <= unsafe hand %.3f", safeProbability, unsafeProbability)
 	}
 }
 

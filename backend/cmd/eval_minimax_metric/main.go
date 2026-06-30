@@ -140,9 +140,8 @@ func newSampleGame(setup string, minimaxDepth int) *game.GameState {
 		if g.Declarer == nil || g.Phase != game.PhaseSkatExchange {
 			return nil
 		}
-		g = agent.WithAgentSkatDecision(g)
 		var overbid bool
-		g, overbid = agent.WithAgentGameChoice(g)
+		g, overbid = agent.WithAgentSkatExchange(g)
 		if overbid || g.Phase != game.PhasePlaying || g.Mode == game.ModeRamsch {
 			return nil
 		}

@@ -36,12 +36,12 @@ func (r *RandomGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int) (g
 	return mode, trumpSuit
 }
 
-func (r *RandomGameChoiceStrategy) ChooseSkatDiscard(hand []game.Card, mode game.GameMode, trumpSuit game.Suit) (game.Card, game.Card) {
-	if len(hand) < 2 {
-		return game.Card{}, game.Card{}
+func (r *RandomGameChoiceStrategy) ChooseGameAndSkatDiscard(hand []game.Card, bidValue int) GameChoice {
+	if len(hand) != 12 {
+		panic("ChooseGameAndSkatDiscard requires the 12-card post-skat hand")
 	}
-	// Just pick first two cards
-	return hand[0], hand[1]
+	mode, suit := r.ChooseGame(hand, bidValue)
+	return GameChoice{Mode: mode, TrumpSuit: suit, Discard: [2]game.Card{hand[0], hand[1]}}
 }
 
 // RandomCardPlayStrategy makes random card play decisions

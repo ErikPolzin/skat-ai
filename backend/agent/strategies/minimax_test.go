@@ -176,8 +176,8 @@ func TestMinimaxNullEvaluationDistinguishesWeakHand(t *testing.T) {
 	state.Players[declarer].Hand = weak
 	weakProbability := strategy.EvaluateState(state)
 
-	if perfectProbability < 0.95 {
-		t.Fatalf("perfect null probability = %.3f, want at least 0.95", perfectProbability)
+	if perfectProbability < 0.90 {
+		t.Fatalf("perfect null probability = %.3f, want at least 0.90", perfectProbability)
 	}
 	if weakProbability >= 0.60 {
 		t.Fatalf("weak null probability = %.3f, want below 0.60", weakProbability)

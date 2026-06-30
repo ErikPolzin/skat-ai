@@ -106,8 +106,8 @@ func generateResolveTrickAction(gs *game.GameState) Action {
 func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerState) Action {
 	// Check if agent has already picked up skat
 	if len(player.Hand) == 12 {
-		// Agent has picked up skat, needs to discard 2 cards
-		// Use game-aware discard strategy: pre-decide game mode, then discard optimally
+		// Agent has picked up skat. Choose the game and its discard together so
+		// declaration cannot switch to a contract the discard was not built for.
 
 		// Get shared agent instance for game mode decision
 		agentInstance, err := GetAgentForPlayer(player)
@@ -115,14 +115,13 @@ func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerStat
 			return ErrorAction(err)
 		}
 
-		// Agent will use Q-learning to choose game mode
-		mode, trumpSuit := agentInstance.ChooseGame(gs)
-
-		// Now choose optimal discard for that game mode
-		card1, card2 := agentInstance.ChooseSkatDiscard(player.Hand, mode, trumpSuit)
+		choice := agentInstance.ChooseGameAndSkatDiscard(gs)
 
 		return func() (string, error) {
-			return gs.Discard(card1, card2)
+			if _, err := gs.Discard(choice.Discard[0], choice.Discard[1]); err != nil {
+				return "", err
+			}
+			return gs.DeclareGame(choice.Mode, choice.TrumpSuit, false, false)
 		}
 	} else {
 		// Agent hasn't picked up skat yet - always pick it up

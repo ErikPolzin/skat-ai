@@ -4,8 +4,10 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -60,7 +62,15 @@ func exampleBucket(ex CardPlayExample) string {
 	return string(ex.GameMode) + "_" + role
 }
 
-func newSearchTeacherAgent(name string, depth int, biddingThreshold float64) *agent.SkatAgent {
+func newSearchStrategy(depth, depthIncrease int, predictor *strategies.HandWinPredictor, minSamples uint64) *strategies.PerfectInfoMinimaxStrategy {
+	config := strategies.DefaultMinimaxSearchConfig(depth)
+	config.DepthIncreasePerTrick = depthIncrease
+	config.HandWinPredictor = predictor
+	config.HandWinMinSamples = minSamples
+	return strategies.NewPerfectInfoMinimaxStrategyWithConfig(config)
+}
+
+func newSearchTeacherAgent(name string, depth, depthIncrease int, predictor *strategies.HandWinPredictor, minSamples uint64, biddingThreshold float64) *agent.SkatAgent {
 	config := strategies.DefaultContractEvaluatorConfig()
 	config.MinWinProbability = biddingThreshold
 
@@ -68,20 +78,28 @@ func newSearchTeacherAgent(name string, depth int, biddingThreshold float64) *ag
 		name,
 		strategies.NewHeuristicBiddingStrategyWithConfig(config),
 		strategies.NewHeuristicGameChoiceStrategyWithConfig(config),
-		strategies.NewPerfectInfoMinimaxStrategyWithDepth(depth),
+		newSearchStrategy(depth, depthIncrease, predictor, minSamples),
 	)
 }
 
 func main() {
 	numExamples := flag.Int("examples", 100000, "Number of examples to collect in each game-type/role bucket")
 	outputFile := flag.String("output", ".data/cardplay_dataset.csv", "Output file for dataset")
-	searchDepth := flag.Int("depth", 7, "Minimax search depth for expert labels; uses move ordering, transposition table, and LMR 3/1")
+	resume := flag.Bool("resume", true, "Resume bucket counts from an existing output CSV")
+	searchDepth := flag.Int("depth", 7, "Minimax base search depth for expert labels")
+	depthIncrease := flag.Int("depth-increase", strategies.DefaultMinimaxDepthIncreasePerTrick, "Additional search plies per completed trick")
+	handWinPredictorPath := flag.String("hand-win-predictor", "", "Optional hand win predictor used for minimax leaf evaluation")
+	handWinMinSamples := flag.Uint64("hand-win-min-samples", 8, "Minimum predictor samples required for a lookup")
 	biddingThreshold := flag.Float64("bidding-threshold", 0.55, "Heuristic bidding threshold used for natural contract generation")
 	minWinProbability := flag.Float64("min-win-probability", 0.10, "Minimum pre-game win probability to collect")
 	maxWinProbability := flag.Float64("max-win-probability", 0.65, "Maximum pre-game win probability to collect")
 	acceptableGap := flag.Float64("acceptable-gap", 0.05, "Maximum minimax probability gap from the best move to treat as an equally good target")
 	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel workers")
 	flag.Parse()
+	if *searchDepth < 1 || *depthIncrease < 0 {
+		fmt.Fprintln(os.Stderr, "depth must be positive and depth-increase cannot be negative")
+		os.Exit(1)
+	}
 
 	if *minWinProbability < 0 || *maxWinProbability > 1 || *minWinProbability > *maxWinProbability {
 		fmt.Fprintf(os.Stderr, "Invalid win-probability range %.2f-%.2f (expected 0 <= min <= max <= 1)\n", *minWinProbability, *maxWinProbability)
@@ -91,31 +109,67 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Invalid acceptable gap %.2f (expected >= 0)\n", *acceptableGap)
 		os.Exit(1)
 	}
+	var handWinPredictor *strategies.HandWinPredictor
+	if *handWinPredictorPath != "" {
+		var err error
+		handWinPredictor, err = strategies.LoadHandWinPredictor(*handWinPredictorPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading hand win predictor: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	fmt.Printf("Generating %d examples in each of 7 game-type/role buckets...\n", *numExamples)
-	fmt.Printf("  Declarer strategy: Minimax (depth %d)\n", *searchDepth)
-	fmt.Printf("  Defender strategy: Minimax (depth %d)\n", *searchDepth)
-	fmt.Printf("  Ramsch strategy: Minimax (depth %d)\n", *searchDepth)
+	fmt.Printf("  Declarer strategy: Minimax (base depth %d, +%d/trick)\n", *searchDepth, *depthIncrease)
+	fmt.Printf("  Defender strategy: Minimax (base depth %d, +%d/trick)\n", *searchDepth, *depthIncrease)
+	fmt.Printf("  Ramsch strategy: Minimax (base depth %d, +%d/trick)\n", *searchDepth, *depthIncrease)
 	fmt.Printf("  Contracts: natural bidding and game choice (threshold %.2f)\n", *biddingThreshold)
 	fmt.Printf("  Contract filtering: Minimax wins from %.2f-%.2f pre-game win probability; excluding overbids\n", *minWinProbability, *maxWinProbability)
 	fmt.Printf("  Ramsch filtering: winners from any starting hand\n")
 	fmt.Printf("  Multi-card targets: moves within %.2f minimax score/probability of best\n", *acceptableGap)
+	if handWinPredictor != nil {
+		fmt.Printf("  Hand win predictor: %s (%d buckets, minimum %d samples)\n",
+			*handWinPredictorPath, len(handWinPredictor.Buckets), *handWinMinSamples)
+	} else {
+		fmt.Println("  Hand win predictor: disabled")
+	}
 	fmt.Printf("Using %d parallel workers\n", *workers)
+
+	bucketCounts, hasHeader, err := loadDatasetProgress(*outputFile, *resume)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load existing dataset progress: %v\n", err)
+		os.Exit(1)
+	}
+	if *resume && hasHeader {
+		fmt.Printf("Resuming %s with %d existing examples\n", *outputFile, totalBucketCount(bucketCounts))
+		printBucketProgress(0, bucketCounts, *numExamples)
+	}
+	if bucketsComplete(bucketCounts, *numExamples) {
+		fmt.Println("Dataset already contains the requested examples in every bucket.")
+		return
+	}
+	file, writer, err := openDatasetWriter(*outputFile, *resume, hasHeader)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open output dataset: %v\n", err)
+		os.Exit(1)
+	}
+	defer file.Close()
+	defer writer.Flush()
 
 	// Channel for collecting results
 	examplesChan := make(chan []CardPlayExample, *workers)
 	stopChan := make(chan bool) // Signal workers to stop
 	var wg sync.WaitGroup
 	var neededBuckets atomic.Uint32
-	neededBuckets.Store(needAllBuckets)
+	neededBuckets.Store(neededBucketMask(bucketCounts, *numExamples))
 
 	// Worker function - collect until we have enough examples
 	worker := func() {
 		defer wg.Done()
 
 		// Create search agent for expert card-play labels.
-		searchAgent := newSearchTeacherAgent("SearchExpert", *searchDepth, *biddingThreshold)
-		labelScorer := strategies.NewPerfectInfoMinimaxStrategyWithDepth(*searchDepth)
+		searchAgent := newSearchTeacherAgent("SearchExpert", *searchDepth, *depthIncrease, handWinPredictor, *handWinMinSamples, *biddingThreshold)
+		labelScorer := newSearchStrategy(*searchDepth, *depthIncrease, handWinPredictor, *handWinMinSamples)
 
 		config := strategies.DefaultContractEvaluatorConfig()
 		config.MinWinProbability = *biddingThreshold
@@ -158,23 +212,31 @@ func main() {
 		go worker()
 	}
 
-	// Collect exactly n examples for every normal game/role pair plus Ramsch.
-	buckets := make(map[string][]CardPlayExample, len(bucketOrder))
+	// Stream exactly n examples for every normal game/role pair plus Ramsch.
 	gamesPlayed := 0
 
 	for examples := range examplesChan {
 		gamesPlayed++
 		for _, ex := range examples {
 			key := exampleBucket(ex)
-			if len(buckets[key]) < *numExamples {
-				buckets[key] = append(buckets[key], ex)
+			if bucketCounts[key] < *numExamples {
+				if err := writer.Write(cardPlayRecord(ex)); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to append card-play example: %v\n", err)
+					os.Exit(1)
+				}
+				bucketCounts[key]++
 			}
 		}
-		neededBuckets.Store(neededBucketMask(buckets, *numExamples))
-		if gamesPlayed%100 == 0 {
-			printBucketProgress(gamesPlayed, buckets, *numExamples)
+		writer.Flush()
+		if err := writer.Error(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to flush card-play dataset: %v\n", err)
+			os.Exit(1)
 		}
-		if bucketsComplete(buckets, *numExamples) {
+		neededBuckets.Store(neededBucketMask(bucketCounts, *numExamples))
+		if gamesPlayed%100 == 0 {
+			printBucketProgress(gamesPlayed, bucketCounts, *numExamples)
+		}
+		if bucketsComplete(bucketCounts, *numExamples) {
 			break
 		}
 	}
@@ -188,33 +250,21 @@ func main() {
 	// Close channels
 	close(examplesChan)
 
-	// Create balanced dataset (should already be at exact count)
-	dataset := make([]CardPlayExample, 0, len(bucketOrder)*(*numExamples))
-	for _, key := range bucketOrder {
-		dataset = append(dataset, buckets[key]...)
-		fmt.Printf("  %-16s %d\n", key, len(buckets[key]))
-	}
-	fmt.Printf("\nCollected dataset: %d total examples\n", len(dataset))
-	printTargetStats(dataset)
-
-	// Save dataset to CSV file
-	fmt.Printf("\nSaving %d examples to %s...\n", len(dataset), *outputFile)
-
-	// Ensure directory exists
-	os.MkdirAll(".data", 0755)
-
-	file, err := os.Create(*outputFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create output file: %v\n", err)
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to finish card-play dataset: %v\n", err)
 		os.Exit(1)
 	}
-	defer file.Close()
+	for _, key := range bucketOrder {
+		fmt.Printf("  %-16s %d\n", key, bucketCounts[key])
+	}
+	fmt.Printf("\nDataset Statistics:\n")
+	fmt.Printf("  Total examples: %d\n", totalBucketCount(bucketCounts))
+	fmt.Printf("\n✓ Dataset generation complete!\n")
+}
 
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
-	// Write header
-	header := make([]string, 0, encoding.CardPlayFeatureSize+32+2+32)
+func cardPlayHeader() []string {
+	header := make([]string, 0, encoding.CardPlayFeatureSize+32+2+32+2)
 	for i := 0; i < encoding.CardPlayFeatureSize; i++ {
 		header = append(header, fmt.Sprintf("s%d", i))
 	}
@@ -225,59 +275,149 @@ func main() {
 	for i := 0; i < 32; i++ {
 		header = append(header, fmt.Sprintf("p%d", i))
 	}
-	header = append(header, "game_mode", "win_probability")
-	if err := writer.Write(header); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write header: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Write examples
-	for _, ex := range dataset {
-		record := make([]string, 0, encoding.CardPlayFeatureSize+32+2+32)
-
-		// State features
-		for _, val := range ex.State {
-			record = append(record, strconv.FormatFloat(float64(val), 'f', 6, 32))
-		}
-
-		// Valid mask (32)
-		for _, val := range ex.ValidMask {
-			record = append(record, strconv.FormatFloat(float64(val), 'f', 0, 32))
-		}
-
-		// Action and role
-		record = append(record, strconv.Itoa(ex.Action))
-		record = append(record, strconv.Itoa(ex.Role))
-		for _, val := range ex.Policy {
-			record = append(record, strconv.FormatFloat(float64(val), 'f', 6, 32))
-		}
-		record = append(record, string(ex.GameMode), strconv.FormatFloat(ex.WinProbability, 'f', 6, 64))
-
-		if err := writer.Write(record); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to write record: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	// Print statistics
-	fmt.Printf("\nDataset Statistics:\n")
-	fmt.Printf("  Total examples: %d\n", len(dataset))
-	fmt.Printf("\n✓ Dataset generation complete!\n")
+	return append(header, "game_mode", "win_probability")
 }
 
-func bucketsComplete(buckets map[string][]CardPlayExample, target int) bool {
+func cardPlayRecord(ex CardPlayExample) []string {
+	record := make([]string, 0, encoding.CardPlayFeatureSize+32+2+32+2)
+	for _, val := range ex.State {
+		record = append(record, strconv.FormatFloat(float64(val), 'f', 6, 32))
+	}
+	for _, val := range ex.ValidMask {
+		record = append(record, strconv.FormatFloat(float64(val), 'f', 0, 32))
+	}
+	record = append(record, strconv.Itoa(ex.Action), strconv.Itoa(ex.Role))
+	for _, val := range ex.Policy {
+		record = append(record, strconv.FormatFloat(float64(val), 'f', 6, 32))
+	}
+	return append(record, string(ex.GameMode), strconv.FormatFloat(ex.WinProbability, 'f', 6, 64))
+}
+
+func loadDatasetProgress(path string, resume bool) (map[string]int, bool, error) {
+	counts := make(map[string]int, len(bucketOrder))
+	if !resume {
+		return counts, false, nil
+	}
+	file, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return counts, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	header, err := reader.Read()
+	if err == io.EOF {
+		return counts, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	roleIndex, modeIndex := -1, -1
+	for i, name := range header {
+		switch name {
+		case "role":
+			roleIndex = i
+		case "game_mode":
+			modeIndex = i
+		}
+	}
+	if roleIndex < 0 || modeIndex < 0 {
+		return nil, false, fmt.Errorf("existing CSV is missing role or game_mode columns")
+	}
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, false, fmt.Errorf("read existing CSV: %w", err)
+		}
+		if roleIndex >= len(record) || modeIndex >= len(record) {
+			return nil, false, fmt.Errorf("existing CSV record has %d columns, expected at least %d", len(record), max(roleIndex, modeIndex)+1)
+		}
+		role, err := strconv.Atoi(record[roleIndex])
+		if err != nil {
+			return nil, false, fmt.Errorf("parse existing role %q: %w", record[roleIndex], err)
+		}
+		key := existingExampleBucket(role, game.GameMode(record[modeIndex]))
+		if key == "" {
+			return nil, false, fmt.Errorf("unsupported existing role/mode %d/%q", role, record[modeIndex])
+		}
+		counts[key]++
+	}
+	return counts, true, nil
+}
+
+func existingExampleBucket(role int, mode game.GameMode) string {
+	if role == roleRamsch && mode == game.ModeRamsch {
+		return "ramsch"
+	}
+	if role != roleDeclarer && role != roleDefender {
+		return ""
+	}
+	if mode != game.ModeSuit && mode != game.ModeGrand && mode != game.ModeNull {
+		return ""
+	}
+	roleName := "defender"
+	if role == roleDeclarer {
+		roleName = "declarer"
+	}
+	return string(mode) + "_" + roleName
+}
+
+func openDatasetWriter(path string, resume, hasHeader bool) (*os.File, *csv.Writer, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return nil, nil, err
+	}
+	flags := os.O_CREATE | os.O_WRONLY
+	if resume {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	file, err := os.OpenFile(path, flags, 0644)
+	if err != nil {
+		return nil, nil, err
+	}
+	writer := csv.NewWriter(file)
+	if !hasHeader {
+		if err := writer.Write(cardPlayHeader()); err != nil {
+			file.Close()
+			return nil, nil, err
+		}
+		writer.Flush()
+		if err := writer.Error(); err != nil {
+			file.Close()
+			return nil, nil, err
+		}
+	}
+	return file, writer, nil
+}
+
+func totalBucketCount(counts map[string]int) int {
+	total := 0
 	for _, key := range bucketOrder {
-		if len(buckets[key]) < target {
+		total += counts[key]
+	}
+	return total
+}
+
+func bucketsComplete(buckets map[string]int, target int) bool {
+	for _, key := range bucketOrder {
+		if buckets[key] < target {
 			return false
 		}
 	}
 	return true
 }
 
-func neededBucketMask(buckets map[string][]CardPlayExample, target int) uint32 {
+func neededBucketMask(buckets map[string]int, target int) uint32 {
 	var mask uint32
 	for i, key := range bucketOrder {
-		if len(buckets[key]) < target {
+		if buckets[key] < target {
 			mask |= 1 << i
 		}
 	}
@@ -297,13 +437,13 @@ func contractBucketBits(mode game.GameMode) (declarer, defender uint32) {
 	}
 }
 
-func printBucketProgress(games int, buckets map[string][]CardPlayExample, target int) {
+func printBucketProgress(games int, buckets map[string]int, target int) {
 	fmt.Printf("  Played %d | Suit Dec %d/%d Def %d/%d | Grand Dec %d/%d Def %d/%d | Null Dec %d/%d Def %d/%d | Ramsch %d/%d\n",
 		games,
-		len(buckets["suit_declarer"]), target, len(buckets["suit_defender"]), target,
-		len(buckets["grand_declarer"]), target, len(buckets["grand_defender"]), target,
-		len(buckets["null_declarer"]), target, len(buckets["null_defender"]), target,
-		len(buckets["ramsch"]), target)
+		buckets["suit_declarer"], target, buckets["suit_defender"], target,
+		buckets["grand_declarer"], target, buckets["grand_defender"], target,
+		buckets["null_declarer"], target, buckets["null_defender"], target,
+		buckets["ramsch"], target)
 }
 
 // setupGame creates a naturally bid game ready for card play.
@@ -320,8 +460,7 @@ func setupGame(heuristicAgent *agent.SkatAgent) (*game.GameState, bool) {
 	if g.Declarer == nil {
 		return g, false
 	}
-	g = agent.WithAgentSkatDecision(g)
-	return agent.WithAgentGameChoice(g)
+	return agent.WithAgentSkatExchange(g)
 }
 
 // collectDeclarerExamples plays a game with search-teacher declarer vs heuristic defenders.

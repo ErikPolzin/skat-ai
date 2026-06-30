@@ -5,6 +5,12 @@ import (
 	"testing"
 )
 
+type contractEstimatorFunc func(game.Cards, game.GameMode, game.Suit) float64
+
+func (f contractEstimatorFunc) EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit) float64 {
+	return f(hand, mode, suit)
+}
+
 func TestContractEvaluatorBestUsesBidAndSharedScores(t *testing.T) {
 	choice := NewHeuristicGameChoiceStrategy()
 	hand := []game.Card{
@@ -87,5 +93,40 @@ func TestContractStrategiesShareEvaluatorDecision(t *testing.T) {
 	mode, suit := choice.ChooseGame(hand, 24)
 	if mode != expected.Mode || suit != expected.TrumpSuit {
 		t.Fatalf("game choice did not use evaluator result: got %s/%s, want %s/%s", mode, suit, expected.Mode, expected.TrumpSuit)
+	}
+}
+
+func TestAtomicGameChoiceEvaluatesPostDiscardHand(t *testing.T) {
+	hand := game.NewDeck()[:12]
+	estimator := contractEstimatorFunc(func(cards game.Cards, mode game.GameMode, _ game.Suit) float64 {
+		if mode == game.ModeNull && len(cards) == 10 {
+			return 0.9
+		}
+		return 0.6
+	})
+	choice := NewHeuristicGameChoiceStrategyWithEstimator(DefaultContractEvaluatorConfig(), estimator)
+
+	decision := choice.ChooseGameAndSkatDiscard(hand, 18)
+	if decision.Mode != game.ModeNull {
+		t.Fatalf("ChooseGameAndSkatDiscard mode = %s, want Null scored from post-discard hand", decision.Mode)
+	}
+	if remaining := handWithoutCards(hand, decision.Discard[:]...); len(remaining) != 10 {
+		t.Fatalf("atomic choice leaves %d cards, want 10", len(remaining))
+	}
+}
+
+func TestBiddingDoesNotAbandonStrongerContractToRaise(t *testing.T) {
+	hand := game.NewDeck()[:10]
+	estimator := contractEstimatorFunc(func(_ game.Cards, mode game.GameMode, _ game.Suit) float64 {
+		if mode == game.ModeNull {
+			return 0.9
+		}
+		return 0.6
+	})
+	bidding := NewHeuristicBiddingStrategyWithEstimator(DefaultContractEvaluatorConfig(), estimator)
+	state := &game.GameState{BidValue: 23}
+
+	if bidding.ShouldBid(state, hand, 23) {
+		t.Fatal("ShouldBid raised past Null 23 into a weaker fallback contract")
 	}
 }

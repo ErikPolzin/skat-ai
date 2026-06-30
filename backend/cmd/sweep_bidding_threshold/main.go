@@ -94,8 +94,7 @@ func runThreshold(strategy string, threshold float64, games int) (stats, error) 
 			s.maxBid = g.BidValue
 		}
 
-		g = agent.WithAgentSkatDecision(g)
-		g, _ = agent.WithAgentGameChoice(g)
+		g, _ = agent.WithAgentSkatExchange(g)
 		if !g.Overbid {
 			g = agent.WithAgentCardPlay(g)
 		}

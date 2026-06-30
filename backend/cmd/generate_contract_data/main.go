@@ -132,9 +132,10 @@ func playForcedContract(agentConfig agent.AgentConfig, mode game.GameMode, suit 
 		panic(fmt.Sprintf("SkatDecision error: %v", err))
 	}
 
-	declarerAgent := agent.MustGetAgentForPlayer(g.Players[declarer])
-	card1, card2 := declarerAgent.ChooseSkatDiscard(g.Players[declarer].Hand, mode, suit)
-	if _, err := g.Discard(card1, card2); err != nil {
+	choice := strategies.NewHeuristicGameChoiceStrategy().ChooseGameAndSkatDiscardForContract(
+		g.Players[declarer].Hand, mode, suit,
+	)
+	if _, err := g.Discard(choice.Discard[0], choice.Discard[1]); err != nil {
 		panic(fmt.Sprintf("Discard error: %v", err))
 	}
 	if _, err := g.DeclareGame(mode, suit, false, false); err != nil {

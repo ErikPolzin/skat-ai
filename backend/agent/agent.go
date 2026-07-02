@@ -28,16 +28,16 @@ var (
 // BiddingStrategy interface for bidding decisions
 type BiddingStrategy interface {
 	GetName() string
-	ShouldBid(gs *game.GameState, hand []game.Card, currentBid int) bool
+	ShouldBid(gs *game.GameState, hand game.Cards, currentBid int) bool
 }
 
 // GameChoiceStrategy interface for game choice decisions
 type GameChoiceStrategy interface {
 	GetName() string
 	// ChooseGame handles declaration-only paths where the hand is already final.
-	ChooseGame(hand []game.Card, bidValue int) (game.GameMode, game.Suit)
+	ChooseGame(hand game.Cards, bidValue int) strategies.GameChoice
 	// ChooseGameAndSkatDiscard makes the normal 12-card post-skat decision atomically.
-	ChooseGameAndSkatDiscard(hand []game.Card, bidValue int) strategies.GameChoice
+	ChooseGameAndSkatDiscard(hand game.Cards, bidValue int) strategies.GameChoice
 }
 
 // CardPlayStrategy interface for card play decisions
@@ -49,16 +49,26 @@ type CardPlayStrategy interface {
 // AgentMetrics tracks performance metrics for an agent
 type AgentMetrics struct {
 	// Declarer metrics (when agent is declarer)
-	wins       atomic.Int64
-	games      atomic.Int64
-	points     atomic.Int64
-	overbid    atomic.Int64
-	grandGames atomic.Int64
-	grandWins  atomic.Int64
-	suitGames  atomic.Int64
-	suitWins   atomic.Int64
-	nullGames  atomic.Int64
-	nullWins   atomic.Int64
+	wins                    atomic.Int64
+	games                   atomic.Int64
+	points                  atomic.Int64
+	overbid                 atomic.Int64
+	grandGames              atomic.Int64
+	grandWins               atomic.Int64
+	suitGames               atomic.Int64
+	suitWins                atomic.Int64
+	nullGames               atomic.Int64
+	nullWins                atomic.Int64
+	handGames               atomic.Int64
+	handWins                atomic.Int64
+	schneiderGames          atomic.Int64
+	schneiderWins           atomic.Int64
+	schwarzGames            atomic.Int64
+	schwarzWins             atomic.Int64
+	schneiderAnnouncedGames atomic.Int64
+	schneiderAnnouncedWins  atomic.Int64
+	schwarzAnnouncedGames   atomic.Int64
+	schwarzAnnouncedWins    atomic.Int64
 
 	// Defender metrics (when agent is defending)
 	defenderGames atomic.Int64
@@ -120,15 +130,13 @@ func (sa *SkatAgent) Bid(state *game.GameState) bool {
 	return accept
 }
 
-func (sa *SkatAgent) ChooseGame(state *game.GameState) (game.GameMode, game.Suit) {
+func (sa *SkatAgent) ChooseGame(state *game.GameState) strategies.GameChoice {
 	if state.Declarer == nil {
-		return game.ModeGrand, game.Clubs // Default fallback
+		return strategies.GameChoice{Mode: game.ModeGrand, TrumpSuit: game.Clubs}
 	}
 	hand := state.Players[*state.Declarer].Hand
 	bidValue := int(state.BidValue)
-	mode, suit := sa.gameChoiceStrategy.ChooseGame(hand, bidValue)
-
-	return mode, suit
+	return sa.gameChoiceStrategy.ChooseGame(hand, bidValue)
 }
 
 func (sa *SkatAgent) ChooseGameAndSkatDiscard(state *game.GameState) strategies.GameChoice {
@@ -426,6 +434,37 @@ func (sa *SkatAgent) RecordGameResult(gs *game.GameState, playerResult game.Play
 		if playerResult.IsOverbid {
 			sa.metrics.overbid.Add(1)
 		}
+		if gs.PlayedHand {
+			sa.metrics.handGames.Add(1)
+			if playerResult.IsWinner {
+				sa.metrics.handWins.Add(1)
+			}
+		}
+		gameResult := gs.Result()
+		if gameResult.IsSchneider {
+			sa.metrics.schneiderGames.Add(1)
+			if playerResult.IsWinner {
+				sa.metrics.schneiderWins.Add(1)
+			}
+		}
+		if gameResult.IsSchwarz {
+			sa.metrics.schwarzGames.Add(1)
+			if playerResult.IsWinner {
+				sa.metrics.schwarzWins.Add(1)
+			}
+		}
+		if gs.AnnouncedSchneider {
+			sa.metrics.schneiderAnnouncedGames.Add(1)
+			if playerResult.IsWinner {
+				sa.metrics.schneiderAnnouncedWins.Add(1)
+			}
+		}
+		if gs.AnnouncedSchwarz {
+			sa.metrics.schwarzAnnouncedGames.Add(1)
+			if playerResult.IsWinner {
+				sa.metrics.schwarzAnnouncedWins.Add(1)
+			}
+		}
 
 		// Track by game type
 		switch gs.Mode {
@@ -477,6 +516,16 @@ func (sa *SkatAgent) MergeMetrics(other AgentMetricsSnapshot) {
 	sa.metrics.suitWins.Add(other.SuitWins)
 	sa.metrics.nullGames.Add(other.NullGames)
 	sa.metrics.nullWins.Add(other.NullWins)
+	sa.metrics.handGames.Add(other.HandGames)
+	sa.metrics.handWins.Add(other.HandWins)
+	sa.metrics.schneiderGames.Add(other.SchneiderGames)
+	sa.metrics.schneiderWins.Add(other.SchneiderWins)
+	sa.metrics.schwarzGames.Add(other.SchwarzGames)
+	sa.metrics.schwarzWins.Add(other.SchwarzWins)
+	sa.metrics.schneiderAnnouncedGames.Add(other.SchneiderAnnouncedGames)
+	sa.metrics.schneiderAnnouncedWins.Add(other.SchneiderAnnouncedWins)
+	sa.metrics.schwarzAnnouncedGames.Add(other.SchwarzAnnouncedGames)
+	sa.metrics.schwarzAnnouncedWins.Add(other.SchwarzAnnouncedWins)
 	sa.metrics.defenderGames.Add(other.DefenderGames)
 	sa.metrics.defenderWins.Add(other.DefenderWins)
 	sa.metrics.passedGames.Add(other.PassedGames)
@@ -526,24 +575,34 @@ func (sa *SkatAgent) GetMetrics() AgentMetricsSnapshot {
 	copy(outcomeIsDeclarer, sa.metrics.outcomeIsDeclarer)
 
 	return AgentMetricsSnapshot{
-		Wins:                 sa.metrics.wins.Load(),
-		Games:                sa.metrics.games.Load(),
-		Points:               sa.metrics.points.Load(),
-		Overbid:              sa.metrics.overbid.Load(),
-		GrandGames:           sa.metrics.grandGames.Load(),
-		GrandWins:            sa.metrics.grandWins.Load(),
-		SuitGames:            sa.metrics.suitGames.Load(),
-		SuitWins:             sa.metrics.suitWins.Load(),
-		NullGames:            sa.metrics.nullGames.Load(),
-		NullWins:             sa.metrics.nullWins.Load(),
-		DefenderGames:        sa.metrics.defenderGames.Load(),
-		DefenderWins:         sa.metrics.defenderWins.Load(),
-		BiddingAccepts:       biddingAccepts,
-		BiddingRejects:       biddingRejects,
-		PassedGames:          sa.metrics.passedGames.Load(),
-		PredictedProbability: predictedProb,
-		ActualOutcomes:       actualOutcomes,
-		OutcomeIsDeclarer:    outcomeIsDeclarer,
+		Wins:                    sa.metrics.wins.Load(),
+		Games:                   sa.metrics.games.Load(),
+		Points:                  sa.metrics.points.Load(),
+		Overbid:                 sa.metrics.overbid.Load(),
+		GrandGames:              sa.metrics.grandGames.Load(),
+		GrandWins:               sa.metrics.grandWins.Load(),
+		SuitGames:               sa.metrics.suitGames.Load(),
+		SuitWins:                sa.metrics.suitWins.Load(),
+		NullGames:               sa.metrics.nullGames.Load(),
+		NullWins:                sa.metrics.nullWins.Load(),
+		HandGames:               sa.metrics.handGames.Load(),
+		HandWins:                sa.metrics.handWins.Load(),
+		SchneiderGames:          sa.metrics.schneiderGames.Load(),
+		SchneiderWins:           sa.metrics.schneiderWins.Load(),
+		SchwarzGames:            sa.metrics.schwarzGames.Load(),
+		SchwarzWins:             sa.metrics.schwarzWins.Load(),
+		SchneiderAnnouncedGames: sa.metrics.schneiderAnnouncedGames.Load(),
+		SchneiderAnnouncedWins:  sa.metrics.schneiderAnnouncedWins.Load(),
+		SchwarzAnnouncedGames:   sa.metrics.schwarzAnnouncedGames.Load(),
+		SchwarzAnnouncedWins:    sa.metrics.schwarzAnnouncedWins.Load(),
+		DefenderGames:           sa.metrics.defenderGames.Load(),
+		DefenderWins:            sa.metrics.defenderWins.Load(),
+		BiddingAccepts:          biddingAccepts,
+		BiddingRejects:          biddingRejects,
+		PassedGames:             sa.metrics.passedGames.Load(),
+		PredictedProbability:    predictedProb,
+		ActualOutcomes:          actualOutcomes,
+		OutcomeIsDeclarer:       outcomeIsDeclarer,
 	}
 }
 
@@ -563,6 +622,16 @@ func (sa *SkatAgent) ResetMetrics() {
 	sa.metrics.suitWins.Store(0)
 	sa.metrics.nullGames.Store(0)
 	sa.metrics.nullWins.Store(0)
+	sa.metrics.handGames.Store(0)
+	sa.metrics.handWins.Store(0)
+	sa.metrics.schneiderGames.Store(0)
+	sa.metrics.schneiderWins.Store(0)
+	sa.metrics.schwarzGames.Store(0)
+	sa.metrics.schwarzWins.Store(0)
+	sa.metrics.schneiderAnnouncedGames.Store(0)
+	sa.metrics.schneiderAnnouncedWins.Store(0)
+	sa.metrics.schwarzAnnouncedGames.Store(0)
+	sa.metrics.schwarzAnnouncedWins.Store(0)
 	sa.metrics.defenderGames.Store(0)
 	sa.metrics.defenderWins.Store(0)
 	sa.metrics.passedGames.Store(0)
@@ -578,24 +647,34 @@ func (sa *SkatAgent) ResetMetrics() {
 
 // AgentMetricsSnapshot is a point-in-time snapshot of agent metrics
 type AgentMetricsSnapshot struct {
-	Wins                 int64
-	Games                int64
-	Points               int64
-	Overbid              int64
-	GrandGames           int64
-	GrandWins            int64
-	SuitGames            int64
-	SuitWins             int64
-	NullGames            int64
-	NullWins             int64
-	DefenderGames        int64
-	DefenderWins         int64
-	BiddingAccepts       map[int]int
-	BiddingRejects       map[int]int
-	PassedGames          int64
-	PredictedProbability []float64
-	ActualOutcomes       []bool
-	OutcomeIsDeclarer    []bool
+	Wins                    int64
+	Games                   int64
+	Points                  int64
+	Overbid                 int64
+	GrandGames              int64
+	GrandWins               int64
+	SuitGames               int64
+	SuitWins                int64
+	NullGames               int64
+	NullWins                int64
+	HandGames               int64
+	HandWins                int64
+	SchneiderGames          int64
+	SchneiderWins           int64
+	SchwarzGames            int64
+	SchwarzWins             int64
+	SchneiderAnnouncedGames int64
+	SchneiderAnnouncedWins  int64
+	SchwarzAnnouncedGames   int64
+	SchwarzAnnouncedWins    int64
+	DefenderGames           int64
+	DefenderWins            int64
+	BiddingAccepts          map[int]int
+	BiddingRejects          map[int]int
+	PassedGames             int64
+	PredictedProbability    []float64
+	ActualOutcomes          []bool
+	OutcomeIsDeclarer       []bool
 }
 
 // GetMaxBid returns the highest bid value the agent accepted during evaluation

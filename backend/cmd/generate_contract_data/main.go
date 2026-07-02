@@ -17,10 +17,13 @@ import (
 )
 
 type contractExample struct {
-	Hand   game.Cards
-	Mode   game.GameMode
-	Suit   game.Suit
-	Target bool
+	Hand               game.Cards
+	Mode               game.GameMode
+	Suit               game.Suit
+	PlayedHand         bool
+	AnnouncedSchneider bool
+	AnnouncedSchwarz   bool
+	Target             bool
 }
 
 func main() {
@@ -37,8 +40,6 @@ func main() {
 	if *workers <= 0 {
 		*workers = 1
 	}
-	rand.Seed(*seed)
-
 	fmt.Println("============================================================")
 	fmt.Println("Skat Contract Dataset Generation")
 	fmt.Println("============================================================")
@@ -57,8 +58,9 @@ func main() {
 
 	for i := 0; i < *workers; i++ {
 		wg.Add(1)
-		go func() {
+		go func(worker int) {
 			defer wg.Done()
+			rng := rand.New(rand.NewSource(*seed + int64(worker)))
 			agentConfig := newHeuristicAgentConfig()
 			for {
 				select {
@@ -67,18 +69,20 @@ func main() {
 				default:
 				}
 
-				mode, ok := chooseNeededMode(needed.Load())
+				mode, ok := chooseNeededMode(rng, needed.Load())
 				if !ok {
 					return
 				}
-				ex := playForcedContract(agentConfig, mode, randomTrumpSuit(mode))
-				select {
-				case examplesChan <- ex:
-				case <-stopChan:
-					return
+				examples := playForcedContract(rng, agentConfig, mode, randomTrumpSuit(rng, mode))
+				for _, ex := range examples {
+					select {
+					case examplesChan <- ex:
+					case <-stopChan:
+						return
+					}
 				}
 			}
-		}()
+		}(i)
 	}
 
 	byMode := make(map[game.GameMode][]contractExample)
@@ -119,36 +123,68 @@ func newHeuristicAgentConfig() agent.AgentConfig {
 	return agent.NewThreeWayConfig(baseAgent, baseAgent.Clone(), baseAgent.Clone())
 }
 
-func playForcedContract(agentConfig agent.AgentConfig, mode game.GameMode, suit game.Suit) contractExample {
-	g := agent.WithAgentPlayers(game.NewGame(), agentConfig).WithCardsDealt()
+func playForcedContract(rng *rand.Rand, agentConfig agent.AgentConfig, mode game.GameMode, suit game.Suit) []contractExample {
+	g := agent.WithAgentPlayers(game.NewGame(), agentConfig)
+	if _, err := g.DealWithRand(rng); err != nil {
+		panic(err)
+	}
 
 	for _, player := range g.Players {
 		agent.MustGetAgentForPlayer(player).OnGameStart()
 	}
 
-	declarer := game.GamePosition(rand.Intn(3))
+	declarer := game.GamePosition(rng.Intn(3))
 	g = g.WithDeclarer(declarer, 0)
-	if _, err := g.SkatDecision(true); err != nil {
+	originalHand := append(game.Cards(nil), g.Players[declarer].Hand...)
+	playedHand, announcedSchneider, announcedSchwarz := randomDeclaration(rng, mode)
+	if _, err := g.SkatDecision(!playedHand); err != nil {
 		panic(fmt.Sprintf("SkatDecision error: %v", err))
 	}
-
-	choice := strategies.NewHeuristicGameChoiceStrategy().ChooseGameAndSkatDiscardForContract(
-		g.Players[declarer].Hand, mode, suit,
-	)
-	if _, err := g.Discard(choice.Discard[0], choice.Discard[1]); err != nil {
-		panic(fmt.Sprintf("Discard error: %v", err))
+	if !playedHand {
+		choice := strategies.NewHeuristicGameChoiceStrategy().ChooseGameAndSkatDiscardForContract(
+			g.Players[declarer].Hand, mode, suit,
+		)
+		if _, err := g.Discard(choice.Discard[0], choice.Discard[1]); err != nil {
+			panic(fmt.Sprintf("Discard error: %v", err))
+		}
 	}
-	if _, err := g.DeclareGame(mode, suit, false, false); err != nil {
+	if _, err := g.DeclareGame(mode, suit, announcedSchneider, announcedSchwarz); err != nil {
 		panic(fmt.Sprintf("DeclareGame error: %v", err))
 	}
 
-	hand := append(game.Cards(nil), g.Players[declarer].Hand...)
+	finalHand := append(game.Cards(nil), g.Players[declarer].Hand...)
 	agent.WithAgentCardPlay(g)
-	return contractExample{
-		Hand:   hand,
-		Mode:   mode,
-		Suit:   suit,
-		Target: g.Result().DeclarerWon,
+	base := contractExample{
+		Hand:               originalHand,
+		Mode:               mode,
+		Suit:               suit,
+		PlayedHand:         playedHand,
+		AnnouncedSchneider: announcedSchneider,
+		AnnouncedSchwarz:   announcedSchwarz,
+		Target:             g.Result().DeclarerWon,
+	}
+	if playedHand {
+		return []contractExample{base}
+	}
+	postSkat := base
+	postSkat.Hand = finalHand
+	return []contractExample{base, postSkat}
+}
+
+func randomDeclaration(rng *rand.Rand, mode game.GameMode) (playedHand, announcedSchneider, announcedSchwarz bool) {
+	variants := 2
+	if mode != game.ModeNull {
+		variants = 4
+	}
+	switch rng.Intn(variants) {
+	case 0:
+		return false, false, false
+	case 1:
+		return true, false, false
+	case 2:
+		return true, true, false
+	default:
+		return true, true, true
 	}
 }
 
@@ -165,7 +201,7 @@ func saveDataset(path string, dataset []contractExample) error {
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	if err := writer.Write([]string{"hand", "mode", "suit", "target"}); err != nil {
+	if err := writer.Write([]string{"hand", "mode", "suit", "played_hand", "announced_schneider", "announced_schwarz", "target"}); err != nil {
 		return err
 	}
 	for _, ex := range dataset {
@@ -178,12 +214,22 @@ func saveDataset(path string, dataset []contractExample) error {
 			hand,
 			string(ex.Mode),
 			ex.Suit.String(),
+			boolCSV(ex.PlayedHand),
+			boolCSV(ex.AnnouncedSchneider),
+			boolCSV(ex.AnnouncedSchwarz),
 			target,
 		}); err != nil {
 			return err
 		}
 	}
 	return writer.Error()
+}
+
+func boolCSV(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
 }
 
 func bucketKey(ex contractExample) string {
@@ -203,7 +249,7 @@ const (
 	needAllModes = needGrand | needSuit | needNull
 )
 
-func chooseNeededMode(mask uint32) (game.GameMode, bool) {
+func chooseNeededMode(rng *rand.Rand, mask uint32) (game.GameMode, bool) {
 	var modes []game.GameMode
 	if mask&needGrand != 0 {
 		modes = append(modes, game.ModeGrand)
@@ -217,15 +263,15 @@ func chooseNeededMode(mask uint32) (game.GameMode, bool) {
 	if len(modes) == 0 {
 		return "", false
 	}
-	return modes[rand.Intn(len(modes))], true
+	return modes[rng.Intn(len(modes))], true
 }
 
-func randomTrumpSuit(mode game.GameMode) game.Suit {
+func randomTrumpSuit(rng *rand.Rand, mode game.GameMode) game.Suit {
 	if mode != game.ModeSuit {
 		return game.NoSuit
 	}
 	suits := []game.Suit{game.Clubs, game.Spades, game.Hearts, game.Diamonds}
-	return suits[rand.Intn(len(suits))]
+	return suits[rng.Intn(len(suits))]
 }
 
 func bucketsComplete(byMode map[game.GameMode][]contractExample, target int) bool {

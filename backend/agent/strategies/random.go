@@ -12,7 +12,7 @@ func (r *RandomBiddingStrategy) GetName() string {
 	return "RandomBidding"
 }
 
-func (r *RandomBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Card, currentBid int) bool {
+func (r *RandomBiddingStrategy) ShouldBid(gs *game.GameState, hand game.Cards, currentBid int) bool {
 	return rand.Float64() < 0.5
 }
 
@@ -23,7 +23,7 @@ func (r *RandomGameChoiceStrategy) GetName() string {
 	return "RandomGameChoice"
 }
 
-func (r *RandomGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int) (game.GameMode, game.Suit) {
+func (r *RandomGameChoiceStrategy) ChooseGame(hand game.Cards, bidValue int) GameChoice {
 	modes := []game.GameMode{game.ModeSuit, game.ModeGrand}
 	mode := modes[rand.Intn(len(modes))]
 
@@ -33,15 +33,16 @@ func (r *RandomGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int) (g
 		trumpSuit = suits[rand.Intn(len(suits))]
 	}
 
-	return mode, trumpSuit
+	return GameChoice{Mode: mode, TrumpSuit: trumpSuit}
 }
 
-func (r *RandomGameChoiceStrategy) ChooseGameAndSkatDiscard(hand []game.Card, bidValue int) GameChoice {
+func (r *RandomGameChoiceStrategy) ChooseGameAndSkatDiscard(hand game.Cards, bidValue int) GameChoice {
 	if len(hand) != 12 {
 		panic("ChooseGameAndSkatDiscard requires the 12-card post-skat hand")
 	}
-	mode, suit := r.ChooseGame(hand, bidValue)
-	return GameChoice{Mode: mode, TrumpSuit: suit, Discard: [2]game.Card{hand[0], hand[1]}}
+	choice := r.ChooseGame(hand, bidValue)
+	choice.Discard = [2]game.Card{hand[0], hand[1]}
+	return choice
 }
 
 // RandomCardPlayStrategy makes random card play decisions

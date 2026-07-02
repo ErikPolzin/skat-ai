@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	mathrand "math/rand"
 	"skat/agent/strategies"
 	"skat/game"
 )
@@ -209,9 +210,17 @@ func WithAgentPlayers(gs *game.GameState, config AgentConfig) *game.GameState {
 }
 
 func WithAgentBidding(gs *game.GameState, config AgentConfig) *game.GameState {
+	return withAgentBidding(gs, config, nil)
+}
+
+func withAgentBidding(gs *game.GameState, config AgentConfig, rng *mathrand.Rand) *game.GameState {
 	for {
 		if gs.Phase == game.PhaseDealing {
-			gs = gs.WithCardsDealt()
+			if rng == nil {
+				gs = gs.WithCardsDealt()
+			} else if _, err := gs.DealWithRand(rng); err != nil {
+				panic(err)
+			}
 		}
 		if gs.Phase != game.PhaseBidding {
 			panic("Cannot seed with game type, game is not in bidding phase")
@@ -261,25 +270,33 @@ func WithAgentBidding(gs *game.GameState, config AgentConfig) *game.GameState {
 	return gs
 }
 
-// WithAgentSkatExchange picks up the skat and applies one atomic contract and
-// discard decision. The declared contract is therefore the same contract the
-// discard was optimized for.
+// WithAgentSkatExchange chooses between a hand game and an atomic skat pickup,
+// contract, and discard decision.
 func WithAgentSkatExchange(gs *game.GameState) (*game.GameState, bool) {
 	if gs.Phase != game.PhaseSkatExchange {
 		panic("Cannot run agent skat decision, game is not in skat exchange phase")
 	}
 	declarer := gs.GetCurrentPlayer()
 	declarerAgent := MustGetAgentForPlayer(declarer)
-	// Agent always picks up skat
-	if _, err := gs.SkatDecision(true); err != nil {
-		panic(fmt.Sprintf("Skat decision error: %v", err))
-	}
-	choice := declarerAgent.ChooseGameAndSkatDiscard(gs)
-	if _, err := gs.Discard(choice.Discard[0], choice.Discard[1]); err != nil {
-		panic(fmt.Sprintf("Skat decision error: %v", err))
-	}
-	if _, err := gs.DeclareGame(choice.Mode, choice.TrumpSuit, false, false); err != nil {
-		panic(fmt.Sprintf("DeclareGame error: %v", err))
+	choice := declarerAgent.ChooseGame(gs)
+	if choice.PlayedHand {
+		if _, err := gs.SkatDecision(false); err != nil {
+			panic(fmt.Sprintf("Skat decision error: %v", err))
+		}
+		if _, err := gs.DeclareGame(choice.Mode, choice.TrumpSuit, choice.AnnouncedSchneider, choice.AnnouncedSchwarz); err != nil {
+			panic(fmt.Sprintf("DeclareGame error: %v", err))
+		}
+	} else {
+		if _, err := gs.SkatDecision(true); err != nil {
+			panic(fmt.Sprintf("Skat decision error: %v", err))
+		}
+		choice = declarerAgent.ChooseGameAndSkatDiscard(gs)
+		if _, err := gs.Discard(choice.Discard[0], choice.Discard[1]); err != nil {
+			panic(fmt.Sprintf("Skat decision error: %v", err))
+		}
+		if _, err := gs.DeclareGame(choice.Mode, choice.TrumpSuit, false, false); err != nil {
+			panic(fmt.Sprintf("DeclareGame error: %v", err))
+		}
 	}
 	declarerPosition := *gs.Declarer
 	declarerHand := gs.Players[declarerPosition].Hand
@@ -338,10 +355,22 @@ func WithAgentCardPlay(gs *game.GameState) *game.GameState {
 // PlayFullGame plays a complete game from deal to finish.
 // The game is played with proper agent positioning based on the AgentConfig.
 func PlayFullGame(gs *game.GameState, config AgentConfig) {
+	playFullGame(gs, config, nil)
+}
+
+func PlayFullGameWithRand(gs *game.GameState, config AgentConfig, rng *mathrand.Rand) {
+	playFullGame(gs, config, rng)
+}
+
+func playFullGame(gs *game.GameState, config AgentConfig, rng *mathrand.Rand) {
 	if gs.Phase == game.PhaseDealing {
-		gs = gs.WithCardsDealt()
+		if rng == nil {
+			gs = gs.WithCardsDealt()
+		} else if _, err := gs.DealWithRand(rng); err != nil {
+			panic(err)
+		}
 	}
-	gs = WithAgentBidding(gs, config)
+	gs = withAgentBidding(gs, config, rng)
 	if gs.Declarer == nil {
 		if gs.Phase == game.PhasePlaying {
 			gs = WithAgentCardPlay(gs)

@@ -453,9 +453,15 @@ func (c Cards) Shuffle() {
 	})
 }
 
+// ShuffleWith shuffles using the supplied RNG, allowing reproducible deals
+// without relying on Go's package-level random source.
+func (c Cards) ShuffleWith(rng *rand.Rand) {
+	rng.Shuffle(len(c), func(i, j int) { c[i], c[j] = c[j], c[i] })
+}
+
 // GameValue calculates the game value for a hand given a mode and trump suit
 // This is the value BEFORE playing - it's based on matadors only
-func (c Cards) GameValue(mode GameMode, trumpSuit Suit) int {
+func (c Cards) GameValue(mode GameMode, trumpSuit Suit, playHand, announceSchneider, announceSchwarz bool) int {
 	// Count matadors (consecutive jacks from club jack)
 	jackSuits := make(map[Suit]bool)
 	for _, card := range c {
@@ -515,36 +521,24 @@ func (c Cards) GameValue(mode GameMode, trumpSuit Suit) int {
 			baseValue = 12
 		}
 	case ModeNull:
+		if playHand {
+			return 35
+		}
 		return 23 // Null games have fixed value
+	}
+	if playHand {
+		baseValue += 1
+		if announceSchneider || announceSchwarz {
+			baseValue += 1
+		}
+		if announceSchwarz {
+			baseValue += 1
+		}
 	}
 
 	// Game value = base value × (matadors + 1 + game/schneider/schwarz bonuses)
 	// For estimation purposes, we just use matadors + 1 (minimum multiplier)
 	return baseValue * (matadors + 1)
-}
-
-// CountGamesPlayable counts how many games can be played given a certain game value
-func (c Cards) CountGamesPlayable(gameValue int) int {
-	count := 0
-
-	// Check Grand
-	if c.GameValue(ModeGrand, NoSuit) >= gameValue {
-		count++
-	}
-
-	// Check each suit
-	for _, suit := range []Suit{Diamonds, Hearts, Spades, Clubs} {
-		if c.GameValue(ModeSuit, suit) >= gameValue {
-			count++
-		}
-	}
-
-	// Check Null (fixed value of 23)
-	if 23 >= gameValue {
-		count++
-	}
-
-	return count
 }
 
 func (c Cards) GetRemainingCards() Cards {
@@ -571,4 +565,23 @@ func (c Cards) GetRemainingCards() Cards {
 	}
 
 	return remaining
+}
+
+func (c Cards) Without(discarded []Card) Cards {
+	result := make(Cards, 0, len(c)-len(discarded))
+	removed := make([]bool, len(discarded))
+	for _, card := range c {
+		remove := false
+		for i, discard := range discarded {
+			if !removed[i] && card == discard {
+				removed[i] = true
+				remove = true
+				break
+			}
+		}
+		if !remove {
+			result = append(result, card)
+		}
+	}
+	return result
 }

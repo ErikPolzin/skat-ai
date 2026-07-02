@@ -2,13 +2,16 @@ package encoding
 
 import "skat/game"
 
-const ContractFeatureSize = 85
+const ContractFeatureSize = 89
 
 // NeuralContractEncoding represents a declarer hand plus candidate contract.
 // It is intentionally hand-level, unlike the trick-state card-play encoding.
 type NeuralContractEncoding struct {
-	HandCards [32]float32
-	GameMode  [6]float32 // [Grand, Clubs, Spades, Hearts, Diamonds, Null]
+	HandCards          [32]float32
+	GameMode           [6]float32 // [Grand, Clubs, Spades, Hearts, Diamonds, Null]
+	PlayedHand         float32
+	AnnouncedSchneider float32
+	AnnouncedSchwarz   float32
 
 	HandSize           float32
 	TotalPoints        float32
@@ -39,6 +42,12 @@ func (e *NeuralContractEncoding) ToSlice() [ContractFeatureSize]float32 {
 	idx += 32
 	copy(result[idx:idx+6], e.GameMode[:])
 	idx += 6
+	result[idx] = e.PlayedHand
+	idx++
+	result[idx] = e.AnnouncedSchneider
+	idx++
+	result[idx] = e.AnnouncedSchwarz
+	idx++
 
 	result[idx] = e.HandSize
 	idx++
@@ -80,8 +89,17 @@ func (e *NeuralContractEncoding) ToSlice() [ContractFeatureSize]float32 {
 	return result
 }
 
-func EncodeNeuralContract(hand game.Cards, mode game.GameMode, trumpSuit game.Suit) NeuralContractEncoding {
+func EncodeNeuralContract(hand game.Cards, mode game.GameMode, trumpSuit game.Suit, playedHand, announcedSchneider, announcedSchwarz bool) NeuralContractEncoding {
 	var encoding NeuralContractEncoding
+	if playedHand {
+		encoding.PlayedHand = 1
+	}
+	if announcedSchneider {
+		encoding.AnnouncedSchneider = 1
+	}
+	if announcedSchwarz {
+		encoding.AnnouncedSchwarz = 1
+	}
 
 	for _, card := range hand {
 		encoding.HandCards[CardToIndex(card)] = 1
@@ -113,7 +131,7 @@ func EncodeNeuralContract(hand game.Cards, mode game.GameMode, trumpSuit game.Su
 
 	encoding.HandSize = clamp01(float32(len(hand)) / 12.0)
 	encoding.TotalPoints = clamp01(float32(hand.TotalPoints()) / 120.0)
-	encoding.GameValue = clamp01(float32(hand.GameValue(mode, trumpSuit)) / 264.0)
+	encoding.GameValue = clamp01(float32(hand.GameValue(mode, trumpSuit, playedHand, announcedSchneider, announcedSchwarz)) / 264.0)
 
 	totalTrumps := contractTotalTrumps(mode)
 	if totalTrumps > 0 {

@@ -1,6 +1,7 @@
 package training
 
 import (
+	"math/rand"
 	"runtime"
 	"skat/agent"
 	"skat/game"
@@ -11,6 +12,16 @@ import (
 // Each game is played once, with agents properly positioned based on configuration.
 // Agents collect their own metrics internally.
 func EvaluateAgents(config agent.AgentConfig, games int) {
+	evaluateAgents(config, games, 0, false)
+}
+
+// EvaluateAgentsWithSeed assigns each game its own deterministic RNG. Results
+// are reproducible regardless of worker scheduling.
+func EvaluateAgentsWithSeed(config agent.AgentConfig, games int, seed int64) {
+	evaluateAgents(config, games, seed, true)
+}
+
+func evaluateAgents(config agent.AgentConfig, games int, seed int64, deterministic bool) {
 	numWorkers := runtime.GOMAXPROCS(0)
 
 	// Enable metrics on all agents
@@ -31,13 +42,14 @@ func EvaluateAgents(config agent.AgentConfig, games int) {
 			defer wg.Done()
 			localConfig := config.CloneAll()
 			localConfig.EnableMetrics()
-			g := game.NewGame()
-			g = agent.WithAgentPlayers(g, localConfig)
-
-			for range gameChan {
-				// Play game with the specified configuration
-				agent.PlayFullGame(g, localConfig)
-				g.NextGame()
+			for gameIndex := range gameChan {
+				g := agent.WithAgentPlayers(game.NewGame(), localConfig)
+				if deterministic {
+					g.GameNumber = gameIndex
+					agent.PlayFullGameWithRand(g, localConfig, rand.New(rand.NewSource(seed+int64(gameIndex))))
+				} else {
+					agent.PlayFullGame(g, localConfig)
+				}
 			}
 			// Merge local agent metrics back to main agents
 			config.MergeMetrics(localConfig)

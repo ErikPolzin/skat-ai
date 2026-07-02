@@ -7,12 +7,20 @@ import (
 
 type contractEstimatorFunc func(game.Cards, game.GameMode, game.Suit) float64
 
-func (f contractEstimatorFunc) EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit) float64 {
+func (f contractEstimatorFunc) EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit, _, _, _ bool) float64 {
 	return f(hand, mode, suit)
 }
 
+type declarationEstimatorFunc func(game.Cards, game.GameMode, game.Suit, bool, bool, bool) float64
+
+func (f declarationEstimatorFunc) EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit, playedHand, schneider, schwarz bool) float64 {
+	return f(hand, mode, suit, playedHand, schneider, schwarz)
+}
+
 func TestContractEvaluatorBestUsesBidAndSharedScores(t *testing.T) {
-	choice := NewHeuristicGameChoiceStrategy()
+	config := DefaultContractEvaluatorConfig()
+	config.LossMultiplier = 1.2 // This test exercises bid/ranking plumbing, not risk tuning.
+	choice := NewHeuristicGameChoiceStrategyWithConfig(config)
 	hand := []game.Card{
 		{Suit: game.Clubs, Rank: game.Jack},
 		{Suit: game.Spades, Rank: game.Jack},
@@ -90,9 +98,9 @@ func TestContractStrategiesShareEvaluatorDecision(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected evaluator to find a contract")
 	}
-	mode, suit := choice.ChooseGame(hand, 24)
-	if mode != expected.Mode || suit != expected.TrumpSuit {
-		t.Fatalf("game choice did not use evaluator result: got %s/%s, want %s/%s", mode, suit, expected.Mode, expected.TrumpSuit)
+	decision := choice.ChooseGame(hand, 24)
+	if decision.Mode != expected.Mode || decision.TrumpSuit != expected.TrumpSuit {
+		t.Fatalf("game choice did not use evaluator result: got %s/%s, want %s/%s", decision.Mode, decision.TrumpSuit, expected.Mode, expected.TrumpSuit)
 	}
 }
 
@@ -110,7 +118,7 @@ func TestAtomicGameChoiceEvaluatesPostDiscardHand(t *testing.T) {
 	if decision.Mode != game.ModeNull {
 		t.Fatalf("ChooseGameAndSkatDiscard mode = %s, want Null scored from post-discard hand", decision.Mode)
 	}
-	if remaining := handWithoutCards(hand, decision.Discard[:]...); len(remaining) != 10 {
+	if remaining := hand.Without(decision.Discard[:]); len(remaining) != 10 {
 		t.Fatalf("atomic choice leaves %d cards, want 10", len(remaining))
 	}
 }
@@ -128,5 +136,41 @@ func TestBiddingDoesNotAbandonStrongerContractToRaise(t *testing.T) {
 
 	if bidding.ShouldBid(state, hand, 23) {
 		t.Fatal("ShouldBid raised past Null 23 into a weaker fallback contract")
+	}
+}
+
+func TestHandDeclarationsTradeRewardForHarderWinTarget(t *testing.T) {
+	hand := game.NewDeck()[:10]
+	veryStrong := declarationEstimatorFunc(func(_ game.Cards, mode game.GameMode, _ game.Suit, _, _, _ bool) float64 {
+		if mode == game.ModeGrand {
+			return 0.995
+		}
+		return 0.1
+	})
+	strategy := NewHeuristicGameChoiceStrategyWithEstimator(DefaultContractEvaluatorConfig(), veryStrong)
+	choice := strategy.ChooseGame(hand, 18)
+	if !choice.PlayedHand || !choice.AnnouncedSchwarz || !choice.AnnouncedSchneider {
+		t.Fatalf("very strong hand should accept schwarz reward, got %+v", choice)
+	}
+
+	ordinary := declarationEstimatorFunc(func(_ game.Cards, mode game.GameMode, _ game.Suit, playedHand, schneider, schwarz bool) float64 {
+		if mode == game.ModeGrand {
+			if schwarz {
+				return 0.1
+			}
+			if schneider {
+				return 0.3
+			}
+			if playedHand {
+				return 0.55
+			}
+			return 0.7
+		}
+		return 0.1
+	})
+	strategy = NewHeuristicGameChoiceStrategyWithEstimator(DefaultContractEvaluatorConfig(), ordinary)
+	choice = strategy.ChooseGame(hand, 18)
+	if choice.AnnouncedSchneider || choice.AnnouncedSchwarz {
+		t.Fatalf("ordinary hand should not make a risky announcement: %+v", choice)
 	}
 }

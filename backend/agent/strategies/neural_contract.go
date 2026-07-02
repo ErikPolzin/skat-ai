@@ -35,12 +35,12 @@ func NewNeuralContractWinProbabilityEstimatorFromWeightMap(weights ContractNetwo
 	return &NeuralContractWinProbabilityEstimator{net: createContractNetworkInstance(weights)}
 }
 
-func (e *NeuralContractWinProbabilityEstimator) EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit) float64 {
-	enc := encoding.EncodeNeuralContract(hand, mode, suit)
+func (e *NeuralContractWinProbabilityEstimator) EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit, playedHand, announcedSchneider, announcedSchwarz bool) float64 {
+	enc := encoding.EncodeNeuralContract(hand, mode, suit, playedHand, announcedSchneider, announcedSchwarz)
 	probability, err := e.EstimateEncodedWinProbability(enc.ToSlice())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WARNING: contract inference error: %v (falling back to heuristic estimate)\n", err)
-		return NewHeuristicContractWinProbabilityEstimator().EstimateWinProbability(hand, mode, suit)
+		return NewHeuristicContractWinProbabilityEstimator().EstimateWinProbability(hand, mode, suit, playedHand, announcedSchneider, announcedSchwarz)
 	}
 	return probability
 }

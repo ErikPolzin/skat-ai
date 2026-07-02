@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/google/uuid"
@@ -313,6 +314,15 @@ func (gs *GameState) ResetForRedeal() {
 
 // HandleDeal processes the deal action from the dealer before bidding
 func (gs *GameState) Deal() (string, error) {
+	return gs.dealWith(nil)
+}
+
+// DealWithRand deals cards using an explicit RNG for reproducible simulations.
+func (gs *GameState) DealWithRand(rng *rand.Rand) (string, error) {
+	return gs.dealWith(rng)
+}
+
+func (gs *GameState) dealWith(rng *rand.Rand) (string, error) {
 	// Check if we're in dealing phase
 	if gs.Phase != PhaseDealing {
 		return "", fmt.Errorf("not in dealing phase")
@@ -320,7 +330,11 @@ func (gs *GameState) Deal() (string, error) {
 	// Actually deal the cards
 	deck := NewDeck()
 	// Shuffle
-	deck.Shuffle()
+	if rng == nil {
+		deck.Shuffle()
+	} else {
+		deck.ShuffleWith(rng)
+	}
 	gs.Players[0].Hand = make(Cards, 10)
 	gs.Players[1].Hand = make(Cards, 10)
 	gs.Players[2].Hand = make(Cards, 10)

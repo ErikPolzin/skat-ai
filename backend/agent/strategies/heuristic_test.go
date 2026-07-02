@@ -194,8 +194,8 @@ func TestNullEstimatorRewardsEscapableSuitShape(t *testing.T) {
 		{Suit: game.Diamonds, Rank: game.Jack}, {Suit: game.Diamonds, Rank: game.King},
 	}
 
-	safeProbability := estimator.EstimateWinProbability(safe, game.ModeNull, game.NoSuit)
-	unsafeProbability := estimator.EstimateWinProbability(unsafe, game.ModeNull, game.NoSuit)
+	safeProbability := estimator.EstimateWinProbability(safe, game.ModeNull, game.NoSuit, false, false, false)
+	unsafeProbability := estimator.EstimateWinProbability(unsafe, game.ModeNull, game.NoSuit, false, false, false)
 	if safeProbability <= unsafeProbability {
 		t.Fatalf("escapable Null hand probability %.3f <= unsafe hand %.3f", safeProbability, unsafeProbability)
 	}

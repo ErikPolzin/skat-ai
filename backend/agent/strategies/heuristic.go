@@ -15,18 +15,33 @@ func NewHeuristicContractWinProbabilityEstimator() ContractWinProbabilityEstimat
 	return heuristicContractWinProbabilityEstimator{}
 }
 
-func (m heuristicContractWinProbabilityEstimator) EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit) float64 {
+func (m heuristicContractWinProbabilityEstimator) EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit, playedHand, announcedSchneider, announcedSchwarz bool) float64 {
+	var probability float64
 	switch mode {
 	case game.ModeGrand:
-		return m.evaluateGrandStrength(hand)
+		probability = m.evaluateGrandStrength(hand)
 	case game.ModeSuit:
-		return m.evaluateSuitStrength(hand, suit)
+		probability = m.evaluateSuitStrength(hand, suit)
 	case game.ModeNull:
-		return m.evaluateNullStrength(hand)
+		probability = m.evaluateNullStrength(hand)
 	default:
 		return 0
 	}
+	// The heuristic has no learned declaration-conditioned model. Keep it as a
+	// conservative fallback; neural estimators learn these probabilities directly.
+	if playedHand {
+		probability *= 0.8
+	}
+	if announcedSchneider {
+		probability = clampProbability((probability - 0.45) / 0.55)
+	}
+	if announcedSchwarz {
+		probability = clampProbability((probability - 0.75) / 0.25)
+	}
+	return probability
 }
+
+func clampProbability(value float64) float64 { return min(1, max(0, value)) }
 
 // HeuristicBiddingStrategy uses hand strength heuristics to make bidding decisions
 type HeuristicBiddingStrategy struct {
@@ -49,7 +64,7 @@ func (h *HeuristicBiddingStrategy) GetName() string {
 	return "HeuristicBidding"
 }
 
-func (h *HeuristicBiddingStrategy) ShouldBid(gs *game.GameState, hand []game.Card, currentBid int) bool {
+func (h *HeuristicBiddingStrategy) ShouldBid(gs *game.GameState, hand game.Cards, currentBid int) bool {
 	nextBid := gs.GetNextBidValue()
 	if nextBid == 0 {
 		return false
@@ -86,64 +101,28 @@ func (h *HeuristicGameChoiceStrategy) GetName() string {
 	return "HeuristicGameChoice"
 }
 
-func (h *HeuristicGameChoiceStrategy) ChooseGame(hand []game.Card, bidValue int) (game.GameMode, game.Suit) {
+func (h *HeuristicGameChoiceStrategy) ChooseGame(hand game.Cards, bidValue int) GameChoice {
 	best, _ := h.evaluator.Best(hand, bidValue)
-	return best.Mode, best.TrumpSuit
+	return best.ToGameChoice()
 }
 
-func (h *HeuristicGameChoiceStrategy) ChooseGameAndSkatDiscard(hand []game.Card, bidValue int) GameChoice {
+func (h *HeuristicGameChoiceStrategy) ChooseGameAndSkatDiscard(hand game.Cards, bidValue int) GameChoice {
 	if len(hand) != 12 {
 		panic("ChooseGameAndSkatDiscard requires the 12-card post-skat hand")
 	}
-	type contractKey struct {
-		mode game.GameMode
-		suit game.Suit
-	}
-	discards := make(map[contractKey][2]game.Card, 6)
-	candidates := h.evaluator.evaluate(hand, bidValue, func(mode game.GameMode, suit game.Suit) game.Cards {
-		first, second := h.chooseSkatDiscard(hand, mode, suit)
-		discards[contractKey{mode: mode, suit: suit}] = [2]game.Card{first, second}
-		return handWithoutCards(hand, first, second)
-	})
-	best, _ := h.evaluator.best(candidates)
-	return GameChoice{
-		Mode:      best.Mode,
-		TrumpSuit: best.TrumpSuit,
-		Discard:   discards[contractKey{mode: best.Mode, suit: best.TrumpSuit}],
-	}
+	best, _ := h.evaluator.BestWithDiscard(hand, bidValue, h.chooseSkatDiscard)
+	return best.ToGameChoice()
 }
 
 // ChooseGameAndSkatDiscardForContract supports datasets that intentionally
 // force a contract while still applying the heuristic discard for that exact
 // contract. Normal play uses ChooseGameAndSkatDiscard instead.
-func (h *HeuristicGameChoiceStrategy) ChooseGameAndSkatDiscardForContract(hand []game.Card, mode game.GameMode, suit game.Suit) GameChoice {
-	if len(hand) != 12 {
-		panic("ChooseGameAndSkatDiscardForContract requires the 12-card post-skat hand")
-	}
+func (h *HeuristicGameChoiceStrategy) ChooseGameAndSkatDiscardForContract(hand game.Cards, mode game.GameMode, suit game.Suit) GameChoice {
 	first, second := h.chooseSkatDiscard(hand, mode, suit)
 	return GameChoice{Mode: mode, TrumpSuit: suit, Discard: [2]game.Card{first, second}}
 }
 
-func handWithoutCards(hand []game.Card, discarded ...game.Card) game.Cards {
-	result := make(game.Cards, 0, len(hand)-len(discarded))
-	removed := make([]bool, len(discarded))
-	for _, card := range hand {
-		remove := false
-		for i, discard := range discarded {
-			if !removed[i] && card == discard {
-				removed[i] = true
-				remove = true
-				break
-			}
-		}
-		if !remove {
-			result = append(result, card)
-		}
-	}
-	return result
-}
-
-func (h *HeuristicGameChoiceStrategy) chooseSkatDiscard(hand []game.Card, mode game.GameMode, trumpSuit game.Suit) (game.Card, game.Card) {
+func (h *HeuristicGameChoiceStrategy) chooseSkatDiscard(hand game.Cards, mode game.GameMode, trumpSuit game.Suit) (game.Card, game.Card) {
 	// Special handling for Null games
 	if mode == game.ModeNull {
 		return h.chooseNullSkatDiscard(hand)

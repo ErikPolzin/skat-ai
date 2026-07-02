@@ -20,9 +20,14 @@ type EvalConfig struct {
 }
 
 type Observation struct {
-	Mode      game.GameMode
-	Predicted float64
-	Actual    bool
+	Mode               game.GameMode
+	Predicted          float64
+	Actual             bool
+	PlayedHand         bool
+	AnnouncedSchneider bool
+	AnnouncedSchwarz   bool
+	IsSchneider        bool
+	IsSchwarz          bool
 }
 
 type BucketStats struct {
@@ -43,12 +48,14 @@ type ModeSummary struct {
 }
 
 type EvalResult struct {
-	Observations []Observation
-	Overall      ModeSummary
-	ByMode       []ModeSummary
-	Buckets      []BucketStats
-	BrierScore   float64
-	LogLoss      float64
+	Observations  []Observation
+	Overall       ModeSummary
+	ByMode        []ModeSummary
+	ByDeclaration []ModeSummary
+	ByOutcome     []ModeSummary
+	Buckets       []BucketStats
+	BrierScore    float64
+	LogLoss       float64
 }
 
 func EvaluateEstimator(config EvalConfig, estimator strategies.ContractWinProbabilityEstimator) (EvalResult, error) {
@@ -93,15 +100,20 @@ func collectObservations(targetGames int, selection string, biddingThreshold flo
 
 		declarer := *g.Declarer
 		declarerHand := append(game.Cards(nil), g.Players[declarer].Hand...)
-		predicted := estimator.EstimateWinProbability(declarerHand, g.Mode, g.TrumpSuit)
+		predicted := estimator.EstimateWinProbability(declarerHand, g.Mode, g.TrumpSuit, g.PlayedHand, g.AnnouncedSchneider, g.AnnouncedSchwarz)
 		mode := g.Mode
 
 		agent.WithAgentCardPlay(g)
 		result := g.Result()
 		observations = append(observations, Observation{
-			Mode:      mode,
-			Predicted: predicted,
-			Actual:    result.DeclarerWon,
+			Mode:               mode,
+			Predicted:          predicted,
+			Actual:             result.DeclarerWon,
+			PlayedHand:         g.PlayedHand,
+			AnnouncedSchneider: g.AnnouncedSchneider,
+			AnnouncedSchwarz:   g.AnnouncedSchwarz,
+			IsSchneider:        result.IsSchneider,
+			IsSchwarz:          result.IsSchwarz,
 		})
 	}
 	return observations, nil
@@ -151,6 +163,8 @@ func summarizeObservations(observations []Observation, binWidth float64) EvalRes
 	}
 
 	byMode := map[game.GameMode][]Observation{}
+	byDeclaration := map[string][]Observation{}
+	byOutcome := map[string][]Observation{}
 	buckets := map[int]*BucketStats{}
 
 	for _, obs := range observations {
@@ -162,6 +176,21 @@ func summarizeObservations(observations []Observation, binWidth float64) EvalRes
 		result.BrierScore += diff * diff
 		result.LogLoss += BinaryLogLoss(obs.Predicted, actual)
 		byMode[obs.Mode] = append(byMode[obs.Mode], obs)
+		if obs.PlayedHand {
+			byDeclaration["Hand"] = append(byDeclaration["Hand"], obs)
+		}
+		if obs.AnnouncedSchneider {
+			byDeclaration["Schneider"] = append(byDeclaration["Schneider"], obs)
+		}
+		if obs.AnnouncedSchwarz {
+			byDeclaration["Schwarz"] = append(byDeclaration["Schwarz"], obs)
+		}
+		if obs.IsSchneider {
+			byOutcome["Schneider"] = append(byOutcome["Schneider"], obs)
+		}
+		if obs.IsSchwarz {
+			byOutcome["Schwarz"] = append(byOutcome["Schwarz"], obs)
+		}
 
 		key := int(math.Floor(obs.Predicted / binWidth))
 		if obs.Predicted >= 1 {
@@ -187,6 +216,16 @@ func summarizeObservations(observations []Observation, binWidth float64) EvalRes
 	for _, mode := range []game.GameMode{game.ModeGrand, game.ModeSuit, game.ModeNull} {
 		if summary := summarizeMode(string(mode), byMode[mode]); summary.Games > 0 {
 			result.ByMode = append(result.ByMode, summary)
+		}
+	}
+	for _, declaration := range []string{"Hand", "Schneider", "Schwarz"} {
+		if summary := summarizeMode(declaration, byDeclaration[declaration]); summary.Games > 0 {
+			result.ByDeclaration = append(result.ByDeclaration, summary)
+		}
+	}
+	for _, outcome := range []string{"Schneider", "Schwarz"} {
+		if summary := summarizeMode(outcome, byOutcome[outcome]); summary.Games > 0 {
+			result.ByOutcome = append(result.ByOutcome, summary)
 		}
 	}
 
@@ -238,6 +277,28 @@ func PrintEvalSummary(w io.Writer, result EvalResult) {
 	printModeSummary(w, result.Overall)
 	for _, summary := range result.ByMode {
 		printModeSummary(w, summary)
+	}
+	if len(result.ByDeclaration) > 0 {
+		fmt.Fprintln(w, "Declaration frequencies and win rates:")
+		for _, summary := range result.ByDeclaration {
+			label := summary.Label
+			if label != "Hand" {
+				label += " announced"
+			}
+			fmt.Fprintf(w, "  %-9s %7d (%5.1f%%), actual %5.1f%%, expected %5.1f%%\n",
+				label+":", summary.Games,
+				float64(summary.Games)/float64(len(result.Observations))*100,
+				summary.ActualRate*100, summary.ExpectedRate*100)
+		}
+	}
+	if len(result.ByOutcome) > 0 {
+		fmt.Fprintln(w, "Achieved result frequencies and win rates:")
+		for _, summary := range result.ByOutcome {
+			fmt.Fprintf(w, "  %-19s %7d (%5.1f%%), declarer won %5.1f%%\n",
+				summary.Label+":", summary.Games,
+				float64(summary.Games)/float64(len(result.Observations))*100,
+				summary.ActualRate*100)
+		}
 	}
 	fmt.Fprintf(w, "Brier score: %.4f\n", result.BrierScore)
 	fmt.Fprintf(w, "Log loss: %.4f\n", result.LogLoss)

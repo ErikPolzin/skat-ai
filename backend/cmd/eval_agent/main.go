@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"math"
-	"math/rand"
 	"os"
 	"runtime"
 	"skat/agent"
@@ -39,9 +38,6 @@ func main() {
 	evalSeed := flag.Int64("seed", 0, "Random seed for reproducible evaluation deals (0 uses the current default)")
 	skipGameplayExamples := flag.Bool("skip-gameplay-examples", true, "Skip slow example game-play section after evaluation")
 	flag.Parse()
-	if *evalSeed != 0 {
-		rand.Seed(*evalSeed)
-	}
 
 	switch *evalMode {
 	case "agent":
@@ -75,7 +71,7 @@ func main() {
 		HandWinPredictor:      handWinPredictor,
 		HandWinMinSamples:     *handWinMinSamples,
 	}
-	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *contractEstimator, *contractWeights, *threshold, *minimaxDepth, *skipGameplayExamples, &minimaxSearch)
+	runEvaluation(*agentType, *biddingType, *cardPlayType, *biddingMode, *games, *cardplayWeights, *contractEstimator, *contractWeights, *threshold, *minimaxDepth, *skipGameplayExamples, *evalSeed, &minimaxSearch)
 }
 
 func runContractEstimatorEvaluation(games int, estimatorType, weightsPath, selection string, biddingThreshold, binWidth float64) {
@@ -123,7 +119,7 @@ func createContractEstimator(estimatorType, weightsPath string) (strategies.Cont
 	}
 }
 
-func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights, contractEstimator, contractWeights string, threshold float64, minimaxDepth int, skipGameplayExamples bool, minimaxSearch *strategies.MinimaxSearchConfig) {
+func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, totalRounds int, cardplayWeights, contractEstimator, contractWeights string, threshold float64, minimaxDepth int, skipGameplayExamples bool, evalSeed int64, minimaxSearch *strategies.MinimaxSearchConfig) {
 	var testAgent *agent.SkatAgent
 	var err error
 
@@ -182,7 +178,11 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 	fmt.Printf("Running %d games on %d CPU cores...\n", totalRounds, runtime.GOMAXPROCS(0))
 	fmt.Println(strings.Repeat("=", 50) + "\n")
 
-	training.EvaluateAgents(evalConfig, totalRounds)
+	if evalSeed != 0 {
+		training.EvaluateAgentsWithSeed(evalConfig, totalRounds, evalSeed)
+	} else {
+		training.EvaluateAgents(evalConfig, totalRounds)
+	}
 
 	// Get agent metrics for bidding distribution
 	testMetrics := testAgent.GetMetrics()
@@ -271,6 +271,13 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 				testNull, float64(testNullW)/float64(testNull)*100, testNullW)
 		}
 
+		fmt.Printf("  Declaration breakdown (frequency among declarer games):\n")
+		displayDeclarationStats("Hand", testMetrics.HandGames, testMetrics.HandWins, testGames)
+		displayDeclarationStats("Schneider", testMetrics.SchneiderGames, testMetrics.SchneiderWins, testGames)
+		displayDeclarationStats("Sch. ann.", testMetrics.SchneiderAnnouncedGames, testMetrics.SchneiderAnnouncedWins, testGames)
+		displayDeclarationStats("Schwarz", testMetrics.SchwarzGames, testMetrics.SchwarzWins, testGames)
+		displayDeclarationStats("Sw. ann.", testMetrics.SchwarzAnnouncedGames, testMetrics.SchwarzAnnouncedWins, testGames)
+
 		// Bidding distribution
 		totalBids := testMetrics.GetTotalBids()
 		if totalBids > 0 {
@@ -316,6 +323,17 @@ func runEvaluation(agentType, biddingType, cardPlayType, biddingMode string, tot
 		fmt.Println(strings.Repeat("=", 50))
 		runGamePlayTest(testAgent)
 	}
+}
+
+func displayDeclarationStats(label string, games, wins, total int64) {
+	frequency, winRate := 0.0, 0.0
+	if total > 0 {
+		frequency = float64(games) / float64(total) * 100
+	}
+	if games > 0 {
+		winRate = float64(wins) / float64(games) * 100
+	}
+	fmt.Printf("    %-9s %4d games (%5.1f%%), %5.1f%% win rate (%d wins)\n", label+":", games, frequency, winRate, wins)
 }
 
 func skipsGameplayExamplesByDefault(agentType, cardPlayType string) bool {
@@ -457,8 +475,8 @@ func testExampleGameChoiceHands(testAgent *agent.SkatAgent) {
 			continue
 		}
 
-		testMode, testSuit := gameChoice.ChooseGame(hand, tc.bidValue)
-		testChoice := formatGameChoice(testMode, testSuit)
+		choice := gameChoice.ChooseGame(hand, tc.bidValue)
+		testChoice := formatGameChoice(choice.Mode, choice.TrumpSuit)
 
 		fmt.Printf("\n%s:\n", tc.name)
 		fmt.Printf("  %s\n", tc.reason)

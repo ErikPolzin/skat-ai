@@ -104,17 +104,16 @@ func generateResolveTrickAction(gs *game.GameState) Action {
 }
 
 func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerState) Action {
+	agentInstance, err := GetAgentForPlayer(player)
+	if err != nil {
+		return ErrorAction(err)
+	}
 	// Check if agent has already picked up skat
 	if len(player.Hand) == 12 {
 		// Agent has picked up skat. Choose the game and its discard together so
 		// declaration cannot switch to a contract the discard was not built for.
 
 		// Get shared agent instance for game mode decision
-		agentInstance, err := GetAgentForPlayer(player)
-		if err != nil {
-			return ErrorAction(err)
-		}
-
 		choice := agentInstance.ChooseGameAndSkatDiscard(gs)
 
 		return func() (string, error) {
@@ -124,7 +123,15 @@ func generateAgentSkatExchangeAction(gs *game.GameState, player *game.PlayerStat
 			return gs.DeclareGame(choice.Mode, choice.TrumpSuit, false, false)
 		}
 	} else {
-		// Agent hasn't picked up skat yet - always pick it up
+		choice := agentInstance.ChooseGame(gs)
+		if choice.PlayedHand {
+			return func() (string, error) {
+				if _, err := gs.SkatDecision(false); err != nil {
+					return "", err
+				}
+				return gs.DeclareGame(choice.Mode, choice.TrumpSuit, choice.AnnouncedSchneider, choice.AnnouncedSchwarz)
+			}
+		}
 		return func() (string, error) {
 			return gs.SkatDecision(true)
 		}
@@ -140,15 +147,10 @@ func generateAgentDeclarationAction(gs *game.GameState, player *game.PlayerState
 	}
 
 	// Use Q-learning to choose the best game mode and trump suit
-	mode, trumpSuit := agentInstance.ChooseGame(gs)
-
-	// AI agents don't announce schneider/schwarz for now (conservative strategy)
-	// TODO: In the future, could add a strategy for when to make announcements
-	announceSchneider := false
-	announceSchwarz := false
+	choice := agentInstance.ChooseGame(gs)
 
 	return func() (string, error) {
-		return gs.DeclareGame(mode, trumpSuit, announceSchneider, announceSchwarz)
+		return gs.DeclareGame(choice.Mode, choice.TrumpSuit, choice.AnnouncedSchneider, choice.AnnouncedSchwarz)
 	}
 }
 

@@ -80,10 +80,20 @@ func (t *Trainer) createModel() (*Model, error) {
 	}
 	prediction := gorgonia.Must(gorgonia.Sigmoid(logits))
 
-	diff := gorgonia.Must(gorgonia.Sub(prediction, target))
-	squared := gorgonia.Must(gorgonia.Square(diff))
-	weighted := gorgonia.Must(gorgonia.HadamardProd(squared, sampleWeight))
-	loss := gorgonia.Must(gorgonia.Mean(weighted))
+	// Optimize the Bernoulli likelihood used by evaluation. Unlike squared
+	// error through a sigmoid, cross-entropy keeps useful gradients for the
+	// rare positive Schneider and Schwarz examples.
+	one := gorgonia.NodeFromAny(g, float32(1), gorgonia.WithName("contract_one"))
+	epsilon := gorgonia.NodeFromAny(g, float32(1e-7), gorgonia.WithName("contract_epsilon"))
+	logPrediction := gorgonia.Must(gorgonia.Log(gorgonia.Must(gorgonia.Add(prediction, epsilon))))
+	oneMinusPrediction := gorgonia.Must(gorgonia.Sub(one, prediction))
+	logOneMinusPrediction := gorgonia.Must(gorgonia.Log(gorgonia.Must(gorgonia.Add(oneMinusPrediction, epsilon))))
+	positive := gorgonia.Must(gorgonia.HadamardProd(target, logPrediction))
+	oneMinusTarget := gorgonia.Must(gorgonia.Sub(one, target))
+	negative := gorgonia.Must(gorgonia.HadamardProd(oneMinusTarget, logOneMinusPrediction))
+	logLikelihood := gorgonia.Must(gorgonia.Add(positive, negative))
+	weighted := gorgonia.Must(gorgonia.HadamardProd(logLikelihood, sampleWeight))
+	loss := gorgonia.Must(gorgonia.Neg(gorgonia.Must(gorgonia.Mean(weighted))))
 
 	trainable := weights.ToSlice()
 	if t.l2Reg > 0 {
@@ -204,9 +214,21 @@ func parseExample(record []string, header map[string]int) (ContractExample, bool
 			suit = parsedSuit
 		}
 	}
-	encoded := encoding.EncodeNeuralContract(hand, mode, suit)
+	playedHand := readBoolColumn(header, record, "played_hand")
+	announcedSchneider := readBoolColumn(header, record, "announced_schneider")
+	announcedSchwarz := readBoolColumn(header, record, "announced_schwarz")
+	encoded := encoding.EncodeNeuralContract(hand, mode, suit, playedHand, announcedSchneider, announcedSchwarz)
 	ex.Features = encoded.ToSlice()
 	return ex, true, nil
+}
+
+func readBoolColumn(header map[string]int, record []string, name string) bool {
+	idx, ok := header[name]
+	if !ok || idx >= len(record) {
+		return false
+	}
+	value := strings.TrimSpace(strings.ToLower(record[idx]))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func hasFeatureColumns(header map[string]int) bool {

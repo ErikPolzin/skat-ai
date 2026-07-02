@@ -9,8 +9,12 @@ import (
 
 // ContractCandidate is one playable contract the agent could choose.
 type ContractCandidate struct {
-	Mode      game.GameMode
-	TrumpSuit game.Suit
+	Mode               game.GameMode
+	TrumpSuit          game.Suit
+	PlayedHand         bool
+	AnnouncedSchneider bool
+	AnnouncedSchwarz   bool
+	Discard            [2]game.Card
 
 	GameValue      int
 	WinProbability float64
@@ -20,19 +24,31 @@ type ContractCandidate struct {
 	Reason string
 }
 
-// GameChoice is an atomic post-skat decision: the contract and the two cards
-// discarded for that exact contract.
 type GameChoice struct {
-	Mode      game.GameMode
-	TrumpSuit game.Suit
-	Discard   [2]game.Card
+	Mode               game.GameMode
+	TrumpSuit          game.Suit
+	PlayedHand         bool
+	AnnouncedSchneider bool
+	AnnouncedSchwarz   bool
+	Discard            [2]game.Card
+}
+
+func (c ContractCandidate) ToGameChoice() GameChoice {
+	return GameChoice{
+		Mode:               c.Mode,
+		TrumpSuit:          c.TrumpSuit,
+		PlayedHand:         c.PlayedHand,
+		AnnouncedSchneider: c.AnnouncedSchneider,
+		AnnouncedSchwarz:   c.AnnouncedSchwarz,
+		Discard:            c.Discard,
+	}
 }
 
 // ContractWinProbabilityEstimator supplies the probability model used by
 // ContractEvaluator. This lets the same candidate-ranking logic use heuristic,
 // neural, or test probability sources.
 type ContractWinProbabilityEstimator interface {
-	EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit) float64
+	EstimateWinProbability(hand game.Cards, mode game.GameMode, suit game.Suit, playedHand, announcedSchneider, announcedSchwarz bool) float64
 }
 
 // EstimateRamschWinProbabilities estimates each player's chance of finishing
@@ -86,7 +102,7 @@ func DefaultContractEvaluatorConfig() ContractEvaluatorConfig {
 	return ContractEvaluatorConfig{
 		MinWinProbability: 0.55,
 		MinExpectedValue:  0.0,
-		LossMultiplier:    1.2,
+		LossMultiplier:    2.0,
 	}
 }
 
@@ -121,36 +137,63 @@ func NewContractEvaluatorWithEstimator(config ContractEvaluatorConfig, estimator
 	}
 }
 
-func (e *ContractEvaluator) Evaluate(hand []game.Card, bidValue int) []ContractCandidate {
-	return e.evaluate(hand, bidValue, nil)
-}
-
 // evaluate scores contracts using the original hand for game value and an
 // optional contract-specific hand for win probability. Game choice uses this
 // to account for the two cards it will discard; bidding has no skat yet and
 // therefore uses the original hand for both.
-func (e *ContractEvaluator) evaluate(
+func (e *ContractEvaluator) candidates(
 	hand []game.Card,
 	bidValue int,
-	probabilityHand func(game.GameMode, game.Suit) game.Cards,
 ) []ContractCandidate {
 	cards := game.Cards(hand)
 	candidates := make([]ContractCandidate, 0, 6)
 
-	addCandidate := func(mode game.GameMode, suit game.Suit) {
-		evaluationCards := cards
-		if probabilityHand != nil {
-			evaluationCards = probabilityHand(mode, suit)
-		}
-		candidates = append(candidates, e.candidate(cards, evaluationCards, mode, suit, bidValue))
+	addCandidate := func(mode game.GameMode, suit game.Suit, playHand bool, announceSchneider bool, announceSchwarz bool) {
+		candidates = append(candidates, e.candidate(cards, mode, suit, bidValue, playHand, announceSchneider, announceSchwarz, [2]game.Card{}))
 	}
 
-	addCandidate(game.ModeGrand, game.NoSuit)
+	addCandidate(game.ModeGrand, game.NoSuit, false, false, false)
+	addCandidate(game.ModeGrand, game.NoSuit, true, false, false)
+	addCandidate(game.ModeGrand, game.NoSuit, true, true, false)
+	addCandidate(game.ModeGrand, game.NoSuit, true, true, true)
 	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
-		addCandidate(game.ModeSuit, suit)
+		addCandidate(game.ModeSuit, suit, false, false, false)
+		addCandidate(game.ModeSuit, suit, true, false, false)
+		addCandidate(game.ModeSuit, suit, true, true, false)
+		addCandidate(game.ModeSuit, suit, true, true, true)
 	}
-	addCandidate(game.ModeNull, game.NoSuit)
+	// Null cannot announce schneider/schwarz
+	addCandidate(game.ModeNull, game.NoSuit, false, false, false)
+	addCandidate(game.ModeNull, game.NoSuit, true, false, false)
 
+	return e.sortedCandidates(candidates)
+}
+
+func (e *ContractEvaluator) candidatesWithDiscard(
+	hand game.Cards,
+	bidValue int,
+	discardFunc func(game.Cards, game.GameMode, game.Suit) (game.Card, game.Card),
+) []ContractCandidate {
+	candidates := make([]ContractCandidate, 0, 6)
+
+	addCandidateWithDiscard := func(mode game.GameMode, suit game.Suit) {
+		first, second := discardFunc(hand, mode, suit)
+		discard := [2]game.Card{first, second}
+		cardsAfterDiscard := hand.Without(discard[:])
+		candidates = append(candidates, e.candidate(cardsAfterDiscard, mode, suit, bidValue, false, false, false, discard))
+	}
+
+	addCandidateWithDiscard(game.ModeGrand, game.NoSuit)
+	for suit := game.Clubs; suit <= game.Diamonds; suit++ {
+		addCandidateWithDiscard(game.ModeSuit, suit)
+	}
+	// Null cannot announce schneider/schwarz
+	addCandidateWithDiscard(game.ModeNull, game.NoSuit)
+
+	return e.sortedCandidates(candidates)
+}
+
+func (e *ContractEvaluator) sortedCandidates(candidates []ContractCandidate) []ContractCandidate {
 	sort.SliceStable(candidates, func(i, j int) bool {
 		if candidates[i].LegalForBid != candidates[j].LegalForBid {
 			return candidates[i].LegalForBid
@@ -163,17 +206,24 @@ func (e *ContractEvaluator) evaluate(
 		}
 		return candidates[i].GameValue > candidates[j].GameValue
 	})
-
 	return candidates
 }
 
-func (e *ContractEvaluator) Best(hand []game.Card, bidValue int) (ContractCandidate, bool) {
-	return e.best(e.Evaluate(hand, bidValue))
+func (e *ContractEvaluator) Best(hand game.Cards, bidValue int) (ContractCandidate, bool) {
+	return e.best(e.candidates(hand, bidValue))
+}
+
+func (e *ContractEvaluator) BestWithDiscard(
+	hand game.Cards,
+	bidValue int,
+	discardFunc func(game.Cards, game.GameMode, game.Suit) (game.Card, game.Card),
+) (ContractCandidate, bool) {
+	return e.best(e.candidatesWithDiscard(hand, bidValue, discardFunc))
 }
 
 func (e *ContractEvaluator) best(candidates []ContractCandidate) (ContractCandidate, bool) {
 	for _, candidate := range candidates {
-		if e.IsAcceptable(candidate) {
+		if e.isAcceptable(candidate) {
 			return candidate, true
 		}
 	}
@@ -183,15 +233,24 @@ func (e *ContractEvaluator) best(candidates []ContractCandidate) (ContractCandid
 	return candidates[0], false
 }
 
-func (e *ContractEvaluator) IsAcceptable(candidate ContractCandidate) bool {
+func (e *ContractEvaluator) isAcceptable(candidate ContractCandidate) bool {
 	return candidate.LegalForBid &&
 		candidate.WinProbability >= e.config.MinWinProbability &&
 		candidate.ExpectedValue >= e.config.MinExpectedValue
 }
 
-func (e *ContractEvaluator) candidate(cards, evaluationCards game.Cards, mode game.GameMode, suit game.Suit, bidValue int) ContractCandidate {
-	gameValue := cards.GameValue(mode, suit)
-	winProbability := e.winProbability(evaluationCards, mode, suit)
+func (e *ContractEvaluator) candidate(
+	cards game.Cards,
+	mode game.GameMode,
+	suit game.Suit,
+	bidValue int,
+	playHand bool,
+	announceSchneider bool,
+	announceSchwarz bool,
+	discard [2]game.Card,
+) ContractCandidate {
+	gameValue := cards.GameValue(mode, suit, playHand, announceSchneider, announceSchwarz)
+	winProbability := e.winProbability(cards, mode, suit, playHand, announceSchneider, announceSchwarz)
 	expectedValue := expectedContractValue(float64(gameValue), winProbability, e.config.LossMultiplier)
 
 	return ContractCandidate{
@@ -201,12 +260,13 @@ func (e *ContractEvaluator) candidate(cards, evaluationCards game.Cards, mode ga
 		WinProbability: winProbability,
 		ExpectedValue:  expectedValue,
 		LegalForBid:    gameValue >= bidValue,
+		Discard:        discard,
 		Reason:         fmt.Sprintf("p=%.2f value=%d ev=%.1f", winProbability, gameValue, expectedValue),
 	}
 }
 
-func (e *ContractEvaluator) winProbability(cards game.Cards, mode game.GameMode, suit game.Suit) float64 {
-	return e.estimator.EstimateWinProbability(cards, mode, suit)
+func (e *ContractEvaluator) winProbability(cards game.Cards, mode game.GameMode, suit game.Suit, playHand bool, announceSchneider bool, announeSchwarz bool) float64 {
+	return e.estimator.EstimateWinProbability(cards, mode, suit, playHand, announceSchneider, announeSchwarz)
 }
 
 // EstimateContractWinProbability estimates the declarer's chance of winning
@@ -214,7 +274,7 @@ func (e *ContractEvaluator) winProbability(cards game.Cards, mode game.GameMode,
 // It is strategy-independent so evaluation can normalize every agent against
 // the same hand-strength model.
 func EstimateContractWinProbability(hand []game.Card, mode game.GameMode, suit game.Suit) float64 {
-	return NewHeuristicContractWinProbabilityEstimator().EstimateWinProbability(game.Cards(hand), mode, suit)
+	return NewHeuristicContractWinProbabilityEstimator().EstimateWinProbability(game.Cards(hand), mode, suit, false, false, false)
 }
 
 func expectedContractValue(gameValue float64, winProbability float64, lossMultiplier float64) float64 {

@@ -594,7 +594,7 @@ func (m *PerfectInfoMinimaxStrategy) EvaluateStateEstimate(state *game.GameState
 func (m *PerfectInfoMinimaxStrategy) evaluateNullStateProbability(state *game.GameState) float64 {
 	declarerHand := state.Players[*state.Declarer].Hand
 	probability := NewHeuristicContractWinProbabilityEstimator().EstimateWinProbability(
-		declarerHand, game.ModeNull, game.NoSuit,
+		declarerHand, game.ModeNull, game.NoSuit, state.PlayedHand, false, false,
 	)
 	progress := 1.0 - float64(len(declarerHand))/10.0
 	if progress < 0 {

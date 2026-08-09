@@ -85,6 +85,7 @@ export interface GameState {
   played_hand: boolean; // Declarer played without picking up skat
   announced_schneider: boolean; // Declarer announced schneider
   announced_schwarz: boolean; // Declarer announced schwarz
+  announced_ouvert: boolean; // Null declarer exposes their cards
   current_player_deadline: string; // RFC3339 timestamp when current player times out
   forfeited_player: GamePosition | null; // Position of player who forfeited, if any
 }
@@ -99,6 +100,7 @@ export interface GameResult {
   played_hand: boolean;
   announced_schneider: boolean;
   announced_schwarz: boolean;
+  announced_ouvert: boolean;
   value: number;
   is_forfeit?: boolean;
 }
@@ -107,6 +109,7 @@ export interface GameInfo {
   state: GameState;
   player_id?: string;
   hand?: Card[];
+  open_hand?: Card[];
   skat?: [Card, Card];
   can_play_next: boolean;
   result?: GameResult;
@@ -497,12 +500,14 @@ export async function chooseGame(
   trump: string,
   announceSchneider: boolean = false,
   announceSchwarz: boolean = false,
+  announceOuvert: boolean = false,
 ): Promise<void> {
   return gameAction(gameId, "choose_game", playerId, {
     mode,
     trump,
     announce_schneider: announceSchneider,
     announce_schwarz: announceSchwarz,
+    announce_ouvert: announceOuvert,
   });
 }
 

@@ -15,6 +15,7 @@ export function GameModeSelector() {
   const [selectedTrump, setSelectedTrump] = useState<string>("♣");
   const [announceSchneider, setAnnounceSchneider] = useState<boolean>(false);
   const [announceSchwarz, setAnnounceSchwarz] = useState<boolean>(false);
+  const [announceOuvert, setAnnounceOuvert] = useState<boolean>(false);
 
   const schneiderCanBeAnnounced = canAnnounceSchneider(
     selectedMode,
@@ -39,6 +40,7 @@ export function GameModeSelector() {
       playedHand: game.playedHand,
       announcedSchneider: effectiveAnnounceSchneider,
       announcedSchwarz: effectiveAnnounceSchwarz,
+      announcedOuvert: selectedMode === "null" && announceOuvert,
     });
   }, [
     selectedMode,
@@ -48,6 +50,7 @@ export function GameModeSelector() {
     game.playedHand,
     effectiveAnnounceSchneider,
     effectiveAnnounceSchwarz,
+    announceOuvert,
   ]);
 
   const isDisabled = !game.controls.isConnected || game.controls.isLoading;
@@ -60,6 +63,7 @@ export function GameModeSelector() {
         selectedMode === "suit" ? selectedTrump : "",
         effectiveAnnounceSchneider,
         effectiveAnnounceSchwarz,
+        selectedMode === "null" && announceOuvert,
       );
     }
   };
@@ -70,6 +74,7 @@ export function GameModeSelector() {
       setAnnounceSchneider(false);
       setAnnounceSchwarz(false);
     }
+    if (mode !== "null") setAnnounceOuvert(false);
   };
 
   if (game.controls.isLoading) {
@@ -168,6 +173,19 @@ export function GameModeSelector() {
         </div>
       )}
 
+      {selectedMode === "null" && (
+        <div className="announcements">
+          <label className="announcement-option">
+            <input
+              type="checkbox"
+              checked={announceOuvert}
+              onChange={(e) => setAnnounceOuvert(e.target.checked)}
+            />
+            <span>Ouvert (open hand)</span>
+          </label>
+        </div>
+      )}
+
       <button
         className="declare-button"
         onClick={handleDeclare}
@@ -188,6 +206,7 @@ export function GameModeSelector() {
           : effectiveAnnounceSchneider
             ? " (Schneider)"
             : ""}
+        {selectedMode === "null" && announceOuvert ? " Ouvert" : ""}
         {isOverbidDeclaration ? " and lose" : ""}
       </button>
     </div>

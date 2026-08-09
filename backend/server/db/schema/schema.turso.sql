@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS games (
     played_hand INTEGER DEFAULT 0,
     announced_schneider INTEGER DEFAULT 0,
     announced_schwarz INTEGER DEFAULT 0,
+    announced_ouvert INTEGER DEFAULT 0,
     listener_passed INTEGER DEFAULT 0,
     speaker_passed INTEGER DEFAULT 0,
     dealer_passed INTEGER DEFAULT 0,

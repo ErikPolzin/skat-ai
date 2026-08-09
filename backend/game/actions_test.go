@@ -149,6 +149,33 @@ func TestNullHandResultUsesNullHandValue(t *testing.T) {
 	}
 }
 
+func TestNullOuvertValuesAndValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		hand bool
+		want int
+	}{
+		{name: "pickup", want: 46},
+		{name: "hand", hand: true, want: 59},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gs := newDeclarerChoiceStateForTest(0)
+			gs.PlayedHand = tc.hand
+			if _, err := gs.DeclareGameOuvert(ModeNull, NoSuit, false, false, true); err != nil {
+				t.Fatalf("DeclareGameOuvert returned error: %v", err)
+			}
+			if got := gs.nullGameValue(); got != tc.want {
+				t.Fatalf("nullGameValue() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+
+	gs := newDeclarerChoiceStateForTest(0)
+	if _, err := gs.DeclareGameOuvert(ModeGrand, NoSuit, false, false, true); err == nil {
+		t.Fatal("expected non-Null ouvert declaration to be rejected")
+	}
+}
+
 func TestForfeitingDeclarerResultUsesLostGameValue(t *testing.T) {
 	gs := newDeclarerChoiceStateForTest(0)
 	if _, err := gs.DeclareGame(ModeSuit, Clubs, false, false); err != nil {

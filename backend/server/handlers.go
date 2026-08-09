@@ -1198,6 +1198,7 @@ func (s *Server) handleChooseGame(w http.ResponseWriter, r *http.Request) {
 			Trump             string `json:"trump"`
 			AnnounceSchneider bool   `json:"announce_schneider"`
 			AnnounceSchwarz   bool   `json:"announce_schwarz"`
+			AnnounceOuvert    bool   `json:"announce_ouvert"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			return "", err
@@ -1209,7 +1210,7 @@ func (s *Server) handleChooseGame(w http.ResponseWriter, r *http.Request) {
 			return "", fmt.Errorf("invalid trump suit: %v", err)
 		}
 
-		response, err := gs.DeclareGame(mode, trump, req.AnnounceSchneider, req.AnnounceSchwarz)
+		response, err := gs.DeclareGameOuvert(mode, trump, req.AnnounceSchneider, req.AnnounceSchwarz, req.AnnounceOuvert)
 		if err == nil {
 			// Declaring may end the game when overbid
 			if err := s.maybeSaveGameResults(gs); err != nil {

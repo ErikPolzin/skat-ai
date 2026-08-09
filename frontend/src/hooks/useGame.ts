@@ -51,6 +51,7 @@ export function useGame(
       played_hand: false,
       announced_schneider: false,
       announced_schwarz: false,
+      announced_ouvert: false,
       current_player_deadline: "",
       forfeited_player: null,
     },
@@ -62,6 +63,7 @@ export function useGame(
 
   const state = gameInfo.state;
   const hand = gameInfo.hand ?? [];
+  const openHand = gameInfo.open_hand ?? [];
   const skatCards = gameInfo.skat ?? undefined;
   const canPlayNextFromState = gameInfo.can_play_next ?? false;
   const result = gameInfo.result;
@@ -316,6 +318,7 @@ export function useGame(
         played_hand: false,
         announced_schneider: false,
         announced_schwarz: false,
+        announced_ouvert: false,
         current_player_deadline: "",
         forfeited_player: null,
       },
@@ -410,6 +413,7 @@ export function useGame(
     skatCards: skatCards ? [skatCards[0], skatCards[1]] : [],
     hasPickedUpSkat: isSkatExchange && hand.length === 12,
     isNull,
+    openHand,
     isBiddingPhase,
     isSkatExchange,
     isDealer,

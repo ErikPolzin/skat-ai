@@ -219,7 +219,8 @@ export function canAnnounceSchwarz(
   return canAnnounceSchneider(mode, playedHand) && announceSchneider;
 }
 
-export function getNullGameValue(playedHand: boolean): number {
+export function getNullGameValue(playedHand: boolean, announcedOuvert = false): number {
+  if (announcedOuvert) return playedHand ? 59 : 46;
   return playedHand ? 35 : 23;
 }
 
@@ -231,6 +232,7 @@ export function calculatePotentialGameValue({
   playedHand,
   announcedSchneider,
   announcedSchwarz,
+  announcedOuvert = false,
 }: {
   mode: string;
   trumpSuit: string;
@@ -239,9 +241,10 @@ export function calculatePotentialGameValue({
   playedHand: boolean;
   announcedSchneider: boolean;
   announcedSchwarz: boolean;
+  announcedOuvert?: boolean;
 }): number {
   if (mode === "null") {
-    return getNullGameValue(playedHand);
+    return getNullGameValue(playedHand, announcedOuvert);
   }
 
   const baseValue = mode === "grand" ? 24 : SUIT_GAME_BASE_VALUES[trumpSuit];

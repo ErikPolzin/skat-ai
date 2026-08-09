@@ -88,6 +88,7 @@ type GameState struct {
 	PlayedHand         bool `json:"played_hand"`         // Declarer played without picking up skat
 	AnnouncedSchneider bool `json:"announced_schneider"` // Declarer announced schneider
 	AnnouncedSchwarz   bool `json:"announced_schwarz"`   // Declarer announced schwarz
+	AnnouncedOuvert    bool `json:"announced_ouvert"`    // Null declarer exposes their hand
 
 	// Bidding state
 	BidValue       int  `json:"bid_value"`       // Current bid value
@@ -147,6 +148,7 @@ type GameResult struct {
 	PlayedHand         bool `json:"played_hand"`         // Played without skat
 	AnnouncedSchneider bool `json:"announced_schneider"` // Announced schneider
 	AnnouncedSchwarz   bool `json:"announced_schwarz"`   // Announced schwarz
+	AnnouncedOuvert    bool `json:"announced_ouvert"`    // Announced ouvert in Null
 	Value              int  `json:"value"`               // Final game value (negative if lost, doubled if lost)
 	IsForfeit          bool `json:"is_forfeit"`          // Game ended due to forfeit
 }
@@ -357,6 +359,7 @@ func (gs *GameState) Clone() *GameState {
 		PlayedHand:            gs.PlayedHand,
 		AnnouncedSchneider:    gs.AnnouncedSchneider,
 		AnnouncedSchwarz:      gs.AnnouncedSchwarz,
+		AnnouncedOuvert:       gs.AnnouncedOuvert,
 		BidValue:              gs.BidValue,
 		ListenerPassed:        gs.ListenerPassed,
 		SpeakerPassed:         gs.SpeakerPassed,

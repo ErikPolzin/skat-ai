@@ -149,6 +149,7 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
       trump: string,
       announceSchneider: boolean = false,
       announceSchwarz: boolean = false,
+      announceOuvert: boolean = false,
     ) => {
       if (game.isDeclarer && game.isDeclarerChoice && !isLoading && playerId) {
         setIsLoading(true);
@@ -160,6 +161,7 @@ export function useControls(game: Game, websocket: SkatWebSocket) {
             trump,
             announceSchneider,
             announceSchwarz,
+            announceOuvert,
           );
         } catch (error) {
           console.error("Declare game action failed:", error);

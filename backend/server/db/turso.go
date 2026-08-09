@@ -183,7 +183,7 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
 			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
-			g.current_player_deadline, g.forfeited_player, g.cards_played
+			g.current_player_deadline, g.forfeited_player, g.cards_played, g.announced_ouvert
 		FROM games g
 		JOIN game_sessions gss ON g.session_id = gss.id
 		WHERE g.id = ?`,
@@ -194,7 +194,7 @@ func (d *TursoDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
-		&deadline, &forfeitedPlayer, &cardsPlayedString)
+		&deadline, &forfeitedPlayer, &cardsPlayedString, &gs.AnnouncedOuvert)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game with ID %s not found", gameID)
 	}
@@ -246,7 +246,7 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
 			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
-			g.current_player_deadline, g.forfeited_player, g.cards_played
+			g.current_player_deadline, g.forfeited_player, g.cards_played, g.announced_ouvert
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE gs.code = ?
@@ -259,7 +259,7 @@ func (d *TursoDatabase) GetGameBySessionCode(sessionCode string) (*game.GameStat
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
-		&deadline, &forfeitedPlayer, &cardsPlayedString)
+		&deadline, &forfeitedPlayer, &cardsPlayedString, &gs.AnnouncedOuvert)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game with session code %s not found", sessionCode)
 	}
@@ -324,9 +324,9 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			game_mode, trump_suit, bid_value, matadors,
 			played_hand, announced_schneider, announced_schwarz,
 			listener_passed, speaker_passed, dealer_passed, overbid,
-			current_player_deadline, forfeited_player, cards_played,
+			current_player_deadline, forfeited_player, cards_played, announced_ouvert,
 			created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT (id) DO UPDATE SET
 			session_id = excluded.session_id, game_number = excluded.game_number,
@@ -345,6 +345,7 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 			dealer_passed = excluded.dealer_passed, overbid = excluded.overbid,
 			current_player_deadline = excluded.current_player_deadline,
 			forfeited_player = excluded.forfeited_player, cards_played = excluded.cards_played,
+			announced_ouvert = excluded.announced_ouvert,
 			updated_at = CURRENT_TIMESTAMP`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, trickWinner, gs.CurrentPlayer,
@@ -352,7 +353,7 @@ func (d *TursoDatabase) SaveGame(gs game.GameState) error {
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
 		gs.PlayedHand, gs.AnnouncedSchneider, gs.AnnouncedSchwarz,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,
-		deadline, forfeitedPlayer, cardsPlayedString,
+		deadline, forfeitedPlayer, cardsPlayedString, gs.AnnouncedOuvert,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save game: %w", err)

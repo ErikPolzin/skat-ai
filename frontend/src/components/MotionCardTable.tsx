@@ -436,16 +436,19 @@ export function MotionCardTable() {
     return { x, y: verticalOffset, rotate: 0, scale: 1 };
   };
 
-  const topOpponentCardsMap = <T,>(fn: (index: number, key: string) => T) =>
+  const topOpenHand = game.topPlayer?.position === game.declarerPosition ? game.openHand : [];
+  const leftOpenHand = game.leftPlayer?.position === game.declarerPosition ? game.openHand : [];
+
+  const topOpponentCardsMap = <T,>(fn: (index: number, key: string, card?: CardType) => T) =>
     game.topPlayer &&
     Array.from({ length: game.topPlayer?.card_count ?? 0 }).map((_, index) =>
-      fn(index, `card-${game.topPlayer?.position}-${index}`),
+      fn(index, `card-${game.topPlayer?.position}-${index}`, topOpenHand[index]),
     );
 
-  const leftOpponentCardsMap = <T,>(fn: (index: number, key: string) => T) =>
+  const leftOpponentCardsMap = <T,>(fn: (index: number, key: string, card?: CardType) => T) =>
     game.leftPlayer &&
     Array.from({ length: game.leftPlayer.card_count ?? 0 }).map((_, index) =>
-      fn(index, `card-${game.leftPlayer?.position}-${index}`),
+      fn(index, `card-${game.leftPlayer?.position}-${index}`, leftOpenHand[index]),
     );
 
   const sortedPlayerHand = useMemo(
@@ -893,7 +896,7 @@ export function MotionCardTable() {
           })}
 
           {/* Opponent Cards - Top */}
-          {topOpponentCardsMap((index, key) => {
+          {topOpponentCardsMap((index, key, card) => {
             const basePosition = getOpponentCardPosition(
               "top",
               index,
@@ -914,6 +917,8 @@ export function MotionCardTable() {
 
             return (
               <Card
+                rank={card?.rank}
+                suit={card?.suit}
                 index={index}
                 key={key}
                 className="motion-card opponent-card"
@@ -928,7 +933,7 @@ export function MotionCardTable() {
           })}
 
           {/* Opponent Cards - Left */}
-          {leftOpponentCardsMap((index, key) => {
+          {leftOpponentCardsMap((index, key, card) => {
             const basePosition = getOpponentCardPosition(
               "left",
               index,
@@ -949,6 +954,8 @@ export function MotionCardTable() {
 
             return (
               <Card
+                rank={card?.rank}
+                suit={card?.suit}
                 index={index}
                 key={key}
                 className="motion-card opponent-card"

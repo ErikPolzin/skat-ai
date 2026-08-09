@@ -41,6 +41,7 @@ func (gs *GameState) Result() GameResult {
 		result.IsSchneider = false
 		result.IsSchwarz = false
 		result.PlayedHand = gs.PlayedHand
+		result.AnnouncedOuvert = gs.AnnouncedOuvert
 		result.Value = result.BaseValue
 		if gs.Overbid {
 			result.DeclarerWon = false
@@ -116,6 +117,12 @@ func (gs *GameState) Result() GameResult {
 }
 
 func (gs *GameState) nullGameValue() int {
+	if gs.AnnouncedOuvert {
+		if gs.PlayedHand {
+			return 59
+		}
+		return 46
+	}
 	if gs.PlayedHand {
 		return 35
 	}

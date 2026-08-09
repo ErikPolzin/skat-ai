@@ -305,6 +305,7 @@ func (gs *GameState) ResetForRedeal() {
 	gs.PlayedHand = false
 	gs.AnnouncedSchneider = false
 	gs.AnnouncedSchwarz = false
+	gs.AnnouncedOuvert = false
 	for _, player := range gs.Players {
 		if player != nil {
 			player.Hand = []Card{}
@@ -353,6 +354,11 @@ func (gs *GameState) dealWith(rng *rand.Rand) (string, error) {
 
 // HandleGameDeclaration processes the declarer's game mode choice
 func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit, announceSchneider bool, announceSchwarz bool) (string, error) {
+	return gs.DeclareGameOuvert(mode, trumpSuit, announceSchneider, announceSchwarz, false)
+}
+
+// DeclareGameOuvert declares a contract, including the Null-only Ouvert modifier.
+func (gs *GameState) DeclareGameOuvert(mode GameMode, trumpSuit Suit, announceSchneider bool, announceSchwarz bool, announceOuvert bool) (string, error) {
 	if gs.Phase != PhaseDeclarerChoice {
 		return "", fmt.Errorf("not in declarer choice phase")
 	}
@@ -367,11 +373,15 @@ func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit, announceSchneide
 	if mode == ModeNull && (announceSchneider || announceSchwarz) {
 		return "", fmt.Errorf("cannot make announcements in null games")
 	}
+	if announceOuvert && mode != ModeNull {
+		return "", fmt.Errorf("ouvert can only be announced in null games")
+	}
 
 	gs.Mode = mode
 	gs.TrumpSuit = trumpSuit
 	gs.AnnouncedSchneider = announceSchneider
 	gs.AnnouncedSchwarz = announceSchwarz
+	gs.AnnouncedOuvert = announceOuvert
 
 	// Calculate and store matadors (will be used throughout the game)
 	// countMatadors returns the count; we negate if without Club Jack
@@ -398,6 +408,8 @@ func (gs *GameState) DeclareGame(mode GameMode, trumpSuit Suit, announceSchneide
 		announcement = " (announced schwarz)"
 	} else if gs.AnnouncedSchneider {
 		announcement = " (announced schneider)"
+	} else if gs.AnnouncedOuvert {
+		announcement = " (ouvert)"
 	}
 	return fmt.Sprintf("%s %s%s", mode, trumpSuit, announcement), nil
 }
@@ -552,6 +564,7 @@ func (gs *GameState) NextGame() (string, error) {
 	gs.PlayedHand = false
 	gs.AnnouncedSchneider = false
 	gs.AnnouncedSchwarz = false
+	gs.AnnouncedOuvert = false
 	for _, player := range gs.Players {
 		player.Hand = []Card{}
 		player.ReadyForNext = false // Reset ready state for new game

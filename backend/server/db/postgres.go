@@ -152,7 +152,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
 			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
-			g.current_player_deadline, g.forfeited_player, g.cards_played
+			g.current_player_deadline, g.forfeited_player, g.cards_played, g.announced_ouvert
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE g.id = $1`,
@@ -163,7 +163,7 @@ func (d *PgDatabase) GetGameByID(gameID string) (*game.GameState, error) {
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
-		&deadline, &forfeitedPlayer, &cardsPlayedString)
+		&deadline, &forfeitedPlayer, &cardsPlayedString, &gs.AnnouncedOuvert)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game with ID %s not found", gameID)
 	}
@@ -215,7 +215,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 			g.player_score_dealer, g.player_score_listener, g.player_score_speaker, g.game_mode, g.trump_suit,
 			g.bid_value, g.matadors, g.played_hand, g.announced_schneider, g.announced_schwarz,
 			g.listener_passed, g.speaker_passed, g.dealer_passed, g.overbid,
-			g.current_player_deadline, g.forfeited_player, g.cards_played
+			g.current_player_deadline, g.forfeited_player, g.cards_played, g.announced_ouvert
 		FROM games g
 		JOIN game_sessions gs ON g.session_id = gs.id
 		WHERE gs.code = $1
@@ -228,7 +228,7 @@ func (d *PgDatabase) GetGameBySessionCode(sessionCode string) (*game.GameState, 
 		&gs.PlayerScores[0], &gs.PlayerScores[1], &gs.PlayerScores[2], &gs.Mode, &gs.TrumpSuit,
 		&gs.BidValue, &gs.Matadors, &gs.PlayedHand, &gs.AnnouncedSchneider, &gs.AnnouncedSchwarz,
 		&gs.ListenerPassed, &gs.SpeakerPassed, &gs.DealerPassed, &gs.Overbid,
-		&deadline, &forfeitedPlayer, &cardsPlayedString)
+		&deadline, &forfeitedPlayer, &cardsPlayedString, &gs.AnnouncedOuvert)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("game with session code %s not found", sessionCode)
 	}
@@ -295,9 +295,9 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 			game_mode, trump_suit, bid_value, matadors,
 			played_hand, announced_schneider, announced_schwarz,
 			listener_passed, speaker_passed, dealer_passed, overbid,
-			current_player_deadline, forfeited_player, cards_played,
+			current_player_deadline, forfeited_player, cards_played, announced_ouvert,
 			created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
 			NOW(), NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			session_id = $2, game_number = $3, phase = $4, skat = $5, trick = $6,
@@ -306,7 +306,7 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 			game_mode = $14, trump_suit = $15, bid_value = $16, matadors = $17,
 			played_hand = $18, announced_schneider = $19, announced_schwarz = $20,
 			listener_passed = $21, speaker_passed = $22, dealer_passed = $23, overbid = $24,
-			current_player_deadline = $25, forfeited_player = $26, cards_played = $27,
+			current_player_deadline = $25, forfeited_player = $26, cards_played = $27, announced_ouvert = $28,
 			updated_at = NOW()`,
 		gs.ID, gs.SessionID, gs.GameNumber, gs.Phase, skatString, trickString,
 		gs.TrickStarter, trickWinner, gs.CurrentPlayer,
@@ -314,7 +314,7 @@ func (d *PgDatabase) SaveGame(gs game.GameState) error {
 		gs.Mode, gs.TrumpSuit, gs.BidValue, gs.Matadors,
 		gs.PlayedHand, gs.AnnouncedSchneider, gs.AnnouncedSchwarz,
 		gs.ListenerPassed, gs.SpeakerPassed, gs.DealerPassed, gs.Overbid,
-		deadline, forfeitedPlayer, cardsPlayedString,
+		deadline, forfeitedPlayer, cardsPlayedString, gs.AnnouncedOuvert,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save game: %w", err)

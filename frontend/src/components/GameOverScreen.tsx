@@ -557,7 +557,10 @@ export function GameOverScreen() {
               <Table size="small">
                 <TableBody>
                   <TableRow>
-                    <TableCell>Null contract</TableCell>
+                    <TableCell>
+                      Null{result.announced_ouvert ? " Ouvert" : ""}
+                      {result.played_hand ? " Hand" : ""} contract
+                    </TableCell>
                     <TableCell align="right">
                       {result.declarer_won ? "Won" : "Lost"}
                     </TableCell>

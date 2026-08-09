@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS games (
     played_hand BOOLEAN DEFAULT FALSE,
     announced_schneider BOOLEAN DEFAULT FALSE,
     announced_schwarz BOOLEAN DEFAULT FALSE,
+    announced_ouvert BOOLEAN DEFAULT FALSE,
     listener_passed BOOLEAN DEFAULT FALSE,
     speaker_passed BOOLEAN DEFAULT FALSE,
     dealer_passed BOOLEAN DEFAULT FALSE,

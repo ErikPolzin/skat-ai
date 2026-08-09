@@ -135,6 +135,7 @@ type GameInfo struct {
 	State       *GameState  `json:"state"`
 	PlayerID    string      `json:"player_id,omitempty"`
 	Hand        []Card      `json:"hand,omitempty"`
+	OpenHand    []Card      `json:"open_hand,omitempty"`
 	Skat        [2]Card     `json:"skat,omitempty"`
 	CanPlayNext bool        `json:"can_play_next"`
 	Result      *GameResult `json:"result,omitempty"` // Game result breakdown (only when game is complete)
@@ -210,6 +211,9 @@ func (gs *GameState) SerializeForPlayer(playerID string) *GameInfo {
 		if gs.Declarer != nil && position == *gs.Declarer {
 			info.Skat = gs.Skat
 		}
+	}
+	if gs.AnnouncedOuvert && gs.Phase == PhasePlaying && gs.Declarer != nil && gs.Players[*gs.Declarer] != nil {
+		info.OpenHand = gs.Players[*gs.Declarer].Hand
 	}
 
 	return info

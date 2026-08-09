@@ -59,6 +59,13 @@ export interface PlayerOfflineMessage extends Message<{
   type: "player_offline";
 }
 
+export interface PlayerOnlineMessage extends Message<{
+  player_id?: string;
+  player_name?: string;
+}> {
+  type: "player_online";
+}
+
 export interface PlayerLeftMessage extends Message<{
   player_name?: string;
 }> {

@@ -433,9 +433,14 @@ func (d *TursoDatabase) RemovePlayer(gameID, playerID string) error {
 
 func (d *TursoDatabase) ListPlayers(gameID string) ([3]*game.PlayerState, error) {
 	rows, err := d.DB.Query(`
-		SELECT pl.hand, pl.position, pr.id, pr.name, pr.is_agent, pr.profile_icon, pr.is_online, pl.ready_for_next
+		SELECT pl.hand, pl.position, pr.id, pr.name,
+		       CASE WHEN ac.profile_id IS NOT NULL THEN 1 ELSE pr.is_agent END as is_agent,
+		       pr.profile_icon,
+		       CASE WHEN ac.profile_id IS NOT NULL THEN 1 ELSE pr.is_online END as is_online,
+		       pl.ready_for_next
 		FROM players pl
 		JOIN profiles pr ON pr.id = pl.profile_id
+		LEFT JOIN agent_configs ac ON pr.id = ac.profile_id
 		WHERE pl.game_id = ?
 	`, gameID)
 	if err != nil {

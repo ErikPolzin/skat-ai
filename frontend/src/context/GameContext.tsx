@@ -16,6 +16,7 @@ import {
   type PlayerForfeitMessage,
   type PlayerLeftMessage,
   type PlayerOfflineMessage,
+  type PlayerOnlineMessage,
   type StartNextGameMessage,
   type StateUpdateMessage,
 } from "../types";
@@ -124,6 +125,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
           // Update player's online status in state
           if (data.player_id) {
             updatePlayerOnlineStatus(data.player_id, false);
+          }
+        }
+        break;
+      case "player_online":
+        {
+          const data = (message as PlayerOnlineMessage).data;
+          if (data.player_id) {
+            updatePlayerOnlineStatus(data.player_id, true);
           }
         }
         break;

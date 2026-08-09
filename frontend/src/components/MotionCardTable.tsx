@@ -10,11 +10,14 @@ import {
   Box,
   Button,
   Chip,
+  Paper,
   Typography,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
 import WarningIcon from "@mui/icons-material/Warning";
+import WifiOffIcon from "@mui/icons-material/WifiOff";
+import { alpha } from "@mui/material/styles";
 import {
   type Card as CardType,
   type Player,
@@ -436,19 +439,33 @@ export function MotionCardTable() {
     return { x, y: verticalOffset, rotate: 0, scale: 1 };
   };
 
-  const topOpenHand = game.topPlayer?.position === game.declarerPosition ? game.openHand : [];
-  const leftOpenHand = game.leftPlayer?.position === game.declarerPosition ? game.openHand : [];
+  const topOpenHand =
+    game.topPlayer?.position === game.declarerPosition ? game.openHand : [];
+  const leftOpenHand =
+    game.leftPlayer?.position === game.declarerPosition ? game.openHand : [];
 
-  const topOpponentCardsMap = <T,>(fn: (index: number, key: string, card?: CardType) => T) =>
+  const topOpponentCardsMap = <T,>(
+    fn: (index: number, key: string, card?: CardType) => T,
+  ) =>
     game.topPlayer &&
     Array.from({ length: game.topPlayer?.card_count ?? 0 }).map((_, index) =>
-      fn(index, `card-${game.topPlayer?.position}-${index}`, topOpenHand[index]),
+      fn(
+        index,
+        `card-${game.topPlayer?.position}-${index}`,
+        topOpenHand[index],
+      ),
     );
 
-  const leftOpponentCardsMap = <T,>(fn: (index: number, key: string, card?: CardType) => T) =>
+  const leftOpponentCardsMap = <T,>(
+    fn: (index: number, key: string, card?: CardType) => T,
+  ) =>
     game.leftPlayer &&
     Array.from({ length: game.leftPlayer.card_count ?? 0 }).map((_, index) =>
-      fn(index, `card-${game.leftPlayer?.position}-${index}`, leftOpenHand[index]),
+      fn(
+        index,
+        `card-${game.leftPlayer?.position}-${index}`,
+        leftOpenHand[index],
+      ),
     );
 
   const sortedPlayerHand = useMemo(
@@ -598,8 +615,9 @@ export function MotionCardTable() {
 
   return (
     <div className="motion-card-table" style={cardTableStyle}>
-      <div
+      <Box
         className={`table-surface ${showSessionResults ? "with-session-bar" : ""}`}
+        sx={{ borderRadius: { xs: 0, sm: theme.spacing(1) } }}
       >
         {/* Top Opponent Avatar */}
         {game.topPlayer && (
@@ -607,8 +625,12 @@ export function MotionCardTable() {
             className={`opponent-avatar-container top ${game.topPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
             <div
-              className={`avatar-circle ${!game.controls.isConnected || !game.topPlayer.is_online ? "offline" : ""}`}
-              style={{ position: "relative", overflow: "visible" }}
+              className={`avatar-circle ${!game.topPlayer.is_online ? "offline" : ""}`}
+              style={{
+                position: "relative",
+                overflow: "visible",
+                backgroundColor: theme.palette.primary.main,
+              }}
             >
               <CircularTimer
                 deadline={game.currentPlayerDeadline || ""}
@@ -638,6 +660,11 @@ export function MotionCardTable() {
                   <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
                 )}
               </div>
+              {!game.topPlayer.is_online && (
+                <span className="avatar-offline-badge" title="Offline">
+                  <WifiOffIcon aria-label="Offline" />
+                </span>
+              )}
               {showDeadlineCountdown &&
                 game.topPlayer.position === game.currentPlayer && (
                   <div
@@ -678,8 +705,12 @@ export function MotionCardTable() {
             className={`opponent-avatar-container left ${game.leftPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
           >
             <div
-              className={`avatar-circle ${!game.controls.isConnected || !game.leftPlayer.is_online ? "offline" : ""}`}
-              style={{ position: "relative", overflow: "visible" }}
+              className={`avatar-circle ${!game.leftPlayer.is_online ? "offline" : ""}`}
+              style={{
+                position: "relative",
+                overflow: "visible",
+                backgroundColor: theme.palette.primary.main,
+              }}
             >
               <CircularTimer
                 deadline={game.currentPlayerDeadline || ""}
@@ -711,6 +742,11 @@ export function MotionCardTable() {
                   <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
                 )}
               </div>
+              {!game.leftPlayer.is_online && (
+                <span className="avatar-offline-badge" title="Offline">
+                  <WifiOffIcon aria-label="Offline" />
+                </span>
+              )}
               {showDeadlineCountdown &&
                 game.leftPlayer.position === game.currentPlayer && (
                   <div
@@ -752,7 +788,11 @@ export function MotionCardTable() {
           >
             <div
               className="avatar-circle"
-              style={{ position: "relative", overflow: "visible" }}
+              style={{
+                position: "relative",
+                overflow: "visible",
+                backgroundColor: theme.palette.primary.main,
+              }}
             >
               <CircularTimer
                 deadline={game.currentPlayerDeadline || ""}
@@ -1174,12 +1214,15 @@ export function MotionCardTable() {
             </div>
 
             {/* Player's team Score Label - always bottom right */}
-            <div
+            <Paper
+              variant="outlined"
               className={`score-pile-label player-pile`}
-              style={{
+              sx={{
                 position: "absolute",
                 left: "50%",
                 top: "50%",
+                borderRadius: theme.spacing(1),
+                backgroundColor: alpha(theme.palette.primary.main, 0.24),
                 transform: `translate(calc(-50% + ${getPileAbsolutePosition(true).x}px), calc(-50% + ${getPileAbsolutePosition(true).y}px))`,
               }}
             >
@@ -1188,15 +1231,17 @@ export function MotionCardTable() {
                 {playerIsDeclarer ? "DECLARER" : "DEFENDER"}
               </span>
               <span className="pile-score">{playerPileScore}</span>
-            </div>
+            </Paper>
 
             {/* Opponent's team Score Label - always top right */}
-            <div
+            <Paper
+              variant="outlined"
               className={`score-pile-label opponent-pile`}
-              style={{
+              sx={{
                 position: "absolute",
                 left: "50%",
                 top: "50%",
+                borderRadius: theme.spacing(1),
                 transform: `translate(calc(-50% + ${getPileAbsolutePosition(false).x}px), calc(-50% + ${getPileAbsolutePosition(false).y}px))`,
               }}
             >
@@ -1207,7 +1252,7 @@ export function MotionCardTable() {
                 {playerIsDeclarer ? "DEFENDERS" : "DECLARER"}
               </span>
               <span className="pile-score">{opponentPileScore}</span>
-            </div>
+            </Paper>
           </>
         )}
 
@@ -1243,25 +1288,27 @@ export function MotionCardTable() {
             {ramschPiles.map(({ player, score, colorIndex }) => {
               const position = getRamschPilePosition(player.position);
               return (
-                <div
+                <Paper
+                  variant="outlined"
                   key={player.id}
                   className={`score-pile-label ramsch-pile ramsch-player-${colorIndex}`}
-                  style={{
+                  sx={{
                     position: "absolute",
                     left: "50%",
                     top: "50%",
+                    borderRadius: theme.spacing(2),
                     transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`,
                   }}
                 >
                   <span className="pile-label">{player.name}</span>
                   <span className="pile-subtitle">RAMSCH</span>
                   <span className="pile-score">{score}</span>
-                </div>
+                </Paper>
               );
             })}
           </>
         )}
-      </div>
+      </Box>
     </div>
   );
 }

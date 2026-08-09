@@ -152,6 +152,7 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := s.clients.RegisterClient(profileID, conn)
+	s.notifyPlayerOnline(profileID)
 
 	go client.readPump(s)
 	go client.writePump()
@@ -245,12 +246,26 @@ func (c *Client) SendMessage(msg *Message) error {
 	}
 }
 
+// notifyPlayerOnline broadcasts to other players in a game that a player has connected.
+func (s *Server) notifyPlayerOnline(profileID string) {
+	s.notifyPlayerPresence(profileID, true)
+}
+
 // notifyPlayerOffline broadcasts to other players in a game that a player has gone offline
 func (s *Server) notifyPlayerOffline(profileID string) {
+	s.notifyPlayerPresence(profileID, false)
+}
+
+func (s *Server) notifyPlayerPresence(profileID string, isOnline bool) {
+	status := "offline"
+	if isOnline {
+		status = "online"
+	}
+
 	// Find all active games this player is in
 	games, err := s.db.GetActiveGamesByPlayer(profileID)
 	if err != nil {
-		logger.Warning("Error finding games for offline player: %e", err)
+		logger.Warning("Error finding games for %s player: %e", status, err)
 		return
 	}
 
@@ -259,7 +274,7 @@ func (s *Server) notifyPlayerOffline(profileID string) {
 		// Get profile info for the offline player
 		profile, err := s.db.GetProfile(profileID)
 		if err != nil {
-			logger.Warning("Error getting profile for offline player: %e", err)
+			logger.Warning("Error getting profile for %s player: %e", status, err)
 			continue
 		}
 
@@ -267,7 +282,7 @@ func (s *Server) notifyPlayerOffline(profileID string) {
 		for _, player := range gs.Players {
 			if player != nil && !player.IsAgent && player.ID != profileID {
 				s.clients.SendToClient(player.ID, &Message{
-					Type: "player_offline",
+					Type: "player_" + status,
 					Data: map[string]any{
 						"player_id":   profileID,
 						"player_name": profile.Name,

@@ -246,6 +246,14 @@ export function SessionResults({
                   sx={{
                     bgcolor: "rgba(255, 255, 255, 0.04)",
                     "&:last-child td": { borderBottom: 0 },
+                    ...(!isMobile && {
+                      "& > td": {
+                        position: "sticky",
+                        bottom: 0,
+                        zIndex: 1,
+                        bgcolor: theme.palette.background.paper,
+                      },
+                    }),
                   }}
                 >
                   <TableCell

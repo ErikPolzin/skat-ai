@@ -174,12 +174,13 @@ The neural card-play loader supports local weight files and `gs://bucket/path` U
 The backend exposes:
 
 - `GET /health`
-- `POST /api/profiles`
+- `POST /api/sign-in` to authenticate an existing profile
+- `POST /api/profiles` to register a new profile
 - Authenticated game/session endpoints under `/api/games`
 - Authenticated player history, active games, ratings, leaderboard, avatar upload, and agent listing endpoints
 - `GET /ws` WebSocket endpoint using either Basic Auth or the frontend's `skat-auth` WebSocket subprotocol
 
-Most API calls after profile creation require Basic Auth credentials matching the profile.
+Most API calls after registration or sign-in require Basic Auth credentials matching the profile.
 
 ## Deployment
 

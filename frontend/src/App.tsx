@@ -29,9 +29,10 @@ import {
   selectSetProfileIcon,
   selectClearProfile,
 } from "./stores/profileStore";
-import { createOrRetrieveProfile } from "./api/games";
+import { createProfile, signIn } from "./api/games";
 import { WebSocketProvider } from "./context/WebSocketContext";
 import LoginScreen from "./screens/LoginScreen";
+import SignupScreen from "./screens/SignupScreen";
 import LobbyScreen from "./screens/LobbyScreen";
 import GameScreen from "./screens/GameScreen";
 import TournamentResultsScreen from "./screens/TournamentResultsScreen";
@@ -87,7 +88,7 @@ function AppRoutes() {
     if (username && password && !playerId && !isInitializing) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsInitializing(true);
-      createOrRetrieveProfile(username, password)
+      signIn(username, password)
         .then((profile) => {
           setPlayerId(profile.player_id);
           if (profile.player_name !== username) {
@@ -99,7 +100,7 @@ function AppRoutes() {
           setError(null);
         })
         .catch((err) => {
-          console.error("Failed to create profile:", err);
+          console.error("Failed to restore sign-in:", err);
           clearProfile();
           setError("We could not sign you in. Check your username and password.");
         })
@@ -127,7 +128,32 @@ function AppRoutes() {
     setIsInitializing(true);
 
     try {
-      const profile = await createOrRetrieveProfile(newUsername, newPassword);
+      const profile = await signIn(newUsername, newPassword);
+      setPlayerId(profile.player_id);
+      setUsername(profile.player_name);
+      setPassword(newPassword);
+      if (profile.profile_icon) {
+        setProfileIcon(profile.profile_icon);
+      }
+    } catch (err) {
+      console.error("Failed to sign in:", err);
+      clearProfile();
+      setError("We could not sign you in. Check your username and password.");
+      throw err;
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const handleSignup = async (
+    newUsername: string,
+    newPassword: string,
+  ) => {
+    setError(null);
+    setIsInitializing(true);
+
+    try {
+      const profile = await createProfile(newUsername, newPassword);
       setPlayerId(profile.player_id);
       setUsername(profile.player_name);
       setPassword(newPassword);
@@ -137,7 +163,11 @@ function AppRoutes() {
     } catch (err) {
       console.error("Failed to create profile:", err);
       clearProfile();
-      setError("We could not sign you in. Check your username and password.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "We could not create your account.",
+      );
       throw err;
     } finally {
       setIsInitializing(false);
@@ -155,6 +185,19 @@ function AppRoutes() {
               isSubmitting={isInitializing}
               error={error}
               onSubmit={handleLogin}
+              onSwitchMode={() => setError(null)}
+            />
+          }
+        />
+        <Route
+          path="/signup"
+          element={
+            <SignupRoute
+              isAuthenticated={Boolean(username && password && playerId)}
+              isSubmitting={isInitializing}
+              error={error}
+              onSubmit={handleSignup}
+              onSwitchMode={() => setError(null)}
             />
           }
         />
@@ -196,16 +239,50 @@ function AppRoutes() {
   );
 }
 
-function LoginRoute({
+function SignupRoute({
   isAuthenticated,
   isSubmitting,
   error,
   onSubmit,
+  onSwitchMode,
 }: {
   isAuthenticated: boolean;
   isSubmitting: boolean;
   error: string | null;
   onSubmit: (username: string, password: string) => Promise<void>;
+  onSwitchMode: () => void;
+}) {
+  const navigate = useNavigate();
+
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  return (
+    <SignupScreen
+      isSubmitting={isSubmitting}
+      error={error}
+      onSwitchMode={onSwitchMode}
+      onSubmit={async (username, password) => {
+        await onSubmit(username, password);
+        navigate("/", { replace: true });
+      }}
+    />
+  );
+}
+
+function LoginRoute({
+  isAuthenticated,
+  isSubmitting,
+  error,
+  onSubmit,
+  onSwitchMode,
+}: {
+  isAuthenticated: boolean;
+  isSubmitting: boolean;
+  error: string | null;
+  onSubmit: (username: string, password: string) => Promise<void>;
+  onSwitchMode: () => void;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -224,6 +301,7 @@ function LoginRoute({
         (location.state as { error?: string } | null)?.error ||
         null
       }
+      onSwitchMode={onSwitchMode}
       onSubmit={async (username, password) => {
         await onSubmit(username, password);
         navigate(from || "/", { replace: true });

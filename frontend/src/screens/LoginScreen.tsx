@@ -6,6 +6,7 @@ import {
   CircularProgress,
   Container,
   Divider,
+  Link,
   Paper,
   TextField,
   Typography,
@@ -14,24 +15,32 @@ import {
 } from "@mui/material";
 import CasinoIcon from "@mui/icons-material/Casino";
 import LoginIcon from "@mui/icons-material/Login";
-import cardSpade from "../assets/Card_spade.svg";
-import cardHeart from "../assets/Card_heart.svg";
+import PersonAddIcon from "@mui/icons-material/PersonAdd";
+import { Link as RouterLink } from "react-router-dom";
+
+const cardSpade = "/res/cards/A♠.svg";
+const cardHeart = "/res/cards/J♥.svg";
 
 interface LoginScreenProps {
   isSubmitting?: boolean;
   error?: string | null;
+  mode?: "sign-in" | "sign-up";
+  onSwitchMode?: () => void;
   onSubmit: (username: string, password: string) => Promise<void>;
 }
 
 export default function LoginScreen({
   isSubmitting = false,
   error,
+  mode = "sign-in",
+  onSwitchMode,
   onSubmit,
 }: LoginScreenProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,6 +58,10 @@ export default function LoginScreen({
       setLocalError("Enter your username and password.");
       return;
     }
+    if (mode === "sign-up" && password !== confirmPassword) {
+      setLocalError("Passwords do not match.");
+      return;
+    }
 
     setLocalError(null);
     localStorage.setItem("skat-username", name);
@@ -63,7 +76,7 @@ export default function LoginScreen({
         alignItems: "center",
         py: { xs: 3, md: 6 },
         background:
-          "radial-gradient(circle at 18% 18%, rgba(214, 61, 84, 0.18), transparent 28%), linear-gradient(135deg, #0d2b24 0%, #18241f 46%, #221f26 100%)",
+          "radial-gradient(circle at 18% 18%, rgba(190, 71, 214, 0.28), transparent 32%), linear-gradient(135deg, #25102c 0%, #1a1a2e 48%, #211627 100%)",
       }}
     >
       <Container maxWidth="lg">
@@ -87,11 +100,11 @@ export default function LoginScreen({
               flexDirection: "column",
               justifyContent: "space-between",
               background:
-                "linear-gradient(160deg, rgba(10, 76, 58, 0.95), rgba(35, 37, 34, 0.96))",
+                "linear-gradient(160deg, rgba(190, 71, 214, 0.96), rgba(70, 24, 82, 0.98))",
             }}
           >
             <Box sx={{ display: "flex", alignItems: "center", gap: 1.2 }}>
-              <CasinoIcon sx={{ color: "#f3c96b" }} />
+              <CasinoIcon sx={{ color: "primary.contrastText" }} />
               <Typography variant="h6" component="p" sx={{ fontWeight: 700 }}>
                 Skat
               </Typography>
@@ -103,20 +116,18 @@ export default function LoginScreen({
                 right: { xs: 24, md: 48 },
                 top: { xs: 30, md: 82 },
                 width: { xs: 116, md: 168 },
-                height: { xs: 154, md: 224 },
+                aspectRatio: "167 / 243",
                 transform: "rotate(8deg)",
                 borderRadius: 1.5,
-                bgcolor: "#f6f0df",
                 boxShadow: "0 24px 60px rgba(0, 0, 0, 0.35)",
-                display: "grid",
-                placeItems: "center",
+                overflow: "hidden",
               }}
             >
               <Box
                 component="img"
                 src={cardSpade}
-                alt=""
-                sx={{ width: "44%", opacity: 0.95 }}
+                alt="Ace of spades"
+                sx={{ width: "100%", height: "100%", display: "block" }}
               />
             </Box>
             {!isMobile && (
@@ -126,20 +137,18 @@ export default function LoginScreen({
                   right: 150,
                   top: 170,
                   width: 138,
-                  height: 184,
+                  aspectRatio: "167 / 243",
                   transform: "rotate(-10deg)",
                   borderRadius: 1.5,
-                  bgcolor: "#fff8ea",
                   boxShadow: "0 20px 50px rgba(0, 0, 0, 0.28)",
-                  display: "grid",
-                  placeItems: "center",
+                  overflow: "hidden",
                 }}
               >
                 <Box
                   component="img"
                   src={cardHeart}
-                  alt=""
-                  sx={{ width: "42%", opacity: 0.95 }}
+                  alt="Jack of hearts"
+                  sx={{ width: "100%", height: "100%", display: "block" }}
                 />
               </Box>
             )}
@@ -158,8 +167,9 @@ export default function LoginScreen({
                 Take your seat.
               </Typography>
               <Typography color="rgba(255,255,255,0.72)" sx={{ maxWidth: 320 }}>
-                Sign in to rejoin your tables, track your rating, and keep your
-                games tied to your profile.
+                {mode === "sign-up"
+                  ? "Create your player profile, take a seat, and start building your rating."
+                  : "Sign in to rejoin your tables, track your rating, and keep your games tied to your profile."}
               </Typography>
             </Box>
           </Box>
@@ -174,17 +184,19 @@ export default function LoginScreen({
           >
             <Box sx={{ maxWidth: 430, width: "100%", mx: "auto" }}>
               <Typography variant="overline" color="text.secondary">
-                Player Login
+                {mode === "sign-up" ? "Create account" : "Player Login"}
               </Typography>
               <Typography
                 variant="h4"
                 component="h2"
                 sx={{ fontWeight: 750, mt: 0.5, mb: 1 }}
               >
-                Welcome back
+                {mode === "sign-up" ? "Join the table" : "Welcome back"}
               </Typography>
               <Typography color="text.secondary" sx={{ mb: 3 }}>
-                Use your player name and password to continue.
+                {mode === "sign-up"
+                  ? "Choose a player name and password to get started."
+                  : "Use your player name and password to continue."}
               </Typography>
 
               {(error || localError) && (
@@ -215,9 +227,23 @@ export default function LoginScreen({
                   disabled={isSubmitting}
                   fullWidth
                   required
-                  autoComplete="current-password"
+                  autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
                   sx={{ mb: 3 }}
                 />
+                {mode === "sign-up" && (
+                  <TextField
+                    id="confirm-password"
+                    label="Confirm password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    disabled={isSubmitting}
+                    fullWidth
+                    required
+                    autoComplete="new-password"
+                    sx={{ mb: 3 }}
+                  />
+                )}
                 <Button
                   type="submit"
                   variant="contained"
@@ -229,18 +255,33 @@ export default function LoginScreen({
                     isSubmitting ? (
                       <CircularProgress size={18} color="inherit" />
                     ) : (
-                      <LoginIcon />
+                      mode === "sign-up" ? <PersonAddIcon /> : <LoginIcon />
                     )
                   }
                   sx={{ minHeight: 48 }}
                 >
-                  {isSubmitting ? "Signing in..." : "Sign in"}
+                  {isSubmitting
+                    ? mode === "sign-up"
+                      ? "Creating account..."
+                      : "Signing in..."
+                    : mode === "sign-up"
+                      ? "Create account"
+                      : "Sign in"}
                 </Button>
               </Box>
 
               <Divider sx={{ my: 3 }} />
               <Typography variant="body2" color="text.secondary">
-                New names are created automatically on first sign-in.
+                {mode === "sign-up" ? "Already have an account? " : "New to Skat? "}
+                <Link
+                  component={RouterLink}
+                  to={mode === "sign-up" ? "/login" : "/signup"}
+                  onClick={onSwitchMode}
+                  color="primary"
+                  underline="hover"
+                >
+                  {mode === "sign-up" ? "Sign in" : "Create an account"}
+                </Link>
               </Typography>
             </Box>
           </Box>

@@ -27,9 +27,10 @@ var upgrader = websocket.Upgrader{
 
 // Server manages all game sessions and client connections
 type Server struct {
-	db      db.Database
-	cache   cachepkg.GameCache
-	clients *ClientManager // Centralized client management
+	db           db.Database
+	cache        cachepkg.GameCache
+	profileCache cachepkg.ProfileCache
+	clients      *ClientManager // Centralized client management
 }
 
 type ServerOption func(*Server)
@@ -37,6 +38,9 @@ type ServerOption func(*Server)
 func WithGameCache(gameCache cachepkg.GameCache) ServerOption {
 	return func(s *Server) {
 		s.cache = gameCache
+		if profileCache, ok := gameCache.(cachepkg.ProfileCache); ok {
+			s.profileCache = profileCache
+		}
 	}
 }
 
@@ -55,7 +59,9 @@ func NewServer(database db.Database, opts ...ServerOption) *Server {
 	var memoryBackend *cachepkg.MemoryBackend
 	if server.cache == nil {
 		memoryBackend = cachepkg.NewMemoryBackend(1024)
-		server.cache = cachepkg.NewDistributedCache(database, memoryBackend, memoryBackend, 30*time.Minute)
+		distributedCache := cachepkg.NewDistributedCache(database, memoryBackend, memoryBackend, 30*time.Minute)
+		server.cache = distributedCache
+		server.profileCache = distributedCache
 		cachepkg.StartSyncWorker(context.Background(), database, memoryBackend, memoryBackend)
 	}
 	if server.clients == nil {

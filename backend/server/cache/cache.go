@@ -21,6 +21,13 @@ type GameCache interface {
 	SaveGame(gs *game.GameState) error
 }
 
+// ProfileCache stores authentication profiles by username. Cached entries include
+// the password hash so authentication can be completed without a database read.
+type ProfileCache interface {
+	GetProfileByName(name string) (*db.ProfileEntry, error)
+	CacheProfile(profile db.ProfileEntry) error
+}
+
 type SyncQueue interface {
 	EnqueueGameSave(ctx context.Context, gs game.GameState) error
 	DequeueGameSave(ctx context.Context) (*game.GameState, error)
@@ -97,6 +104,26 @@ func (c *DistributedCache) GetGameByID(gameID string) (*game.GameState, error) {
 	}
 	_, _ = c.writeGameToCache(*gs)
 	return gs, nil
+}
+
+func (c *DistributedCache) GetProfileByName(name string) (*db.ProfileEntry, error) {
+	data, err := c.store.Get(context.Background(), "profile:name:"+name)
+	if err != nil {
+		return nil, err
+	}
+	var profile db.ProfileEntry
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&profile); err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
+func (c *DistributedCache) CacheProfile(profile db.ProfileEntry) error {
+	var data bytes.Buffer
+	if err := gob.NewEncoder(&data).Encode(profile); err != nil {
+		return err
+	}
+	return c.store.Set(context.Background(), "profile:name:"+profile.Name, data.Bytes(), c.ttl)
 }
 
 func hasInvalidMissingDeclarer(gs *game.GameState) bool {

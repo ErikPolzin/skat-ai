@@ -53,7 +53,18 @@ func (s *Server) basicAuthMiddleware(next http.Handler) http.Handler {
 }
 
 func (s *Server) authenticateProfile(username, password string) (*db.ProfileEntry, error) {
-	profile, err := s.db.GetProfileByName(strings.TrimSpace(username))
+	username = strings.TrimSpace(username)
+	var profile *db.ProfileEntry
+	var err error
+	if s.profileCache != nil {
+		profile, err = s.profileCache.GetProfileByName(username)
+	}
+	if profile == nil || err != nil {
+		profile, err = s.db.GetProfileByName(username)
+		if err == nil && s.profileCache != nil {
+			_ = s.profileCache.CacheProfile(*profile)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -93,10 +104,6 @@ func hashPassword(password string) (string, error) {
 		return "", err
 	}
 	return string(hash), nil
-}
-
-func passwordHashMatches(hash, password string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

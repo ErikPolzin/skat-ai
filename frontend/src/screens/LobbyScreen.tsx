@@ -28,6 +28,7 @@ import { lineClasses } from "@mui/x-charts/LineChart";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import HistoryIcon from "@mui/icons-material/History";
 import LoginIcon from "@mui/icons-material/Login";
+import LogoutIcon from "@mui/icons-material/Logout";
 import {
   createGame,
   joinGame,
@@ -39,6 +40,7 @@ import {
   selectPlayerId,
   selectProfileIcon,
   selectRating,
+  selectClearProfile,
   selectSetProfileIcon,
   selectSetRating,
   selectUsername,
@@ -57,6 +59,7 @@ const Header = () => {
   const profileIcon = useProfileStore(selectProfileIcon);
   const username = useProfileStore(selectUsername);
   const rating = useProfileStore(selectRating);
+  const clearProfile = useProfileStore(selectClearProfile);
   const setRating = useProfileStore(selectSetRating);
   const setProfileIcon = useProfileStore(selectSetProfileIcon);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
@@ -85,6 +88,11 @@ const Header = () => {
 
   const handleAvatarClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleLogout = () => {
+    clearProfile();
+    navigate("/login", { replace: true });
   };
 
   const handleAvatarChange = async (
@@ -190,6 +198,14 @@ const Header = () => {
         sx={{ ml: "auto", alignSelf: "center" }}
       >
         <HistoryIcon />
+      </IconButton>
+      <IconButton
+        color="primary"
+        onClick={handleLogout}
+        aria-label="Log out"
+        sx={{ alignSelf: "center" }}
+      >
+        <LogoutIcon />
       </IconButton>
       <input
         ref={fileInputRef}

@@ -200,10 +200,32 @@ export async function createGame(
   return response.json();
 }
 
-export async function createOrRetrieveProfile(
+export type ProfileResponse = {
+  player_id: string;
+  player_name: string;
+  profile_icon: string;
+};
+
+export async function signIn(
   playerName: string,
   password: string,
-): Promise<{ player_id: string; player_name: string; profile_icon: string }> {
+): Promise<ProfileResponse> {
+  const response = await fetch(`${getApiUrl()}/api/sign-in`, {
+    method: "POST",
+    headers: authHeaders(playerName, password),
+  });
+
+  if (!response.ok) {
+    throw new Error("Invalid username or password");
+  }
+
+  return response.json();
+}
+
+export async function createProfile(
+  playerName: string,
+  password: string,
+): Promise<ProfileResponse> {
   const response = await fetch(`${getApiUrl()}/api/profiles`, {
     method: "POST",
     headers: jsonHeaders(playerName, password),
@@ -213,7 +235,8 @@ export async function createOrRetrieveProfile(
   });
 
   if (!response.ok) {
-    throw new Error("Failed to create/retrieve profile");
+    const message = await response.text();
+    throw new Error(message.trim() || "Failed to create profile");
   }
 
   return response.json();

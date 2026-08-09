@@ -34,7 +34,13 @@ export const useProfileStore = create<ProfileStore>()(
       setPlayerId: (playerId: string) => set({ playerId }),
       setProfileIcon: (profileIcon: string) => set({ profileIcon }),
       clearProfile: () =>
-        set({ username: null, password: null, playerId: null, profileIcon: null }),
+        set({
+          username: null,
+          password: null,
+          playerId: null,
+          profileIcon: null,
+          rating: null,
+        }),
       setRating: (rating: PlayerRating) => set({ rating }),
     }),
     {

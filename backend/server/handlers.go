@@ -49,6 +49,7 @@ func (s *Server) SetupRoutes() http.Handler {
 	// REST API endpoints
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(s.cloudRunDelayMiddleware)
+	api.HandleFunc("/sign-in", s.handleSignIn).Methods("POST")
 	api.HandleFunc("/profiles", s.handleCreateProfile).Methods("POST")
 
 	authAPI := api.PathPrefix("").Subrouter()
@@ -396,7 +397,7 @@ func (s *Server) handleGetSessionGame(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(gs.SerializeForPlayer(playerID))
 }
 
-// handleCreateProfile creates or retrieves a player profile
+// handleCreateProfile creates a new player profile.
 func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PlayerName string `json:"player_name"`
@@ -409,7 +410,8 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 
 	playerName := strings.TrimSpace(req.PlayerName)
 	if playerName == "" {
-		playerName = "Player"
+		http.Error(w, "player_name is required", http.StatusBadRequest)
+		return
 	}
 
 	basicUsername, password, ok := r.BasicAuth()
@@ -427,24 +429,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Username is reserved for an agent", http.StatusConflict)
 			return
 		}
-		if existingProfile.PasswordHash == "" {
-			passwordHash, err := hashPassword(password)
-			if err != nil {
-				http.Error(w, "failed to hash password", http.StatusInternalServerError)
-				return
-			}
-			existingProfile.PasswordHash = passwordHash
-			if err := s.db.SaveProfile(*existingProfile); err != nil {
-				logger.Warning("Failed to set password for existing profile: %e", err)
-				http.Error(w, "failed to update player profile", http.StatusInternalServerError)
-				return
-			}
-		} else if !passwordHashMatches(existingProfile.PasswordHash, password) {
-			writeAuthRequired(w)
-			return
-		}
-		logger.Info("Returning existing profile %s for %s", existingProfile.ID, existingProfile.Name)
-		writeJSON(w, profileToResponse(existingProfile))
+		http.Error(w, "Username is already taken", http.StatusConflict)
 		return
 	}
 
@@ -465,8 +450,30 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to store player profile", http.StatusInternalServerError)
 		return
 	}
+	if s.profileCache != nil {
+		_ = s.profileCache.CacheProfile(profile)
+	}
 
-	writeJSON(w, profileToResponse(&profile))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(profileToResponse(&profile))
+}
+
+// handleSignIn authenticates and returns an existing player profile.
+func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
+	username, password, ok := r.BasicAuth()
+	if !ok || strings.TrimSpace(username) == "" || password == "" {
+		writeAuthRequired(w)
+		return
+	}
+
+	profile, err := s.authenticateProfile(username, password)
+	if err != nil {
+		writeAuthRequired(w)
+		return
+	}
+
+	writeJSON(w, profileToResponse(profile))
 }
 
 func (s *Server) handleCurrentProfile(w http.ResponseWriter, r *http.Request) {
@@ -1064,6 +1071,9 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		logger.Warning("Failed to update profile: %e", err)
 		http.Error(w, "Failed to save profile", http.StatusInternalServerError)
 		return
+	}
+	if s.profileCache != nil {
+		_ = s.profileCache.CacheProfile(*profile)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

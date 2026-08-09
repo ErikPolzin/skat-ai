@@ -291,7 +291,12 @@ func (s *Server) BroadcastAIActions(gs *game.GameState) {
 		}
 		currentPlayer := gs.CurrentPlayer
 
-		time.Sleep(1 * time.Second)
+		time.Sleep(500 * time.Millisecond)
+
+		// Pause an extra second at the end of the trick, before cards are collected
+		if gs.Phase == game.PhasePlaying && len(gs.Trick) == 3 {
+			time.Sleep(1 * time.Second)
+		}
 
 		response, err := action()
 		if err != nil {

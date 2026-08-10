@@ -623,7 +623,7 @@ func (s *Server) handleLeaveGame(w http.ResponseWriter, r *http.Request) {
 				"game_id":     gs.ID,
 			},
 		})
-		s.BroadcastStateChange(gs, fmt.Sprintf("%s left before all games were played", playerName), gs.CurrentPlayer)
+		s.BroadcastStateChange(gs, "I forfeit", gs.CurrentPlayer)
 
 		logger.Info("Player %s forfeited strict tournament %s", playerID, gs.Code)
 	} else {
@@ -1302,11 +1302,11 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Broadcast the updated state to all players BEFORE checking if all are ready
-	s.BroadcastStateChange(gs, fmt.Sprintf("%s is ready for the next game", player.Name), gs.CurrentPlayer)
+	s.BroadcastStateChange(gs, "ready for the next game", position)
 
 	// If all human players are ready, automatically start the next game
 	if allReady {
-		response, err := gs.NextGame()
+		_, err := gs.NextGame()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -1328,7 +1328,8 @@ func (s *Server) handleReadyForNext(w http.ResponseWriter, r *http.Request) {
 		})
 
 		// Also broadcast the state change
-		s.BroadcastStateChange(gs, response, gs.CurrentPlayer)
+		// Starting a new game is a system event, not an action by the new dealer.
+		s.BroadcastStateChange(gs, "", gs.CurrentPlayer)
 		go s.BroadcastAIActions(gs)
 
 		w.Header().Set("Content-Type", "application/json")

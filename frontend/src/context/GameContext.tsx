@@ -102,10 +102,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
             data.action_type !== "session_updated"
           ) {
             const fromPlayer = data.from_player;
-            const fromPlayerId = fromPlayer
-              ? game.players[fromPlayer]?.id
-              : undefined;
-            addMessage(data.description, false, fromPlayer);
+            const fromPlayerId =
+              fromPlayer !== undefined
+                ? diff.state.players[fromPlayer]?.id
+                : undefined;
+            addMessage(data.description, false, fromPlayerId);
             if (fromPlayerId) {
               updatePlayerOnlineStatus(fromPlayerId, true);
             }

@@ -9,14 +9,12 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   Box,
   Button,
-  Chip,
   Paper,
   Typography,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
 import WarningIcon from "@mui/icons-material/Warning";
-import WifiOffIcon from "@mui/icons-material/WifiOff";
 import { alpha } from "@mui/material/styles";
 import {
   type Card as CardType,
@@ -39,11 +37,11 @@ import {
   getGameModeSVG,
   isSameCard,
 } from "../utils/skatRules";
-import { CircularTimer } from "./CircularTimer";
 import { useDeadlineTimer } from "../hooks/useDeadlineTimer";
 import ThemedLoader from "./ThemedLoader";
 import { useNavigate } from "react-router-dom";
 import { useThemedCardBack } from "../hooks/useThemedCardImage";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 export function MotionCardTable() {
   const game = useGameContext();
@@ -634,238 +632,72 @@ export function MotionCardTable() {
       >
         {/* Top Opponent Avatar */}
         {game.topPlayer && (
-          <div
-            className={`opponent-avatar-container top ${game.topPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
-          >
-            <div
-              className={`avatar-circle ${!game.topPlayer.is_online ? "offline" : ""}`}
-              style={{
-                position: "relative",
-                overflow: "visible",
-                backgroundColor: theme.palette.primary.main,
-              }}
-            >
-              <CircularTimer
-                deadline={game.currentPlayerDeadline || ""}
-                isCurrentPlayer={game.topPlayer.position === game.currentPlayer}
-                isAI={game.topPlayer.is_agent}
-                size={avatarTimerSize}
-              />
-              <div
-                className="avatar-content"
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  borderRadius: "50%",
-                  overflow: "hidden",
-                  zIndex: 1,
-                }}
-              >
-                {game.topPlayer.profile_icon ? (
-                  <img
-                    src={game.topPlayer.profile_icon}
-                    alt={game.topPlayer.name}
-                  />
-                ) : (
-                  <span>{game.topPlayer.name.charAt(0).toUpperCase()}</span>
-                )}
-              </div>
-              {!game.topPlayer.is_online && (
-                <span className="avatar-offline-badge" title="Offline">
-                  <WifiOffIcon aria-label="Offline" />
-                </span>
-              )}
-              {showDeadlineCountdown &&
-                game.topPlayer.position === game.currentPlayer && (
-                  <div
-                    className={`avatar-deadline-countdown ${secondsRemaining <= 10 ? "urgent" : ""}`}
-                  >
-                    {formattedTime}
-                  </div>
-                )}
-            </div>
-            <div className="avatar-info">
-              <Chip
-                label={`${game.topPlayer.name} ${game.declarer === game.topPlayer ? "(D)" : ""}`}
-                sx={{
-                  bgcolor: "background.paper",
-                }}
-              ></Chip>
-              {game.getRole(game.topPlayer.position) && (
-                <div className="player-role">
-                  {game.getRole(game.topPlayer.position)}
-                </div>
-              )}
-            </div>
-            {/* Speech bubble for player messages */}
-            {game.messages
-              .filter((msg) => msg.playerPosition === game.topPlayer?.position)
-              .slice(-1) // Only show most recent message
-              .map((msg) => (
-                <div key={msg.id} className="speech-bubble top-bubble">
-                  {msg.text}
-                </div>
-              ))}
-          </div>
+          <PlayerAvatar
+            player={game.topPlayer}
+            placement="top"
+            isCurrentPlayer={game.topPlayer.position === game.currentPlayer}
+            isDeclarer={game.declarer === game.topPlayer}
+            isMobile={isMobile}
+            timerSize={avatarTimerSize}
+            deadline={game.currentPlayerDeadline || ""}
+            countdown={
+              showDeadlineCountdown &&
+              game.topPlayer.position === game.currentPlayer
+                ? formattedTime
+                : null
+            }
+            isCountdownUrgent={secondsRemaining !== null && secondsRemaining <= 10}
+            role={game.getRole(game.topPlayer.position)}
+            message={game.messages.findLast(
+              (message) => message.playerId === game.topPlayer?.id,
+            )}
+          />
         )}
 
         {/* Left Opponent Avatar */}
         {game.leftPlayer && (
-          <div
-            className={`opponent-avatar-container left ${game.leftPlayer.position === game.currentPlayer ? "current-turn" : ""} ${isMobile ? "mobile" : ""}`}
-          >
-            <div
-              className={`avatar-circle ${!game.leftPlayer.is_online ? "offline" : ""}`}
-              style={{
-                position: "relative",
-                overflow: "visible",
-                backgroundColor: theme.palette.primary.main,
-              }}
-            >
-              <CircularTimer
-                deadline={game.currentPlayerDeadline || ""}
-                isCurrentPlayer={
-                  game.leftPlayer.position === game.currentPlayer
-                }
-                isAI={game.leftPlayer.is_agent}
-                size={avatarTimerSize}
-              />
-              <div
-                className="avatar-content"
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  borderRadius: "50%",
-                  overflow: "hidden",
-                  zIndex: 1,
-                }}
-              >
-                {game.leftPlayer.profile_icon ? (
-                  <img
-                    src={game.leftPlayer.profile_icon}
-                    alt={game.leftPlayer.name}
-                  />
-                ) : (
-                  <span>{game.leftPlayer.name.charAt(0).toUpperCase()}</span>
-                )}
-              </div>
-              {!game.leftPlayer.is_online && (
-                <span className="avatar-offline-badge" title="Offline">
-                  <WifiOffIcon aria-label="Offline" />
-                </span>
-              )}
-              {showDeadlineCountdown &&
-                game.leftPlayer.position === game.currentPlayer && (
-                  <div
-                    className={`avatar-deadline-countdown ${secondsRemaining <= 10 ? "urgent" : ""}`}
-                  >
-                    {formattedTime}
-                  </div>
-                )}
-            </div>
-            <div className="avatar-info">
-              <Chip
-                label={`${game.leftPlayer.name} ${game.declarer === game.leftPlayer ? "(D)" : ""}`}
-                sx={{
-                  bgcolor: "background.paper",
-                }}
-              ></Chip>
-              {game.getRole(game.leftPlayer.position) && (
-                <div className="player-role">
-                  {game.getRole(game.leftPlayer.position)}
-                </div>
-              )}
-            </div>
-            {/* Speech bubble for player messages */}
-            {game.messages
-              .filter((msg) => msg.playerPosition === game.leftPlayer?.position)
-              .slice(-1) // Only show most recent message
-              .map((msg) => (
-                <div key={msg.id} className="speech-bubble left-bubble">
-                  {msg.text}
-                </div>
-              ))}
-          </div>
+          <PlayerAvatar
+            player={game.leftPlayer}
+            placement="left"
+            isCurrentPlayer={game.leftPlayer.position === game.currentPlayer}
+            isDeclarer={game.declarer === game.leftPlayer}
+            isMobile={isMobile}
+            timerSize={avatarTimerSize}
+            deadline={game.currentPlayerDeadline || ""}
+            countdown={
+              showDeadlineCountdown &&
+              game.leftPlayer.position === game.currentPlayer
+                ? formattedTime
+                : null
+            }
+            isCountdownUrgent={secondsRemaining !== null && secondsRemaining <= 10}
+            role={game.getRole(game.leftPlayer.position)}
+            message={game.messages.findLast(
+              (message) => message.playerId === game.leftPlayer?.id,
+            )}
+          />
         )}
 
         {/* Player Avatar */}
         {game.player && (
-          <div
-            className={`player-avatar-container ${game.isMyTurn ? "current-turn" : ""} ${game.controls.isLoading ? "loading" : ""} ${isMobile ? "mobile" : ""}`}
-          >
-            <div
-              className="avatar-circle"
-              style={{
-                position: "relative",
-                overflow: "visible",
-                backgroundColor: theme.palette.primary.main,
-              }}
-            >
-              <CircularTimer
-                deadline={game.currentPlayerDeadline || ""}
-                isCurrentPlayer={game.isMyTurn}
-                isAI={false}
-                size={avatarTimerSize}
-              />
-              <div
-                className="avatar-content"
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  borderRadius: "50%",
-                  overflow: "hidden",
-                  zIndex: 1,
-                }}
-              >
-                {game.player?.profile_icon ? (
-                  <img
-                    src={game.player?.profile_icon}
-                    alt={game.player?.name}
-                  />
-                ) : (
-                  <span>{game.player?.name.charAt(0).toUpperCase()}</span>
-                )}
-              </div>
-              {showDeadlineCountdown && game.isMyTurn && (
-                <div
-                  className={`avatar-deadline-countdown ${secondsRemaining <= 10 ? "urgent" : ""}`}
-                >
-                  {formattedTime}
-                </div>
-              )}
-            </div>
-            <div className="avatar-info">
-              <Chip
-                label={`${game.player?.name} ${game.isDeclarer ? "(D)" : ""}`}
-                sx={{
-                  bgcolor: "background.paper",
-                }}
-              ></Chip>
-              {game.getRole(game.playerPosition) && (
-                <div className="player-role">
-                  {game.getRole(game.playerPosition)}
-                </div>
-              )}
-            </div>
-            {/* Speech bubble for player messages */}
-            {game.messages
-              .filter((msg) => msg.playerPosition === game.playerPosition)
-              .slice(-1) // Only show most recent message
-              .map((msg) => (
-                <div key={msg.id} className="speech-bubble player-bubble">
-                  {msg.text}
-                </div>
-              ))}
-          </div>
+          <PlayerAvatar
+            player={game.player}
+            placement="player"
+            isCurrentPlayer={game.isMyTurn}
+            isDeclarer={game.isDeclarer}
+            isLoading={game.controls.isLoading}
+            isMobile={isMobile}
+            timerSize={avatarTimerSize}
+            deadline={game.currentPlayerDeadline || ""}
+            countdown={
+              showDeadlineCountdown && game.isMyTurn ? formattedTime : null
+            }
+            isCountdownUrgent={secondsRemaining !== null && secondsRemaining <= 10}
+            role={game.getRole(game.playerPosition)}
+            message={game.messages.findLast(
+              (message) => message.playerId === game.player?.id,
+            )}
+          />
         )}
 
         <AnimatePresence>

@@ -140,101 +140,6 @@
   }
 }
 
-/* Avatar Styles */
-.opponent-avatar-container,
-.player-avatar-container {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  z-index: 200;
-}
-
-.opponent-avatar-container.top {
-  top: 25px;
-  left: 50%;
-  transform: translateX(-50%);
-  flex-direction: row;
-  gap: 10px;
-}
-
-.opponent-avatar-container.left {
-  left: 25px;
-  top: 50%;
-  transform: translateY(-50%);
-  flex-direction: column;
-  align-items: center;
-  gap: 4px
-}
-
-.player-avatar-container {
-  bottom: 15px;
-  left: 50%;
-  transform: translateX(-50%);
-  flex-direction: row;
-  gap: 10px;
-}
-
-.avatar-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-
-.opponent-avatar-container.left .avatar-info {
-  align-items: center;
-}
-
-.avatar-circle {
-  width: 65px;
-  height: 65px;
-  border-radius: 50%;
-  background: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26px;
-  font-weight: bold;
-  color: white;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: visible;
-}
-
-.avatar-circle img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.avatar-content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.avatar-deadline-countdown {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgba(20, 8, 8, 0.62);
-  color: #ff4d4f;
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.75);
-  pointer-events: none;
-}
-
-.avatar-deadline-countdown.urgent {
-  animation: pulse 1s infinite;
-}
-
 .avatar-ready-check {
   position: absolute;
   inset: 0;
@@ -250,74 +155,11 @@
   pointer-events: none;
 }
 
-.avatar-offline-badge {
-  position: absolute;
-  right: -5px;
-  bottom: -3px;
-  z-index: 5;
-  width: 24px;
-  height: 24px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  background: #d32f2f;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  pointer-events: none;
-}
-
-.avatar-offline-badge svg {
-  width: 14px;
-  height: 14px;
-}
-
-.current-turn .avatar-circle {
-  border-color: #2ecc71;
-  box-shadow: 0 0 20px rgba(46, 204, 113, 0.5);
-  animation: turnPulse 2s infinite;
-}
-
-.loading .avatar-circle {
-  border-color: #3498db;
-  box-shadow: 0 0 20px rgba(52, 152, 219, 0.6);
-  animation: loadingPulse 1.5s infinite;
-}
-
-@keyframes turnPulse {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(46, 204, 113, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 30px rgba(46, 204, 113, 0.7);
-  }
-}
-
-@keyframes loadingPulse {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(52, 152, 219, 0.6);
-  }
-  50% {
-    box-shadow: 0 0 35px rgba(52, 152, 219, 0.9);
-  }
-}
-
 .player-name {
   font-size: 15px;
   color: white;
   font-weight: 600;
   transition: opacity 0.3s ease;
-}
-
-.player-role {
-  margin-top: 3px;
-  font-size: 11px;
-  font-weight: 500;
-  color: white;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 /* Game Mode Display */
@@ -561,96 +403,8 @@
   }
 }
 
-/* Speech Bubbles - Same styling as global messages */
-.speech-bubble {
-  position: absolute;
-  background: rgba(255, 255, 255, 0.95);
-  padding: 8px 12px;
-  border-radius: 10px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-  font-size: 14px;
-  color: #333;
-  animation: fadeInOut 5s ease-in-out;
-  text-align: center;
-  z-index: 10000;
-  white-space: normal;
-  pointer-events: none;
-  width: 100px;
-}
-
-/* Speech bubble chevron/arrow */
-.speech-bubble::after {
-  content: "";
-  position: absolute;
-  width: 0;
-  height: 0;
-  border-style: solid;
-}
-
-/* Top player speech bubble - positioned to the right of avatar */
-.speech-bubble.top-bubble {
-  top: 50%;
-  left: 100%;
-  transform: translateY(-50%);
-  margin-left: 15px;
-}
-
-.speech-bubble.top-bubble::after {
-  top: 50%;
-  left: -8px;
-  transform: translateY(-50%);
-  border-color: transparent rgba(255, 255, 255, 0.95) transparent transparent;
-  border-width: 8px 8px 8px 0;
-}
-
-/* Left player speech bubble - positioned below avatar to avoid cards */
-.speech-bubble.left-bubble {
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-top: 15px;
-}
-
-.speech-bubble.left-bubble::after {
-  top: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  border-color: transparent transparent rgba(255, 255, 255, 0.95) transparent;
-  border-width: 0 8px 8px 8px;
-}
-
-/* Player (bottom) speech bubble - positioned to the left of avatar */
-.speech-bubble.player-bubble {
-  top: 50%;
-  right: 100%;
-  transform: translateY(-50%);
-  margin-right: 15px;
-  left: auto;
-}
-
-.speech-bubble.player-bubble::after {
-  top: 50%;
-  right: -8px;
-  transform: translateY(-50%);
-  border-color: transparent transparent transparent rgba(255, 255, 255, 0.95);
-  border-width: 8px 0 8px 8px;
-}
-
-@keyframes fadeInOut {
-  0% { opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
 /* Tablet responsive adjustments */
 @media (max-width: 900px) {
-
-  .avatar-circle {
-    width: 70px;
-    height: 70px;
-    font-size: 28px;
-  }
 
   .pile-score {
     font-size: 28px;
@@ -691,46 +445,6 @@
     margin-top: 1px;
   }
 
-  .avatar-circle {
-    width: 70px;
-    height: 70px;
-    font-size: 28px;
-    border-width: 3px;
-  }
-
-  .player-role {
-    font-size: 12px;
-    margin-top: 2px;
-  }
-
-  /* Adjust avatar positions for mobile - denser padding */
-  .opponent-avatar-container.top.mobile {
-    top: 5px;
-  }
-
-  .opponent-avatar-container.left.mobile {
-    left: 5px;
-  }
-
-  .player-avatar-container.mobile {
-    bottom: 2px;
-  }
-
-  .mobile .avatar-circle {
-    width: 66px;
-    height: 66px;
-    font-size: 26px;
-  }
-
-  .mobile .avatar-deadline-countdown {
-    font-size: 17px;
-  }
-
-  .mobile .player-role {
-    font-size: 11px;
-    margin-top: 1px;
-  }
-
   /* Smaller game mode display on mobile */
   .motion-card-table .game-mode-display {
     width: 200px;
@@ -740,13 +454,6 @@
 
   .mode-value {
     font-size: 70px;
-  }
-
-  /* Adjust speech bubbles for mobile */
-  .speech-bubble {
-    font-size: 12px;
-    max-width: 150px;
-    padding: 6px 10px;
   }
 
   .connection-status {

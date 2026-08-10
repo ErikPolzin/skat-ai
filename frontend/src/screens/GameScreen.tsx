@@ -83,7 +83,7 @@ function GameScreenContent() {
         }}
       >
         {game.messages
-          .filter((message) => message.playerPosition === undefined)
+          .filter((message) => message.playerId === undefined)
           .map((message) => (
             <Alert
               key={message.id}

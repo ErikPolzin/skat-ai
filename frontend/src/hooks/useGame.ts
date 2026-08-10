@@ -15,7 +15,7 @@ interface GameMessage {
   id: number;
   text: string;
   isError: boolean;
-  playerPosition?: number; // Position of the player who triggered this message
+  playerId?: string; // Stable identity of the player who triggered this message
 }
 
 export function useGame(
@@ -276,11 +276,11 @@ export function useGame(
   }, []);
 
   const addMessage = useCallback(
-    (text: string, isError = false, playerPosition?: number) => {
+    (text: string, isError = false, playerId?: string) => {
       messageIdCounter.current += 1;
       const id = messageIdCounter.current;
 
-      setMessages((prev) => [...prev, { id, text, isError, playerPosition }]);
+      setMessages((prev) => [...prev, { id, text, isError, playerId }]);
 
       setTimeout(() => {
         setMessages((prev) => prev.filter((m) => m.id !== id));

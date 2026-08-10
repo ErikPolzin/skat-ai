@@ -67,7 +67,7 @@ export function BiddingControls() {
       }}
     >
       <Typography variant="h6" sx={{ mb: 2 }}>
-        Current Bid: {currentBidText}
+        {currentBidText}
       </Typography>
 
       <Stack
@@ -83,15 +83,13 @@ export function BiddingControls() {
           <>
             <Button
               variant="contained"
-              color="success"
               onClick={() => game.controls.bid(true)}
               disabled={isPositiveBidDisabled}
             >
               {positiveBidButtonText}
             </Button>
             <Button
-              variant="outlined"
-              color="warning"
+              variant="text"
               onClick={() => game.controls.bid(false)}
               disabled={isDisabled}
             >

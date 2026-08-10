@@ -4,6 +4,11 @@ import {
   type HTMLMotionProps,
   type TargetAndTransition,
 } from "motion/react";
+import { useTheme } from "@mui/material/styles";
+import {
+  useThemedCardBack,
+  useThemedCardFace,
+} from "../hooks/useThemedCardImage";
 
 export default function Card({
   rank,
@@ -28,7 +33,15 @@ export default function Card({
   skipInitialAnimation?: boolean;
   disabled?: boolean;
 } & Omit<HTMLMotionProps<"div">, "className">) {
+  const theme = useTheme();
   const faceDown = !(rank && suit);
+  const cardBackUrl = useThemedCardBack(theme.themeRedColor);
+  const cardFaceUrl = useThemedCardFace(
+    rank,
+    suit,
+    theme.themeRedColor,
+    theme.themeBlackColor,
+  );
   const [hasDealt, setHasDealt] = React.useState(skipInitialAnimation);
 
   React.useEffect(() => {
@@ -94,7 +107,7 @@ export default function Card({
       >
         {/* Card back (visible when rotateY is 0) */}
         <img
-          src="/res/cards/back.svg"
+          src={cardBackUrl}
           alt="card back"
           className="card-back"
           style={{
@@ -104,7 +117,7 @@ export default function Card({
         />
         {/* Card face (visible when rotateY is 180) */}
         <img
-          src={`/res/cards/${rank}${suit}.svg`}
+          src={cardFaceUrl}
           alt={`${rank} of ${suit}`}
           className="card-face"
           style={{

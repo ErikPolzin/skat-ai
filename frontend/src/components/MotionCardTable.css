@@ -18,7 +18,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #135926;
 }
 
 /* Add responsive padding */
@@ -315,7 +314,7 @@
   margin-top: 3px;
   font-size: 11px;
   font-weight: 500;
-  color: #ffd700;
+  color: white;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -413,7 +412,7 @@
 }
 
 .pile-subtitle {
-  color: rgba(255, 215, 0, 0.9);
+  color: white;
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;

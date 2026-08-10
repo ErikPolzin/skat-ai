@@ -43,10 +43,12 @@ import { CircularTimer } from "./CircularTimer";
 import { useDeadlineTimer } from "../hooks/useDeadlineTimer";
 import ThemedLoader from "./ThemedLoader";
 import { useNavigate } from "react-router-dom";
+import { useThemedCardBack } from "../hooks/useThemedCardImage";
 
 export function MotionCardTable() {
   const game = useGameContext();
   const theme = useTheme();
+  const cardBackUrl = useThemedCardBack(theme.themeRedColor);
   const navigate = useNavigate();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isTablet = useMediaQuery(theme.breakpoints.down("md"));
@@ -615,9 +617,12 @@ export function MotionCardTable() {
 
   return (
     <div className="motion-card-table" style={cardTableStyle}>
-      <Box
+      <Paper
+        elevation={3}
         className={`table-surface ${showSessionResults ? "with-session-bar" : ""}`}
-        sx={{ borderRadius: { xs: 0, sm: theme.spacing(1) } }}
+        sx={{
+          borderRadius: { xs: 0, sm: theme.spacing(1) },
+        }}
       >
         {/* Top Opponent Avatar */}
         {game.topPlayer && (
@@ -1038,7 +1043,7 @@ export function MotionCardTable() {
                   exit={{ opacity: 0 }}
                 >
                   <img
-                    src="/res/cards/back.svg"
+                    src={cardBackUrl}
                     alt="deck"
                     className="card-back"
                   />
@@ -1308,7 +1313,7 @@ export function MotionCardTable() {
             })}
           </>
         )}
-      </Box>
+      </Paper>
     </div>
   );
 }

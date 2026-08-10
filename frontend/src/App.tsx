@@ -41,6 +41,8 @@ import { useSnackbarStore } from "./stores/snackbarStore";
 
 // Create MUI theme with dark mode
 const theme = createTheme({
+  themeRedColor: "#e3005f",
+  themeBlackColor: "#0f0039",
   palette: {
     mode: "dark",
     primary: {
@@ -102,7 +104,9 @@ function AppRoutes() {
         .catch((err) => {
           console.error("Failed to restore sign-in:", err);
           clearProfile();
-          setError("We could not sign you in. Check your username and password.");
+          setError(
+            "We could not sign you in. Check your username and password.",
+          );
         })
         .finally(() => {
           setIsInitializing(false);
@@ -120,10 +124,7 @@ function AppRoutes() {
     clearProfile,
   ]);
 
-  const handleLogin = async (
-    newUsername: string,
-    newPassword: string,
-  ) => {
+  const handleLogin = async (newUsername: string, newPassword: string) => {
     setError(null);
     setIsInitializing(true);
 
@@ -145,10 +146,7 @@ function AppRoutes() {
     }
   };
 
-  const handleSignup = async (
-    newUsername: string,
-    newPassword: string,
-  ) => {
+  const handleSignup = async (newUsername: string, newPassword: string) => {
     setError(null);
     setIsInitializing(true);
 
@@ -297,9 +295,7 @@ function LoginRoute({
     <LoginScreen
       isSubmitting={isSubmitting}
       error={
-        error ||
-        (location.state as { error?: string } | null)?.error ||
-        null
+        error || (location.state as { error?: string } | null)?.error || null
       }
       onSwitchMode={onSwitchMode}
       onSubmit={async (username, password) => {
@@ -328,13 +324,7 @@ function ProtectedRoutes({
   }
 
   if (error && !isAuthenticated) {
-    return (
-      <Navigate
-        to="/login"
-        replace
-        state={{ from: location, error }}
-      />
-    );
+    return <Navigate to="/login" replace state={{ from: location, error }} />;
   }
 
   if (!isAuthenticated || isInitializing) {

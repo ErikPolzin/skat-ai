@@ -188,7 +188,6 @@ export function SessionResults({
                   }}
                 >
                   {playerNames[id] || id.substring(0, 8)}
-                  {id === playerId && " (You)"}
                 </TableCell>
               ))}
             </TableRow>

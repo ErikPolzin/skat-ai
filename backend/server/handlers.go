@@ -373,7 +373,7 @@ func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(gs.SerializeForPlayer(playerID))
+	json.NewEncoder(w).Encode(s.serializeForPlayer(gs, playerID))
 }
 
 // handleGetSessionGame returns game information for a session's current game.
@@ -394,7 +394,7 @@ func (s *Server) handleGetSessionGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(gs.SerializeForPlayer(playerID))
+	json.NewEncoder(w).Encode(s.serializeForPlayer(gs, playerID))
 }
 
 // handleCreateProfile creates a new player profile.

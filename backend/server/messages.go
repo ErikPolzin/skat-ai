@@ -40,6 +40,24 @@ func (cm *ClientManager) BroadcastToPlayers(gs *game.GameState, msg *Message) {
 	cm.BroadcastToClients(profileIDs, msg)
 }
 
+// serializeForPlayer adds live connection state without mutating the cached game.
+// The is_online value stored with a game is only a snapshot and can be stale by
+// the time an HTTP response or WebSocket update is sent.
+func (s *Server) serializeForPlayer(gs *game.GameState, playerID string) *game.GameInfo {
+	state := *gs
+	for position, player := range gs.Players {
+		if player == nil {
+			continue
+		}
+
+		playerCopy := *player
+		playerCopy.IsOnline = player.IsAgent || s.clients.IsOnline(player.ID)
+		state.Players[position] = &playerCopy
+	}
+
+	return state.SerializeForPlayer(playerID)
+}
+
 func (s *Server) BroadcastStateChange(gs *game.GameState, msg string, fromPlayer game.GamePosition) {
 	// Fetch formatted session results if game just completed
 	var sessionResults []game.SessionGameResult
@@ -64,7 +82,7 @@ func (s *Server) BroadcastStateChange(gs *game.GameState, msg string, fromPlayer
 	for _, player := range gs.Players {
 		if player != nil && !player.IsAgent { // Only send to human players
 			msgData := map[string]any{
-				"diff":        gs.SerializeForPlayer(player.ID),
+				"diff":        s.serializeForPlayer(gs, player.ID),
 				"description": msg,
 				"from_player": fromPlayer,
 			}

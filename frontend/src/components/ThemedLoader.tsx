@@ -1,41 +1,51 @@
-import CardClub from "../assets/Card_club.svg";
-import CardSpade from "../assets/Card_spade.svg";
-import CardHeart from "../assets/Card_heart.svg";
-import CardDiamond from "../assets/Card_diamond.svg";
+import CardClub from "../assets/Card_club.svg?raw";
+import CardSpade from "../assets/Card_spade.svg?raw";
+import CardHeart from "../assets/Card_heart.svg?raw";
+import CardDiamond from "../assets/Card_diamond.svg?raw";
 
-import { useTheme } from "@mui/material/styles";
+import { darken, useTheme } from "@mui/material/styles";
 import { motion, useMotionValueEvent, useTime } from "motion/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
+const suits = [CardClub, CardSpade, CardHeart, CardDiamond];
+
+function colorSuit(svg: string, color: string) {
+  const coloredSvg = svg.replace(
+    /fill:\s*(?:#[0-9a-f]{3,8}|[a-z]+)/gi,
+    `fill:${color}`,
+  );
+
+  return `data:image/svg+xml,${encodeURIComponent(coloredSvg)}`;
+}
 
 const ThemedLoader = ({ size }: { size?: number }) => {
   const theme = useTheme();
-  const [shape, setShape] = useState<string>(CardClub);
+  const loaderSize = size ?? 50;
+  const [suitIndex, setSuitIndex] = useState(0);
   const time = useTime();
-  const isDarkSuit = shape === CardClub || shape === CardSpade;
-  const suitColor = isDarkSuit ? theme.themeBlackColor : theme.themeRedColor;
+  const isDarkSuit = suitIndex < 2;
+  const suitColor = darken(
+    isDarkSuit ? theme.themeBlackColor : theme.themeRedColor,
+    0.15,
+  );
+  const suitUrl = useMemo(
+    () => colorSuit(suits[suitIndex], suitColor),
+    [suitColor, suitIndex],
+  );
 
   useMotionValueEvent(time, "change", (latest) => {
-    switch (Math.floor((latest + 500) / 1000) % 4) {
-      case 0:
-        setShape(CardClub);
-        break;
-      case 1:
-        setShape(CardSpade);
-        break;
-      case 2:
-        setShape(CardHeart);
-        break;
-      case 3:
-        setShape(CardDiamond);
-        break;
-      default:
-        setShape(CardClub);
-    }
+    setSuitIndex(Math.floor((latest + 500) / 1000) % suits.length);
   });
 
   return (
     <motion.div
       animate={{ rotateY: [0, 180] }}
+      style={{
+        width: loaderSize,
+        height: loaderSize,
+        display: "inline-block",
+        transformOrigin: "center center",
+      }}
       transition={{
         duration: 1,
         ease: "easeInOut",
@@ -43,21 +53,14 @@ const ThemedLoader = ({ size }: { size?: number }) => {
         repeatType: "reverse",
       }}
     >
-      <div
-        role="img"
-        aria-label="Card suit"
+      <img
+        src={suitUrl}
+        alt="Card suit"
         style={{
-          width: size,
-          height: size,
-          backgroundColor: suitColor,
-          maskImage: `url(${shape})`,
-          maskPosition: "center",
-          maskRepeat: "no-repeat",
-          maskSize: "contain",
-          WebkitMaskImage: `url(${shape})`,
-          WebkitMaskPosition: "center",
-          WebkitMaskRepeat: "no-repeat",
-          WebkitMaskSize: "contain",
+          width: loaderSize,
+          height: loaderSize,
+          display: "block",
+          objectFit: "contain",
         }}
       />
     </motion.div>

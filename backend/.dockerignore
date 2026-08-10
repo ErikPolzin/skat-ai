@@ -1,0 +1,12 @@
+# Local build outputs
+bin/
+
+# Training datasets and generated model artifacts are not used by the image
+# build. Runtime model data is loaded from the configured GCS bucket.
+.data/
+
+# Development and test artifacts
+.git/
+.gitignore
+coverage.out
+*.log

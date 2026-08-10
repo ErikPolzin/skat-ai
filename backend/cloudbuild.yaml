@@ -1,8 +1,19 @@
 steps:
+  # Cloud Build workers are ephemeral, so pull the previous image explicitly
+  # and use its layers as the cache for this build. The first deployment has
+  # no image to pull, which is safe to ignore.
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - 'docker pull gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest || exit 0'
+
   # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--cache-from'
+      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest'
       - '-t'
       - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:${_IMAGE_TAG}'
       - '-t'

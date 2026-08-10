@@ -2,6 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 
 const themedCardUrls = new Map<string, Promise<string>>();
 
+function replaceColor(svg: string, sourceColor: string, targetColor: string) {
+  const normalizedSourceColor = sourceColor.replace("#", "");
+  const colorPattern = new RegExp(`#${normalizedSourceColor}\\b`, "gi");
+
+  return svg.replace(colorPattern, targetColor);
+}
+
+function addStyle(svg: string, styles: string) {
+  return svg.replace("</svg>", `<style>${styles}</style></svg>`);
+}
+
 function createThemedCardUrl(
   sourceUrl: string,
   cacheKey: string,
@@ -61,17 +72,40 @@ export function useThemedCardFace(
   const suitColor = suit === "♦" || suit === "♥" ? redColor : blackColor;
   const sourceSuitColor = suit === "♦" || suit === "♥" ? "#df0000" : "#000000";
   const isCourtCard = rank === "J" || rank === "Q" || rank === "K";
-  const themedStyles = `<style>
-    text, [id^="dl"], [id^="hl"], [id^="sl"], [id^="cl"] {
+  const suitElementSelectors =
+    suit === "♦"
+      ? ['[id^="dl"]', '[id*="-dl"]', '[id*="dl-"]']
+      : suit === "♥"
+        ? ['[id^="hl"]', '[id*="-hl"]', '[id*="hl-"]']
+        : suit === "♠"
+          ? ['[id^="sl"]', '[id*="-sl"]', '[id*="sl-"]']
+          : ['[id^="cl"]', '[id*="-cl"]', '[id*="cl-"]'];
+  const suitElementSelector = [
+    ...suitElementSelectors,
+    ...suitElementSelectors.map((selector) => `${selector} *`),
+  ].join(", ");
+  const themedStyles = `
+    text, ${suitElementSelector} {
       fill: ${suitColor} !important;
     }
-  </style>`;
+
+    stop[style*="${sourceSuitColor}"] {
+      stop-color: ${suitColor} !important;
+    }
+  `;
+  const nonCourtStyles = `
+    ${themedStyles}
+
+    path[style*="filter"] {
+      display: none !important;
+    }
+  `;
   const applyTheme = useCallback(
     (svg: string) =>
       isCourtCard
-        ? svg.replace("</svg>", `${themedStyles}</svg>`)
-        : svg.replaceAll(sourceSuitColor, suitColor),
-    [isCourtCard, sourceSuitColor, suitColor, themedStyles],
+        ? addStyle(svg, themedStyles)
+        : addStyle(replaceColor(svg, sourceSuitColor, suitColor), nonCourtStyles),
+    [isCourtCard, sourceSuitColor, suitColor, themedStyles, nonCourtStyles],
   );
 
   return useThemedCardImage(
@@ -84,7 +118,7 @@ export function useThemedCardFace(
 export function useThemedCardBack(color: string): string {
   const sourceUrl = "/res/cards/back.svg";
   const applyTheme = useCallback(
-    (svg: string) => svg.replaceAll("#fb0f0c", color),
+    (svg: string) => replaceColor(svg, "#fb0f0c", color),
     [color],
   );
   return useThemedCardImage(sourceUrl, `${sourceUrl}:${color}`, applyTheme);

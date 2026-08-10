@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Box, Typography, Button, Paper, Stack } from "@mui/material";
+import { Box, Typography, Button, Stack, Card } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
 import { leaveGame, getAvailableAgents, type AgentInfo } from "../api/games";
@@ -77,8 +77,7 @@ export function GameLobbyWaiting() {
       }}
     >
       {game.gameCode && (
-        <Paper
-          elevation={3}
+        <Card
           sx={{
             p: { xs: "12px 15px", sm: "15px 20px" },
             my: { xs: 2, sm: 3 },
@@ -115,7 +114,7 @@ export function GameLobbyWaiting() {
           >
             Share this code with friends to join
           </Typography>
-        </Paper>
+        </Card>
       )}
 
       <Typography

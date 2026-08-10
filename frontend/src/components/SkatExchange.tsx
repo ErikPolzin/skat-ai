@@ -1,4 +1,6 @@
 import { CircularProgress } from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
+import { type CSSProperties } from "react";
 import { useGameContext } from "../context/GameContext";
 import { type Card as CardType } from "../api/games";
 import Card from "./Card";
@@ -13,12 +15,20 @@ export function SkatExchange({
   selectedCards,
   onDiscardCards,
 }: SkatExchangeProps) {
+  const theme = useTheme();
+  const highlightColor =
+    theme.palette.secondary.highlight ?? theme.palette.secondary.main;
   const game = useGameContext();
   const isDisabled = !game.controls.isConnected || game.controls.isLoading;
+  const highlightStyle = {
+    "--highlight-color": highlightColor,
+    "--highlight-surface": alpha(highlightColor, 0.15),
+    "--highlight-border": alpha(highlightColor, 0.3),
+  } as CSSProperties;
 
   if (!game.hasPickedUpSkat) {
     return (
-      <div className="skat-exchange">
+      <div className="skat-exchange" style={highlightStyle}>
         <div className="skat-preview">
           <h3>Skat Decision</h3>
           <div className="skat-cards">
@@ -68,7 +78,7 @@ export function SkatExchange({
   }
 
   return (
-    <div className="skat-exchange">
+    <div className="skat-exchange" style={highlightStyle}>
       <div className="discard-info">
         <h3>Select 2 cards to discard</h3>
         <p>{selectedCards.length} / 2 selected</p>

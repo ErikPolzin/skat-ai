@@ -374,7 +374,7 @@
 }
 
 .ramsch-player-0 {
-  --ramsch-color: #ffb300;
+  --ramsch-color: var(--table-highlight-color);
 }
 
 .ramsch-player-1 {
@@ -465,11 +465,11 @@
 }
 
 .pile-points-segment.opponent {
-  background: linear-gradient(180deg, #ffd54f 0%, #ffb300 100%);
+  background: var(--scorebar-opponent-color);
 }
 
 .pile-points-segment.player {
-  background: linear-gradient(180deg, #64b5f6 0%, #4f6bed 100%);
+  background: var(--scorebar-player-color);
 }
 
 .pile-points-segment.unclaimed {
@@ -534,7 +534,9 @@
 }
 
 .motion-card.selected {
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 215, 0, 0.4);
+  box-shadow:
+    0 0 20px var(--table-highlight-glow),
+    0 0 40px var(--table-highlight-glow-soft);
 }
 
 .motion-card.selected::before {
@@ -544,7 +546,7 @@
   left: -5px;
   right: -5px;
   bottom: -5px;
-  background: linear-gradient(45deg, transparent, rgba(255, 215, 0, 0.3), transparent);
+  background: linear-gradient(45deg, transparent, var(--table-highlight-sheen), transparent);
   border-radius: 13px;
   z-index: -1;
   animation: pulse 1.5s ease-in-out infinite;

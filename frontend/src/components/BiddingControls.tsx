@@ -90,6 +90,7 @@ export function BiddingControls() {
             </Button>
             <Button
               variant="text"
+              color="warning"
               onClick={() => game.controls.bid(false)}
               disabled={isDisabled}
             >

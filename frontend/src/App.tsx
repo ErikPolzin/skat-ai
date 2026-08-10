@@ -41,8 +41,8 @@ import { useSnackbarStore } from "./stores/snackbarStore";
 
 // Create MUI theme with dark mode
 const theme = createTheme({
-  themeRedColor: "#e3005f",
-  themeBlackColor: "#0f0039",
+  themeRedColor: "#e60f65",
+  themeBlackColor: "#2b354f",
   palette: {
     mode: "dark",
     primary: {
@@ -50,6 +50,7 @@ const theme = createTheme({
     },
     secondary: {
       main: "#7ca8d0",
+      highlight: "#69b6ff",
     },
     error: {
       main: "#e74c3c",

@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { type CSSProperties, useState, useMemo } from "react";
+import { alpha, useTheme } from "@mui/material/styles";
 import { useGameContext } from "../context/GameContext";
 import ThemedLoader from "./ThemedLoader";
 import {
@@ -10,6 +11,9 @@ import {
 import "./GameModeSelector.css";
 
 export function GameModeSelector() {
+  const theme = useTheme();
+  const highlightColor =
+    theme.palette.secondary.highlight ?? theme.palette.secondary.main;
   const game = useGameContext();
   const [selectedMode, setSelectedMode] = useState<string>("suit");
   const [selectedTrump, setSelectedTrump] = useState<string>("♣");
@@ -86,7 +90,16 @@ export function GameModeSelector() {
   }
 
   return (
-    <div className="game-mode-selector">
+    <div
+      className="game-mode-selector"
+      style={
+        {
+          "--highlight-color": highlightColor,
+          "--highlight-surface": alpha(highlightColor, 0.15),
+          "--highlight-border": alpha(highlightColor, 0.3),
+        } as CSSProperties
+      }
+    >
       <div className="game-value-info">
         <span>Game Value: {gameValue}</span>
         {isOverbidDeclaration && (

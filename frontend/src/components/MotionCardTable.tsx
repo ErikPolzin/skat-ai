@@ -503,9 +503,17 @@ export function MotionCardTable() {
   );
 
   // CSS variable overrides - use the card dimensions as source of truth
+  const highlightColor =
+    theme.palette.secondary.highlight ?? theme.palette.secondary.main;
   const cardTableStyle = {
     "--card-width": `${CARD_WIDTH}px`,
     "--card-height": `${CARD_HEIGHT}px`,
+    "--table-highlight-color": highlightColor,
+    "--table-highlight-glow": alpha(highlightColor, 0.8),
+    "--table-highlight-glow-soft": alpha(highlightColor, 0.4),
+    "--table-highlight-sheen": alpha(highlightColor, 0.3),
+    "--scorebar-player-color": theme.palette.primary.main,
+    "--scorebar-opponent-color": theme.palette.secondary.main,
   } as React.CSSProperties;
 
   const makeExtraCenterSpace = useMemo(() => {

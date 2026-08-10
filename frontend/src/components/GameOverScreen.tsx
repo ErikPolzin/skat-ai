@@ -15,9 +15,38 @@ import {
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import HomeIcon from "@mui/icons-material/Home";
+import { alpha } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import { useGameContext } from "../context/GameContext";
 import type { Player } from "../api/games";
+
+function ResultValuePill({
+  tone,
+  value,
+}: {
+  tone: "success" | "error";
+  value: string;
+}) {
+  return (
+    <Box
+      component="span"
+      sx={(theme) => ({
+        bgcolor: alpha(theme.palette[tone].main, 0.16),
+        border: `1px solid ${alpha(theme.palette[tone].main, 0.42)}`,
+        borderRadius: 999,
+        color: theme.palette[tone].light,
+        display: "inline-flex",
+        fontSize: { xs: 14, sm: 16 },
+        fontWeight: 800,
+        lineHeight: 1,
+        px: { xs: 1.25, sm: 1.5 },
+        py: { xs: 0.6, sm: 0.75 },
+      })}
+    >
+      {value}
+    </Box>
+  );
+}
 
 function ResultPlayerAvatar({
   player,
@@ -143,6 +172,7 @@ export function GameOverScreen() {
                   ? `${player.name} (You)`
                   : player.name,
               points: game.playerScores[player.position],
+              resultPoints: -2 * game.playerScores[player.position],
             },
           ]
         : [],
@@ -179,20 +209,25 @@ export function GameOverScreen() {
         key: player.id,
         label: player.name,
         score: game.playerScores[player.position],
-        color: index === 0 ? "#ffb300" : index === 1 ? "#ab6cff" : "#4f8cff",
+        color:
+          index === 0
+            ? "primary.main"
+            : index === 1
+              ? "secondary.main"
+              : "text.secondary",
       }))
     : [
         {
           key: "declarer",
           label: "Declarer",
           score: game.declarerScore,
-          color: "#4f8cff",
+          color: game.isDeclarer ? "primary.main" : "secondary.main",
         },
         {
           key: "defenders",
           label: "Defenders",
           score: game.opponentScore,
-          color: "#ffb300",
+          color: game.isDeclarer ? "secondary.main" : "primary.main",
         },
       ];
   const claimedScore = scoreBarSegments.reduce(
@@ -204,6 +239,7 @@ export function GameOverScreen() {
     .map((segment) => `${segment.label}: ${segment.score}`)
     .concat(unclaimedScore > 0 ? [`Unclaimed: ${unclaimedScore}`] : [])
     .join(" · ");
+  const declarerResultValue = `${result.value > 0 ? "+" : ""}${result.value}`;
   const runningTotals = activePlayers.map((player) => ({
     player,
     total: game.sessionResults.reduce(
@@ -276,44 +312,45 @@ export function GameOverScreen() {
       >
         <Typography
           component="span"
+          color={game.playerWon ? "success" : "error"}
           sx={{
-            color: game.playerWon ? "#4caf50" : "#f44336",
             fontSize: { xs: 24, sm: 42 },
             fontWeight: 700,
             lineHeight: 1.1,
-            textShadow: "0 2px 4px rgba(0, 0, 0, 0.3)",
           }}
         >
           {game.playerWon ? "YOU WON" : "YOU LOST"}
         </Typography>
+        {!result.is_forfeit && !isRamsch && (
+          <ResultValuePill
+            tone={game.playerWon ? "success" : "error"}
+            value={`${game.declarer?.name ?? "Declarer"}: ${declarerResultValue}`}
+          />
+        )}
         {result.is_forfeit ? (
           <Typography
             component="span"
             sx={{
-              color: "#fdd835",
+              color: "text.primary",
               fontSize: { xs: 16, sm: 18 },
-              fontWeight: 700,
+              fontWeight: 600,
               mt: 1.5,
             }}
           >
             Game forfeited due to inactivity
           </Typography>
-        ) : (
+        ) : isRamsch ? (
           <Typography
             component="span"
             sx={{
-              color: "#fdd835",
-              fontSize: { xs: 16, sm: 20 },
-              fontWeight: 700,
+              color: "text.secondary",
+              fontSize: { xs: 13, sm: 15 },
+              fontWeight: 500,
             }}
           >
-            {isRamsch
-              ? "Lowest score wins"
-              : `${game.declarer?.name}: ${
-                  game.playerWon === game.isDeclarer ? "+" : ""
-                }${result.value}`}
+            Lowest score wins
           </Typography>
-        )}
+        ) : null}
         <Box
           sx={{
             alignItems: "stretch",
@@ -341,10 +378,10 @@ export function GameOverScreen() {
                 <Typography
                   component="span"
                   sx={{
-                    color: "#fdd835",
+                    color: "text.primary",
                     display: "block",
                     fontSize: 12,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     mb: 1,
                     textTransform: "uppercase",
                   }}
@@ -373,10 +410,10 @@ export function GameOverScreen() {
               <Typography
                 component="span"
                 sx={{
-                  color: "#fdd835",
+                  color: "text.primary",
                   display: "block",
                   fontSize: 12,
-                  fontWeight: 800,
+                  fontWeight: 700,
                   mb: 1,
                   textTransform: "uppercase",
                 }}
@@ -537,7 +574,7 @@ export function GameOverScreen() {
                               : undefined,
                         }}
                       >
-                        {score.points}
+                        {score.resultPoints}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -658,7 +695,7 @@ export function GameOverScreen() {
                 textTransform: "uppercase",
               }}
             >
-              Running totals
+              Totals
             </Typography>
             <Box
               sx={{
@@ -733,8 +770,8 @@ export function GameOverScreen() {
           game.completionPolicy !== "strict" &&
           !playerReadyForNext && (
             <Button
-              variant="outlined"
-              color="primary"
+              variant="text"
+              color="warning"
               size="large"
               onClick={async () => {
                 await game.controls.endTournament();

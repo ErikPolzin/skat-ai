@@ -96,12 +96,12 @@
 }
 
 .everyone-passed-notice {
-  background: rgba(255, 193, 7, 0.15);
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  background: var(--highlight-surface);
+  border: 1px solid var(--highlight-border);
   border-radius: 8px;
   padding: 10px 15px;
   margin: 0 0 20px 0;
-  color: #ffc107;
+  color: var(--highlight-color);
   font-size: 14px;
   font-weight: 500;
 }

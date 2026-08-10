@@ -10,4 +10,12 @@ declare module "@mui/material/styles" {
     themeRedColor?: string;
     themeBlackColor?: string;
   }
+
+  interface PaletteColor {
+    highlight?: string;
+  }
+
+  interface SimplePaletteColorOptions {
+    highlight?: string;
+  }
 }
